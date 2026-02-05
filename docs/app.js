@@ -1034,7 +1034,16 @@ function updateRadiusInfo(counts) {
     total += count;
   });
   
-  if (useAll) {
+  // Check which types actually have items
+  const typesWithItems = Object.entries(counts).filter(([, count]) => count > 0);
+  
+  if (typesWithItems.length === 1) {
+    // Only one type has items - use specific name
+    const [type] = typesWithItems[0];
+    const config = AMENITY_TYPE_CONFIG[type];
+    const label = config ? config.label : type.replace(/_/g, " ");
+    html += `${total} ${pluralize(label, total)} within ${radiusM}m`;
+  } else if (useAll) {
     html += `${total} items within ${radiusM}m`;
   } else if (selectedAmenityTypes.size === 1) {
     const type = Array.from(selectedAmenityTypes)[0];

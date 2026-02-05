@@ -524,29 +524,28 @@ body {
   display: contents;
 }
 
-/* Info button - floats on desktop, repositioned on mobile */
+/* Info button - inside panel header on desktop, fixed position on mobile */
 .info-btn {
-  position: fixed;
-  top: 24px;
-  left: 272px;
-  width: 32px;
-  height: 32px;
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: none;
-  background: #fff;
-  color: #6b7280;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
   cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s;
+  transition: background 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   z-index: 10;
 }
 
 .info-btn:hover {
-  background: #f9fafb;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .panel-header {
@@ -886,11 +885,13 @@ body {
     display: none;
   }
 
-  /* Info button - top left floating */
+  /* Info button - top left floating on mobile */
   .info-btn {
     position: fixed;
     top: 12px;
     left: 12px;
+    right: auto;
+    transform: none;
     width: 40px;
     height: 40px;
     background: #fff;
@@ -1074,10 +1075,6 @@ body {
 @media (min-width: 481px) and (max-width: 768px) {
   #controls {
     width: 280px;
-  }
-
-  .info-btn {
-    left: 296px;
   }
 
   #radius-info {
