@@ -325,7 +325,13 @@ function updateAmenitiesSource() {
   const source = map.getSource("amenities");
   if (!source) return;
   
-  const useAll = selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length;
+  // If nothing selected, show nothing
+  if (selectedAmenityTypes.size === 0) {
+    source.setData({ type: "FeatureCollection", features: [] });
+    return;
+  }
+  
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   const showAmenities = useAll || Array.from(selectedAmenityTypes).some(t => t !== "trees");
   
   if (!showAmenities) {
@@ -355,7 +361,13 @@ function updateTreesSource() {
   const source = map.getSource("trees");
   if (!source) return;
   
-  const useAll = selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length;
+  // If nothing selected, show nothing
+  if (selectedAmenityTypes.size === 0) {
+    source.setData({ type: "FeatureCollection", features: [] });
+    return;
+  }
+  
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   const showTrees = useAll || selectedAmenityTypes.has("trees");
   
   if (!showTrees) {
@@ -555,9 +567,10 @@ function calculateBreakpoints(maxVal) {
 // Get max value from buildings data for selected types (trees count 1/4, use 1/5 of max for outliers)
 function getMaxValueForSelection() {
   if (!buildingsData || !buildingsData.features) return 20;
+  if (selectedAmenityTypes.size === 0) return 0;
   
   let maxVal = 0;
-  const useAll = selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length;
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   
   buildingsData.features.forEach(f => {
     const props = f.properties || {};
@@ -598,7 +611,16 @@ function updateLegendLabels(breakpoints) {
 function updateBuildingColors() {
   if (!buildingsData) return;
   
-  const useAll = selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length;
+  // If nothing selected, all buildings show as lowest accessibility (red)
+  if (selectedAmenityTypes.size === 0) {
+    if (map.getLayer("buildings-fill")) {
+      map.setPaintProperty("buildings-fill", "fill-color", "#ef4444");
+    }
+    updateLegendLabels([0, 0, 0, 0, 0]);
+    return;
+  }
+  
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   
   // Calculate max value and breakpoints
   const maxVal = getMaxValueForSelection();
@@ -873,8 +895,14 @@ function getItemsInRadius(centerLng, centerLat, radiusM) {
   const amenityIndices = new Set();
   const treeIndices = new Set();
   const counts = {};
+  
+  // If nothing selected, return empty
+  if (selectedAmenityTypes.size === 0) {
+    return { amenityIndices, treeIndices, counts };
+  }
+  
   const centerPt = [centerLng, centerLat];
-  const useAll = selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length;
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   
   // Check amenities
   if (allAmenitiesData && allAmenitiesData.features) {
@@ -989,7 +1017,14 @@ function updateRadiusInfo(counts) {
   const infoPanel = document.getElementById("radius-info");
   if (!infoPanel) return;
   
-  const useAll = selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length;
+  // If nothing selected, show message
+  if (selectedAmenityTypes.size === 0) {
+    infoPanel.innerHTML = '<div class="radius-count">No types selected</div>';
+    infoPanel.style.display = "block";
+    return;
+  }
+  
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   
   let html = '<div class="radius-count">';
   let total = 0;
