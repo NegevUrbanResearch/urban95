@@ -925,18 +925,3 @@ map.on("mouseleave", "parks-fill", function () {
   map.getCanvas().style.cursor = "";
   tooltip.style.display = "none";
 });
-
-map.on("click", "parks-fill", function (e) {
-  const props = e.features[0].properties;
-  const name = props.name || "Unnamed Park";
-  
-  let html = "<div style='font-weight: 600; margin-bottom: 4px;'>" + name + "</div>";
-  if (props.area != null) {
-    html += "<div style='color: #6b7280; font-size: 11px;'>Area: " + formatArea(props.area) + "</div>";
-  }
-  
-  new maplibregl.Popup({ offset: 10 })
-    .setLngLat(e.lngLat)
-    .setHTML(html)
-    .addTo(map);
-});
