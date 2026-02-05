@@ -28,44 +28,47 @@
 
     <div id="map"></div>
 
+    <button id="info-btn" class="info-btn" title="About this map">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="12" cy="5" r="2.5"></circle>
+        <rect x="9.5" y="10" width="5" height="12" rx="1"></rect>
+      </svg>
+    </button>
+
     <div id="controls">
       <div class="panel-header">
         <h2>Cities for Children</h2>
         <span class="subtitle">Accessibility Explorer</span>
-        <button id="info-btn" class="info-btn" title="About this map">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="12" cy="5" r="2.5"></circle>
-            <rect x="9.5" y="10" width="5" height="12" rx="1"></rect>
-          </svg>
-        </button>
       </div>
 
-      <div class="section" id="amenity-filter-section">
-        <div class="section-title">Filter</div>
-        <div class="filter-dropdown">
-          <button id="filter-btn" class="filter-btn">
-            <span id="filter-label">All Types</span>
-            <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
-          </button>
-          <div id="filter-popup" class="filter-popup">
-            <button id="select-all-btn" class="select-all-btn">Select All</button>
-            <div class="filter-divider"></div>
-            <div id="filter-items"></div>
+      <div class="controls-row">
+        <div class="section" id="amenity-filter-section">
+          <div class="section-title">Filter</div>
+          <div class="filter-dropdown">
+            <button id="filter-btn" class="filter-btn">
+              <span id="filter-label">All Types</span>
+              <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
+            </button>
+            <div id="filter-popup" class="filter-popup">
+              <button id="select-all-btn" class="select-all-btn">Select All</button>
+              <div class="filter-divider"></div>
+              <div id="filter-items"></div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="section">
-        <div class="section-title">Analysis Radius</div>
-        <div class="radius-row">
-          <input id="r-slider" type="range" min="50" max="500" value="100" />
-          <span class="radius-val"><span id="r-val">100</span>m</span>
+        <div class="section" id="radius-section">
+          <div class="section-title">Radius</div>
+          <div class="radius-row">
+            <input id="r-slider" type="range" min="50" max="500" value="100" />
+            <span class="radius-val"><span id="r-val">100</span>m</span>
+          </div>
+          <div class="hint">Click map to analyze nearest building</div>
         </div>
-        <div class="hint">Click map to analyze nearest building</div>
       </div>
 
       <div class="section legend-section">
-        <div class="section-title">Building Colors</div>
+        <div class="section-title">Accessibility</div>
         <div class="legend-gradient"></div>
         <div id="legend-labels" class="legend-labels">
           <span>0</span>

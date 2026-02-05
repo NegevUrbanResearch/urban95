@@ -31,13 +31,20 @@ function getAmenityConfig(type) {
   return config || DEFAULT_CONFIG;
 }
 
-// Calculate appropriate zoom level to show the entire radius
+// Calculate appropriate zoom level to show the entire circle (diameter)
 function getZoomForRadius(radiusM) {
-  const targetPixels = 250;
+  // We want the full circle diameter to fit comfortably in the viewport
+  // Use ~60% of the smaller viewport dimension as target
+  const viewportMin = Math.min(window.innerWidth, window.innerHeight);
+  const targetPixels = viewportMin * 0.6;
+  const diameterM = radiusM * 2;
+  
+  // At zoom 15, 1 pixel ≈ 4.77 meters at equator (varies by latitude, but close enough)
   const metersPerPixelAtZoom15 = 4.77;
-  const metersPerPixel = radiusM / targetPixels;
+  const metersPerPixel = diameterM / targetPixels;
   const zoomDiff = Math.log2(metersPerPixelAtZoom15 / metersPerPixel);
-  return Math.min(Math.max(15 + zoomDiff, 13), 18);
+  
+  return Math.min(Math.max(15 + zoomDiff, 12), 18);
 }
 
 // Build color expression for amenity types
@@ -761,21 +768,41 @@ function closeFilterPopup() {
   }
 }
 
-filterBtn.addEventListener("click", function(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  
+// Toggle filter popup - works for both mouse and touch
+function toggleFilterPopup() {
   const isOpen = filterPopup.classList.contains("show");
   if (isOpen) {
     closeFilterPopup();
   } else {
     openFilterPopup();
   }
+}
+
+// Track if we just handled a touch event to prevent double-firing
+let handledByTouch = false;
+
+filterBtn.addEventListener("click", function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  // Skip if already handled by touch event
+  if (handledByTouch) {
+    handledByTouch = false;
+    return;
+  }
+  
+  toggleFilterPopup();
 });
 
-// Handle touch separately to prevent issues
+// Handle touch - touchend fires before click on mobile
 filterBtn.addEventListener("touchend", function(e) {
   e.preventDefault();
+  e.stopPropagation();
+  handledByTouch = true;
+  toggleFilterPopup();
+  
+  // Reset flag after a short delay in case click doesn't fire
+  setTimeout(function() { handledByTouch = false; }, 300);
 });
 
 // Close popup when clicking backdrop
@@ -810,6 +837,14 @@ document.addEventListener("keydown", function(e) {
 });
 
 selectAllBtn.addEventListener("click", toggleSelectAll);
+
+// Prevent clicks inside the popup from bubbling to document (which would close it)
+filterPopup.addEventListener("click", function(e) {
+  e.stopPropagation();
+});
+filterPopup.addEventListener("touchstart", function(e) {
+  e.stopPropagation();
+});
 
 // Find the closest building centroid to a given point
 function findClosestBuilding(lngLat) {
@@ -977,13 +1012,21 @@ function updateRadiusInfo(counts) {
   
   html += '</div>';
   
-  const filteredKeys = Object.keys(counts);
-  if (filteredKeys.length > 1 && filteredKeys.length <= 6) {
+  // Show breakdown by type (limit to top 8 if many types)
+  const sortedCounts = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (sortedCounts.length > 1) {
+    const maxToShow = 8;
+    const toShow = sortedCounts.slice(0, maxToShow);
+    const remaining = sortedCounts.length - maxToShow;
+    
     html += '<div class="radius-breakdown">';
-    Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+    toShow.forEach(([type, count]) => {
       const config = getAmenityConfig(type);
       html += `<span class="radius-type"><span style="color:${config.color}">●</span> ${config.label}: ${count}</span>`;
     });
+    if (remaining > 0) {
+      html += `<span class="radius-type">+${remaining} more</span>`;
+    }
     html += '</div>';
   }
   
