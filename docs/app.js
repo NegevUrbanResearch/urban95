@@ -30,19 +30,35 @@ function getAmenityConfig(type) {
   return config || DEFAULT_CONFIG;
 }
 
-function createIconUrl(iconName) {
-  return `${ICONS_BASE}/${iconName}.svg`;
-}
-
 // Calculate appropriate zoom level to show the entire radius
 function getZoomForRadius(radiusM) {
-  // Approximate meters per pixel at zoom level 15 at equator: ~4.77m
-  // We want the radius to take up about 1/3 of the viewport width (roughly 200-300px)
   const targetPixels = 250;
   const metersPerPixelAtZoom15 = 4.77;
   const metersPerPixel = radiusM / targetPixels;
   const zoomDiff = Math.log2(metersPerPixelAtZoom15 / metersPerPixel);
   return Math.min(Math.max(15 + zoomDiff, 13), 18);
+}
+
+// Build color expression for amenity types
+function buildAmenityColorExpression() {
+  const cases = ["case"];
+  Object.entries(AMENITY_TYPE_CONFIG).forEach(([type, config]) => {
+    cases.push(["==", ["get", "amenity_type"], type]);
+    cases.push(config.color);
+  });
+  cases.push(DEFAULT_CONFIG.color);
+  return cases;
+}
+
+// Build icon expression for amenity types
+function buildAmenityIconExpression() {
+  const cases = ["case"];
+  Object.entries(AMENITY_TYPE_CONFIG).forEach(([type, config]) => {
+    cases.push(["==", ["get", "amenity_type"], type]);
+    cases.push(config.icon);
+  });
+  cases.push(DEFAULT_CONFIG.icon);
+  return cases;
 }
 
 const map = new maplibregl.Map({
@@ -60,6 +76,10 @@ const map = new maplibregl.Map({
       parks: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
       trees: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
       "radius-circle": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+      amenities: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      },
     },
     layers: [
       { id: "osm", type: "raster", source: "osm" },
@@ -90,7 +110,7 @@ const map = new maplibregl.Map({
         type: "fill",
         source: "buildings",
         paint: {
-          "fill-color": "#f3e8ff",
+          "fill-color": "#ef4444",
           "fill-opacity": 0.85,
           "fill-outline-color": "#d4d4d8",
         },
@@ -100,7 +120,7 @@ const map = new maplibregl.Map({
         type: "fill",
         source: "radius-circle",
         paint: {
-          "fill-color": "#8b5cf6",
+          "fill-color": "#3b82f6",
           "fill-opacity": 0.15,
         },
       },
@@ -109,7 +129,7 @@ const map = new maplibregl.Map({
         type: "line",
         source: "radius-circle",
         paint: {
-          "line-color": "#8b5cf6",
+          "line-color": "#3b82f6",
           "line-width": 2,
           "line-dasharray": [4, 2],
         },
@@ -137,36 +157,194 @@ let typesWithData = new Set();
 let allAmenitiesData = null;
 let allTreesData = null;
 let buildingsData = null;
-let buildingCentroids = [];  // Array of {lng, lat, properties, feature}
+let buildingCentroids = [];
 let selectedMetric = "amenities";
 let selectedAmenityTypes = new Set(["all"]);
-let amenityMarkers = [];
-let amenityMarkerMap = new Map();  // Map from feature index to marker
 let showAmenities = true;
-let selectedBuildingCentroid = null;  // Currently selected building centroid
-let amenitiesInRadius = new Set();  // Set of amenity indices currently in radius
+let selectedBuildingCentroid = null;
+let amenitiesInRadiusIds = new Set();
+let iconsLoaded = false;
 
-function getMarkerSize() {
-  const zoom = map.getZoom();
-  if (zoom < 12) return 16;
-  if (zoom < 14) return 20;
-  if (zoom < 16) return 26;
-  return 32;
+// Load all amenity icons into the map
+async function loadAmenityIcons() {
+  const iconNames = new Set();
+  Object.values(AMENITY_TYPE_CONFIG).forEach(config => iconNames.add(config.icon));
+  iconNames.add(DEFAULT_CONFIG.icon);
+  
+  const loadPromises = Array.from(iconNames).map(iconName => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        if (!map.hasImage(iconName)) {
+          // Use SDF: true for tinting icons white
+          map.addImage(iconName, img, { sdf: true });
+        }
+        resolve();
+      };
+      img.onerror = () => {
+        console.warn(`Failed to load icon: ${iconName}`);
+        resolve();
+      };
+      img.src = `${ICONS_BASE}/${iconName}.svg`;
+    });
+  });
+  
+  await Promise.all(loadPromises);
+  iconsLoaded = true;
+}
+
+// Update the amenities source data with filtered and radius-flagged features
+function updateAmenitiesSource() {
+  if (!allAmenitiesData) return;
+  
+  const source = map.getSource("amenities");
+  if (!source) return;
+  
+  // Build updated features with filtering and in-radius flag
+  const updatedFeatures = [];
+  
+  allAmenitiesData.features.forEach((f, index) => {
+    // Apply type filter
+    if (!selectedAmenityTypes.has("all") && selectedAmenityTypes.size > 0) {
+      const type = f.properties.amenity_type;
+      if (!selectedAmenityTypes.has(type)) return;
+    }
+    
+    // Add in-radius flag using the original index
+    const newProps = { ...f.properties, _inRadius: amenitiesInRadiusIds.has(index) };
+    updatedFeatures.push({ ...f, properties: newProps });
+  });
+  
+  source.setData({ type: "FeatureCollection", features: updatedFeatures });
+}
+
+// Add amenity layers after icons are loaded
+function addAmenityLayers() {
+  // Heatmap layer for low zoom levels (red-green gradient)
+  map.addLayer({
+    id: "amenity-heatmap",
+    type: "heatmap",
+    source: "amenities",
+    maxzoom: 15,
+    paint: {
+      "heatmap-weight": 1,
+      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
+      // Red to yellow to green gradient
+      "heatmap-color": [
+        "interpolate",
+        ["linear"],
+        ["heatmap-density"],
+        0, "rgba(0, 0, 0, 0)",
+        0.1, "rgba(239, 68, 68, 0.5)",
+        0.3, "rgba(249, 115, 22, 0.6)",
+        0.5, "rgba(234, 179, 8, 0.7)",
+        0.7, "rgba(132, 204, 22, 0.8)",
+        1, "rgba(34, 197, 94, 0.9)"
+      ],
+      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 15, 14, 25],
+      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 1, 15, 0],
+    },
+  });
+
+  // Individual amenity points (highlighted in radius) - fade in at higher zoom
+  map.addLayer({
+    id: "amenity-points-highlighted",
+    type: "circle",
+    source: "amenities",
+    minzoom: 13,
+    filter: ["==", ["get", "_inRadius"], true],
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 6, 16, 14],
+      "circle-color": buildAmenityColorExpression(),
+      "circle-stroke-width": 3,
+      "circle-stroke-color": "#fbbf24",
+      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
+      "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
+    },
+  });
+
+  // Individual amenity points (not highlighted) - fade in at higher zoom
+  map.addLayer({
+    id: "amenity-points",
+    type: "circle",
+    source: "amenities",
+    minzoom: 13,
+    filter: ["!=", ["get", "_inRadius"], true],
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 4, 16, 12],
+      "circle-color": buildAmenityColorExpression(),
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "#fff",
+      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
+      "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
+    },
+  });
+
+  // Amenity icons (highlighted) - fade in at higher zoom
+  map.addLayer({
+    id: "amenity-icons-highlighted",
+    type: "symbol",
+    source: "amenities",
+    minzoom: 14,
+    filter: ["==", ["get", "_inRadius"], true],
+    layout: {
+      "icon-image": buildAmenityIconExpression(),
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.35, 16, 0.6],
+      "icon-allow-overlap": true,
+    },
+    paint: {
+      "icon-color": "#fff",
+      "icon-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 1],
+    },
+  });
+
+  // Amenity icons (not highlighted) - fade in at higher zoom
+  map.addLayer({
+    id: "amenity-icons",
+    type: "symbol",
+    source: "amenities",
+    minzoom: 14,
+    filter: ["!=", ["get", "_inRadius"], true],
+    layout: {
+      "icon-image": buildAmenityIconExpression(),
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.3, 16, 0.5],
+      "icon-allow-overlap": true,
+    },
+    paint: {
+      "icon-color": "#fff",
+      "icon-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 1],
+    },
+  });
+
+  updateAmenityFilters();
+}
+
+// Update filters on amenity layers
+function updateAmenityFilters() {
+  if (!map.getLayer("amenity-points")) return;
+  
+  // Point filters - differentiate by inRadius flag
+  map.setFilter("amenity-points", ["!=", ["get", "_inRadius"], true]);
+  map.setFilter("amenity-points-highlighted", ["==", ["get", "_inRadius"], true]);
+  map.setFilter("amenity-icons", ["!=", ["get", "_inRadius"], true]);
+  map.setFilter("amenity-icons-highlighted", ["==", ["get", "_inRadius"], true]);
 }
 
 function updateBuildingColors() {
   let expression;
   
+  // Red-green gradient: red = low accessibility, green = high accessibility
   if (selectedMetric === "trees") {
     expression = [
       "interpolate",
       ["linear"],
       ["coalesce", ["to-number", ["get", "num_trees"]], 0],
-      0, "#f3e8ff",
-      5, "#c4b5fd",
-      10, "#a78bfa",
-      20, "#8b5cf6",
-      40, "#6d28d9",
+      0, "#ef4444",   // red-500
+      5, "#f97316",   // orange-500
+      10, "#eab308",  // yellow-500
+      20, "#84cc16",  // lime-500
+      40, "#22c55e",  // green-500
     ];
   } else {
     if (selectedAmenityTypes.has("all") || selectedAmenityTypes.size === 0) {
@@ -174,11 +352,11 @@ function updateBuildingColors() {
         "interpolate",
         ["linear"],
         ["coalesce", ["to-number", ["get", "num_amenities"]], 0],
-        0, "#f3e8ff",
-        1, "#c4b5fd",
-        5, "#a78bfa",
-        10, "#8b5cf6",
-        20, "#6d28d9",
+        0, "#ef4444",   // red-500
+        1, "#f97316",   // orange-500
+        5, "#eab308",   // yellow-500
+        10, "#84cc16",  // lime-500
+        20, "#22c55e",  // green-500
       ];
     } else {
       const types = Array.from(selectedAmenityTypes);
@@ -193,11 +371,11 @@ function updateBuildingColors() {
         "interpolate",
         ["linear"],
         sumExpr,
-        0, "#f3e8ff",
-        1, "#c4b5fd",
-        5, "#a78bfa",
-        10, "#8b5cf6",
-        20, "#6d28d9",
+        0, "#ef4444",   // red-500
+        1, "#f97316",   // orange-500
+        5, "#eab308",   // yellow-500
+        10, "#84cc16",  // lime-500
+        20, "#22c55e",  // green-500
       ];
     }
   }
@@ -207,116 +385,17 @@ function updateBuildingColors() {
   }
 }
 
-function clearMarkers() {
-  amenityMarkers.forEach(m => m.remove());
-  amenityMarkers = [];
-  amenityMarkerMap.clear();
-}
-
-function createMarker(feature, size, featureIndex) {
-  const coords = feature.geometry.coordinates;
-  const props = feature.properties;
-  const type = props.amenity_type || "";
-  const config = getAmenityConfig(type);
-  
-  const el = document.createElement("div");
-  el.className = "amenity-marker";
-  el.dataset.featureIndex = featureIndex;
-  el.style.width = size + "px";
-  el.style.height = size + "px";
-  el.style.backgroundColor = config.color;
-  
-  const iconSize = Math.round(size * 0.5);
-  const img = document.createElement("img");
-  img.src = createIconUrl(config.icon);
-  img.style.width = iconSize + "px";
-  img.style.height = iconSize + "px";
-  img.onerror = function() {
-    this.src = createIconUrl("marker");
-  };
-  el.appendChild(img);
-  
-  const marker = new maplibregl.Marker({ element: el })
-    .setLngLat(coords)
-    .addTo(map);
-  
-  el.addEventListener("mouseenter", (e) => {
-    const typeName = props.top_classi || props.amenity_type || "Unknown";
-    const sub = props.subcategor || "";
-    const name = props.hebrew_nam || props.name || "";
-    
-    const lines = [];
-    if (name) lines.push(name);
-    lines.push(typeName);
-    if (sub) lines.push(sub);
-    
-    tooltip.textContent = lines.join("\n");
-    tooltip.style.display = "block";
-    tooltip.style.left = (e.pageX + 12) + "px";
-    tooltip.style.top = (e.pageY + 12) + "px";
-  });
-  
-  el.addEventListener("mousemove", (e) => {
-    tooltip.style.left = (e.pageX + 12) + "px";
-    tooltip.style.top = (e.pageY + 12) + "px";
-  });
-  
-  el.addEventListener("mouseleave", () => {
-    tooltip.style.display = "none";
-  });
-  
-  return marker;
-}
-
-function renderMarkers() {
-  clearMarkers();
-  amenityMarkerMap.clear();
-  
-  if (!showAmenities || !allAmenitiesData) return;
-  
-  const size = getMarkerSize();
-  
-  allAmenitiesData.features.forEach((f, index) => {
-    if (!selectedAmenityTypes.has("all")) {
-      const type = f.properties.amenity_type;
-      if (!selectedAmenityTypes.has(type)) return;
-    }
-    
-    const marker = createMarker(f, size, index);
-    amenityMarkers.push(marker);
-    amenityMarkerMap.set(index, marker);
-    
-    // Apply highlight if this amenity is in the current radius
-    if (amenitiesInRadius.has(index)) {
-      marker.getElement().classList.add("in-radius");
-    }
-  });
-}
-
-function updateMarkerHighlights() {
-  amenityMarkerMap.forEach((marker, index) => {
-    const el = marker.getElement();
-    if (amenitiesInRadius.has(index)) {
-      el.classList.add("in-radius");
-    } else {
-      el.classList.remove("in-radius");
-    }
-  });
-}
-
-function updateMarkerSizes() {
-  if (!showAmenities) return;
-  const size = getMarkerSize();
-  const iconSize = Math.round(size * 0.5);
-  
-  amenityMarkers.forEach(marker => {
-    const el = marker.getElement();
-    el.style.width = size + "px";
-    el.style.height = size + "px";
-    const img = el.querySelector("img");
-    if (img) {
-      img.style.width = iconSize + "px";
-      img.style.height = iconSize + "px";
+function setAmenityLayersVisibility(visible) {
+  const layers = [
+    "amenity-heatmap",
+    "amenity-points",
+    "amenity-points-highlighted",
+    "amenity-icons",
+    "amenity-icons-highlighted",
+  ];
+  layers.forEach(layerId => {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
     }
   });
 }
@@ -369,10 +448,9 @@ function handleFilterChange(e) {
   }
   
   updateFilterLabel();
-  renderMarkers();
+  updateAmenitiesSource();
   updateBuildingColors();
   
-  // Update radius selection if a building is selected
   if (selectedBuildingCentroid) {
     selectBuilding(selectedBuildingCentroid, false);
   }
@@ -433,11 +511,7 @@ document.querySelectorAll('input[name="metric"]').forEach(radio => {
 document.getElementById("layer-trees").addEventListener("change", (e) => setLayerVisibility("trees-circles", e.target.checked));
 document.getElementById("layer-amenities").addEventListener("change", (e) => {
   showAmenities = e.target.checked;
-  if (showAmenities) {
-    renderMarkers();
-  } else {
-    clearMarkers();
-  }
+  setAmenityLayersVisibility(showAmenities);
 });
 
 // Find the closest building centroid to a given point
@@ -468,14 +542,17 @@ function getAmenitiesInRadius(centerLng, centerLat, radiusM) {
   
   const indices = new Set();
   const counts = {};
+  const centerPt = [centerLng, centerLat];
   
   allAmenitiesData.features.forEach((f, index) => {
+    // Apply type filter
+    if (!selectedAmenityTypes.has("all")) {
+      const type = f.properties.amenity_type;
+      if (!selectedAmenityTypes.has(type)) return;
+    }
+    
     const coords = f.geometry.coordinates;
-    const dist = turf.distance(
-      [centerLng, centerLat],
-      coords,
-      { units: "meters" }
-    );
+    const dist = turf.distance(centerPt, coords, { units: "meters" });
     
     if (dist <= radiusM) {
       indices.add(index);
@@ -492,14 +569,11 @@ function getTreesInRadius(centerLng, centerLat, radiusM) {
   if (!allTreesData) return 0;
   
   let count = 0;
+  const centerPt = [centerLng, centerLat];
   
   allTreesData.features.forEach(f => {
     const coords = f.geometry.coordinates;
-    const dist = turf.distance(
-      [centerLng, centerLat],
-      coords,
-      { units: "meters" }
-    );
+    const dist = turf.distance(centerPt, coords, { units: "meters" });
     
     if (dist <= radiusM) {
       count++;
@@ -521,19 +595,17 @@ function selectBuilding(building, flyTo = true) {
   
   // Calculate amenities in radius
   const result = getAmenitiesInRadius(building.lng, building.lat, radiusM);
-  amenitiesInRadius = result.indices;
+  amenitiesInRadiusIds = result.indices;
   
-  // Update marker highlights
-  updateMarkerHighlights();
+  // Update amenity data with in-radius flag
+  updateAmenitiesSource();
   
   // Update the info panel with dynamic counts
   updateRadiusInfo(result.counts);
   
   if (flyTo) {
-    // Calculate zoom level based on radius
     const zoom = getZoomForRadius(radiusM);
     
-    // Fly to the building centroid
     map.flyTo({
       center: [building.lng, building.lat],
       zoom: zoom,
@@ -547,7 +619,6 @@ function selectBuilding(building, flyTo = true) {
 // Pluralize a label based on count
 function pluralize(label, count) {
   if (count === 1) {
-    // Singular forms
     if (label === "Healthcare") return "healthcare facility";
     if (label === "Education") return "education facility";
     if (label === "Commercial") return "commercial establishment";
@@ -562,7 +633,6 @@ function pluralize(label, count) {
     if (label === "Senior") return "senior facility";
     return label.toLowerCase();
   } else {
-    // Plural forms
     if (label === "Healthcare") return "healthcare facilities";
     if (label === "Education") return "education facilities";
     if (label === "Commercial") return "commercial establishments";
@@ -584,18 +654,15 @@ function updateRadiusInfo(counts) {
   const infoPanel = document.getElementById("radius-info");
   if (!infoPanel) return;
   
-  // Calculate total based on current filter
   let total = 0;
   let filteredCounts = {};
   
   if (selectedAmenityTypes.has("all") || selectedAmenityTypes.size === 0) {
-    // All types selected - sum everything
     Object.entries(counts).forEach(([type, count]) => {
       total += count;
       filteredCounts[type] = count;
     });
   } else {
-    // Specific types selected - only count those
     Array.from(selectedAmenityTypes).forEach(type => {
       const count = counts[type] || 0;
       total += count;
@@ -608,22 +675,18 @@ function updateRadiusInfo(counts) {
   let html = '<div class="radius-count">';
   
   if (selectedAmenityTypes.has("all") || selectedAmenityTypes.size === 0) {
-    // All amenities selected
     html += `${total} ${total === 1 ? "amenity" : "amenities"} within ${radiusM}m`;
   } else if (selectedAmenityTypes.size === 1) {
-    // Single amenity type selected
     const type = Array.from(selectedAmenityTypes)[0];
     const config = AMENITY_TYPE_CONFIG[type];
     const label = config ? config.label : type.replace(/_/g, " ");
     html += `${total} ${pluralize(label, total)} within ${radiusM}m`;
   } else {
-    // Multiple specific types selected
     html += `${total} of selected amenity types within ${radiusM}m`;
   }
   
   html += '</div>';
   
-  // Show breakdown if multiple types and not too many
   const filteredKeys = Object.keys(filteredCounts);
   if (filteredKeys.length > 1 && filteredKeys.length <= 6) {
     html += '<div class="radius-breakdown">';
@@ -641,12 +704,12 @@ function updateRadiusInfo(counts) {
 // Clear the radius selection
 function clearRadiusSelection() {
   selectedBuildingCentroid = null;
-  amenitiesInRadius.clear();
+  amenitiesInRadiusIds.clear();
   
   const source = map.getSource("radius-circle");
   if (source) source.setData({ type: "FeatureCollection", features: [] });
   
-  updateMarkerHighlights();
+  updateAmenitiesSource();
   
   const infoPanel = document.getElementById("radius-info");
   if (infoPanel) infoPanel.style.display = "none";
@@ -656,33 +719,122 @@ rSlider.addEventListener("input", function () {
   radiusM = parseInt(this.value, 10);
   rVal.textContent = radiusM;
   
-  // If a building is selected, update the radius visualization
   if (selectedBuildingCentroid) {
     selectBuilding(selectedBuildingCentroid, false);
   }
 });
 
-map.on("zoom", function() {
-  updateMarkerSizes();
-});
-
 map.on("click", function (e) {
+  // Check if clicked on an amenity point
+  const amenityFeatures = map.queryRenderedFeatures(e.point, { 
+    layers: ["amenity-points", "amenity-points-highlighted"] 
+  });
+  if (amenityFeatures.length > 0) {
+    const props = amenityFeatures[0].properties;
+    const coords = amenityFeatures[0].geometry.coordinates;
+    
+    const typeName = props.top_classi || props.amenity_type || "Unknown";
+    const sub = props.subcategor || "";
+    const name = props.hebrew_nam || props.name || "";
+    
+    let html = "";
+    if (name) html += `<div style="font-weight: 600; margin-bottom: 4px;">${name}</div>`;
+    html += `<div style="color: #6b7280; font-size: 11px;">${typeName}`;
+    if (sub) html += ` • ${sub}`;
+    html += "</div>";
+    
+    new maplibregl.Popup({ offset: 15 })
+      .setLngLat(coords)
+      .setHTML(html)
+      .addTo(map);
+    return;
+  }
+  
+  // Otherwise, find closest building
   if (e.originalEvent.target !== map.getCanvas()) return;
   
-  // Find closest building centroid
   const closest = findClosestBuilding(e.lngLat);
   if (closest) {
     selectBuilding(closest, true);
   }
 });
 
-map.on("load", function () {
+// Hover effect for amenity points
+map.on("mouseenter", "amenity-points", () => {
+  map.getCanvas().style.cursor = "pointer";
+});
+
+map.on("mouseenter", "amenity-points-highlighted", () => {
+  map.getCanvas().style.cursor = "pointer";
+});
+
+map.on("mouseleave", "amenity-points", () => {
+  map.getCanvas().style.cursor = "";
+});
+
+map.on("mouseleave", "amenity-points-highlighted", () => {
+  map.getCanvas().style.cursor = "";
+});
+
+// Show tooltip on amenity hover
+map.on("mousemove", "amenity-points", (e) => {
+  if (e.features.length === 0) return;
+  const props = e.features[0].properties;
+  
+  const typeName = props.top_classi || props.amenity_type || "Unknown";
+  const sub = props.subcategor || "";
+  const name = props.hebrew_nam || props.name || "";
+  
+  const lines = [];
+  if (name) lines.push(name);
+  lines.push(typeName);
+  if (sub) lines.push(sub);
+  
+  tooltip.textContent = lines.join("\n");
+  tooltip.style.display = "block";
+  tooltip.style.left = (e.point.x + 12) + "px";
+  tooltip.style.top = (e.point.y + 12) + "px";
+});
+
+map.on("mousemove", "amenity-points-highlighted", (e) => {
+  if (e.features.length === 0) return;
+  const props = e.features[0].properties;
+  
+  const typeName = props.top_classi || props.amenity_type || "Unknown";
+  const sub = props.subcategor || "";
+  const name = props.hebrew_nam || props.name || "";
+  
+  const lines = [];
+  if (name) lines.push(name);
+  lines.push(typeName);
+  if (sub) lines.push(sub);
+  
+  tooltip.textContent = lines.join("\n");
+  tooltip.style.display = "block";
+  tooltip.style.left = (e.point.x + 12) + "px";
+  tooltip.style.top = (e.point.y + 12) + "px";
+});
+
+map.on("mouseleave", "amenity-points", () => {
+  tooltip.style.display = "none";
+});
+
+map.on("mouseleave", "amenity-points-highlighted", () => {
+  tooltip.style.display = "none";
+});
+
+map.on("load", async function () {
+  // Load icons first
+  await loadAmenityIcons();
+  
+  // Add amenity layers after icons are loaded
+  addAmenityLayers();
+  
   fetch(BUILDINGS_URL)
     .then(function (r) { return r.json(); })
     .then(function (fc) {
       buildingsData = fc;
       
-      // Compute centroids for all buildings
       buildingCentroids = [];
       (fc.features || []).forEach(function (f) {
         if (f.geometry) {
@@ -734,7 +886,9 @@ map.on("load", function () {
       });
       
       buildFilterItems(types);
-      renderMarkers();
+      
+      // Set amenities data to the source (with filtering)
+      updateAmenitiesSource();
     })
     .catch(function () {});
 
