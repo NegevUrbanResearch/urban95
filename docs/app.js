@@ -513,12 +513,13 @@ function addAmenityLayers() {
     filter: ["==", ["get", "_inRadius"], true],
     layout: {
       "icon-image": buildAmenityIconExpression(),
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.35, 16, 0.6],
-      "icon-allow-overlap": true,
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.5, 16, 0.8],
+      "icon-allow-overlap": false,
     },
     paint: {
       "icon-color": "#fff",
       "icon-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 1],
+      "icon-opacity-transition": { duration: 0 },
     },
   });
 
@@ -531,12 +532,13 @@ function addAmenityLayers() {
     filter: ["!=", ["get", "_inRadius"], true],
     layout: {
       "icon-image": buildAmenityIconExpression(),
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.3, 16, 0.5],
-      "icon-allow-overlap": true,
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.45, 16, 0.7],
+      "icon-allow-overlap": false,
     },
     paint: {
       "icon-color": "#fff",
       "icon-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 1],
+      "icon-opacity-transition": { duration: 0 },
     },
   });
 }
