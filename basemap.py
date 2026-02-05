@@ -24,11 +24,11 @@ def create_spatial_map(output_name='interactive_map.html'):
     # 1. Loading and Cleaning
     logging.info("Loading layers...")
     try:
-        buildings = gpd.read_file('./data/data/buildings.geojson')
-        trees = gpd.read_file('./data/data/sidewalks_and_trees.geojson')
-        amenities = gpd.read_file('./data/data/amenities.geojson')
-        parks = gpd.read_file('./data/data/parks_and_greenspaces.geojson')
-        neighborhoods = gpd.read_file('./data/data/neighborhoods.geojson')
+        buildings = gpd.read_file('./*/buildings.geojson')
+        trees = gpd.read_file('./*/sidewalks_and_trees.geojson')
+        amenities = gpd.read_file('./*/amenities.geojson')
+        parks = gpd.read_file('./*/parks_and_greenspaces.geojson')
+        neighborhoods = gpd.read_file('./*/neighborhoods.geojson')
     except Exception as e:
         logging.error(f"Error loading files: {e}")
         return
