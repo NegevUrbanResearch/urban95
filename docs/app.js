@@ -30,8 +30,19 @@ function getAmenityConfig(type) {
   return config || DEFAULT_CONFIG;
 }
 
-function createIconUrl(iconName, color) {
+function createIconUrl(iconName) {
   return `${ICONS_BASE}/${iconName}.svg`;
+}
+
+// Calculate appropriate zoom level to show the entire radius
+function getZoomForRadius(radiusM) {
+  // Approximate meters per pixel at zoom level 15 at equator: ~4.77m
+  // We want the radius to take up about 1/3 of the viewport width (roughly 200-300px)
+  const targetPixels = 250;
+  const metersPerPixelAtZoom15 = 4.77;
+  const metersPerPixel = radiusM / targetPixels;
+  const zoomDiff = Math.log2(metersPerPixelAtZoom15 / metersPerPixel);
+  return Math.min(Math.max(15 + zoomDiff, 13), 18);
 }
 
 const map = new maplibregl.Map({
@@ -126,10 +137,15 @@ let radiusM = 100;
 let allAmenityTypes = [];
 let typesWithData = new Set();
 let allAmenitiesData = null;
+let buildingsData = null;
+let buildingCentroids = [];  // Array of {lng, lat, properties, feature}
 let selectedMetric = "amenities";
 let selectedAmenityTypes = new Set(["all"]);
 let amenityMarkers = [];
+let amenityMarkerMap = new Map();  // Map from feature index to marker
 let showAmenities = true;
+let selectedBuildingCentroid = null;  // Currently selected building centroid
+let amenitiesInRadius = new Set();  // Set of amenity indices currently in radius
 
 function getMarkerSize() {
   const zoom = map.getZoom();
@@ -195,9 +211,10 @@ function updateBuildingColors() {
 function clearMarkers() {
   amenityMarkers.forEach(m => m.remove());
   amenityMarkers = [];
+  amenityMarkerMap.clear();
 }
 
-function createMarker(feature, size) {
+function createMarker(feature, size, featureIndex) {
   const coords = feature.geometry.coordinates;
   const props = feature.properties;
   const type = props.amenity_type || "";
@@ -205,6 +222,7 @@ function createMarker(feature, size) {
   
   const el = document.createElement("div");
   el.className = "amenity-marker";
+  el.dataset.featureIndex = featureIndex;
   el.style.width = size + "px";
   el.style.height = size + "px";
   el.style.backgroundColor = config.color;
@@ -223,25 +241,29 @@ function createMarker(feature, size) {
     .setLngLat(coords)
     .addTo(map);
   
-  el.addEventListener("click", (e) => {
-    e.stopPropagation();
+  el.addEventListener("mouseenter", (e) => {
     const typeName = props.top_classi || props.amenity_type || "Unknown";
     const sub = props.subcategor || "";
     const name = props.hebrew_nam || props.name || "";
     
-    let html = "";
-    if (name) {
-      html += `<div style="font-weight: 600; margin-bottom: 4px;">${name}</div>`;
-    }
-    html += `<div style="color: #6b7280; font-size: 11px;">${typeName}</div>`;
-    if (sub) {
-      html += `<div style="color: #9ca3af; font-size: 10px;">${sub}</div>`;
-    }
+    const lines = [];
+    if (name) lines.push(name);
+    lines.push(typeName);
+    if (sub) lines.push(sub);
     
-    new maplibregl.Popup({ offset: 15 })
-      .setLngLat(coords)
-      .setHTML(html)
-      .addTo(map);
+    tooltip.textContent = lines.join("\n");
+    tooltip.style.display = "block";
+    tooltip.style.left = (e.pageX + 12) + "px";
+    tooltip.style.top = (e.pageY + 12) + "px";
+  });
+  
+  el.addEventListener("mousemove", (e) => {
+    tooltip.style.left = (e.pageX + 12) + "px";
+    tooltip.style.top = (e.pageY + 12) + "px";
+  });
+  
+  el.addEventListener("mouseleave", () => {
+    tooltip.style.display = "none";
   });
   
   return marker;
@@ -249,20 +271,37 @@ function createMarker(feature, size) {
 
 function renderMarkers() {
   clearMarkers();
+  amenityMarkerMap.clear();
   
   if (!showAmenities || !allAmenitiesData) return;
   
   const size = getMarkerSize();
   
-  const features = allAmenitiesData.features.filter(f => {
-    if (selectedAmenityTypes.has("all")) return true;
-    const type = f.properties.amenity_type;
-    return selectedAmenityTypes.has(type);
-  });
-  
-  features.forEach(f => {
-    const marker = createMarker(f, size);
+  allAmenitiesData.features.forEach((f, index) => {
+    if (!selectedAmenityTypes.has("all")) {
+      const type = f.properties.amenity_type;
+      if (!selectedAmenityTypes.has(type)) return;
+    }
+    
+    const marker = createMarker(f, size, index);
     amenityMarkers.push(marker);
+    amenityMarkerMap.set(index, marker);
+    
+    // Apply highlight if this amenity is in the current radius
+    if (amenitiesInRadius.has(index)) {
+      marker.getElement().classList.add("in-radius");
+    }
+  });
+}
+
+function updateMarkerHighlights() {
+  amenityMarkerMap.forEach((marker, index) => {
+    const el = marker.getElement();
+    if (amenitiesInRadius.has(index)) {
+      el.classList.add("in-radius");
+    } else {
+      el.classList.remove("in-radius");
+    }
   });
 }
 
@@ -333,6 +372,11 @@ function handleFilterChange(e) {
   updateFilterLabel();
   renderMarkers();
   updateBuildingColors();
+  
+  // Re-apply highlight to amenities in radius after re-rendering
+  if (selectedBuildingCentroid) {
+    updateMarkerHighlights();
+  }
 }
 
 function setLayerVisibility(layerId, visible) {
@@ -401,6 +445,12 @@ document.addEventListener("click", function(e) {
   }
 });
 
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape") {
+    clearRadiusSelection();
+  }
+});
+
 allCheckbox.addEventListener("change", handleFilterChange);
 
 document.querySelectorAll('input[name="metric"]').forEach(radio => {
@@ -417,9 +467,133 @@ document.getElementById("layer-amenities").addEventListener("change", (e) => {
   }
 });
 
+// Find the closest building centroid to a given point
+function findClosestBuilding(lngLat) {
+  if (buildingCentroids.length === 0) return null;
+  
+  let closest = null;
+  let minDist = Infinity;
+  
+  buildingCentroids.forEach(b => {
+    const dist = turf.distance(
+      [lngLat.lng, lngLat.lat],
+      [b.lng, b.lat],
+      { units: "meters" }
+    );
+    if (dist < minDist) {
+      minDist = dist;
+      closest = b;
+    }
+  });
+  
+  return closest;
+}
+
+// Calculate which amenities are within the radius of a point
+function getAmenitiesInRadius(centerLng, centerLat, radiusM) {
+  if (!allAmenitiesData) return { indices: new Set(), counts: {} };
+  
+  const indices = new Set();
+  const counts = {};
+  
+  allAmenitiesData.features.forEach((f, index) => {
+    const coords = f.geometry.coordinates;
+    const dist = turf.distance(
+      [centerLng, centerLat],
+      coords,
+      { units: "meters" }
+    );
+    
+    if (dist <= radiusM) {
+      indices.add(index);
+      const type = f.properties.amenity_type || "other";
+      counts[type] = (counts[type] || 0) + 1;
+    }
+  });
+  
+  return { indices, counts };
+}
+
+// Select a building and show its radius with amenities
+function selectBuilding(building, flyTo = true) {
+  selectedBuildingCentroid = building;
+  
+  // Draw radius circle around building centroid
+  const radiusKm = radiusM / 1000;
+  const circle = turf.circle([building.lng, building.lat], radiusKm, { units: "kilometers", steps: 64 });
+  const source = map.getSource("radius-circle");
+  if (source) source.setData(circle);
+  
+  // Calculate amenities in radius
+  const result = getAmenitiesInRadius(building.lng, building.lat, radiusM);
+  amenitiesInRadius = result.indices;
+  
+  // Update marker highlights
+  updateMarkerHighlights();
+  
+  // Update the info panel with dynamic counts
+  updateRadiusInfo(result.counts);
+  
+  if (flyTo) {
+    // Calculate zoom level based on radius
+    const zoom = getZoomForRadius(radiusM);
+    
+    // Fly to the building centroid
+    map.flyTo({
+      center: [building.lng, building.lat],
+      zoom: zoom,
+      speed: 1.2,
+      curve: 1.42,
+      essential: true
+    });
+  }
+}
+
+// Update displayed radius info
+function updateRadiusInfo(counts) {
+  const infoPanel = document.getElementById("radius-info");
+  if (!infoPanel) return;
+  
+  let total = 0;
+  Object.values(counts).forEach(c => total += c);
+  
+  let html = `<div class="radius-count">${total} amenities within ${radiusM}m</div>`;
+  
+  if (Object.keys(counts).length > 0 && Object.keys(counts).length <= 6) {
+    html += '<div class="radius-breakdown">';
+    Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+      const config = getAmenityConfig(type);
+      html += `<span class="radius-type"><span style="color:${config.color}">●</span> ${config.label}: ${count}</span>`;
+    });
+    html += '</div>';
+  }
+  
+  infoPanel.innerHTML = html;
+  infoPanel.style.display = "block";
+}
+
+// Clear the radius selection
+function clearRadiusSelection() {
+  selectedBuildingCentroid = null;
+  amenitiesInRadius.clear();
+  
+  const source = map.getSource("radius-circle");
+  if (source) source.setData({ type: "FeatureCollection", features: [] });
+  
+  updateMarkerHighlights();
+  
+  const infoPanel = document.getElementById("radius-info");
+  if (infoPanel) infoPanel.style.display = "none";
+}
+
 rSlider.addEventListener("input", function () {
   radiusM = parseInt(this.value, 10);
   rVal.textContent = radiusM;
+  
+  // If a building is selected, update the radius visualization
+  if (selectedBuildingCentroid) {
+    selectBuilding(selectedBuildingCentroid, false);
+  }
 });
 
 map.on("zoom", function() {
@@ -429,17 +603,33 @@ map.on("zoom", function() {
 map.on("click", function (e) {
   if (e.originalEvent.target !== map.getCanvas()) return;
   
-  const center = e.lngLat;
-  const radiusKm = radiusM / 1000;
-  const circle = turf.circle([center.lng, center.lat], radiusKm, { units: "kilometers", steps: 64 });
-  const source = map.getSource("radius-circle");
-  if (source) source.setData(circle);
+  // Find closest building centroid
+  const closest = findClosestBuilding(e.lngLat);
+  if (closest) {
+    selectBuilding(closest, true);
+  }
 });
 
 map.on("load", function () {
   fetch(BUILDINGS_URL)
     .then(function (r) { return r.json(); })
-    .then(function () {
+    .then(function (fc) {
+      buildingsData = fc;
+      
+      // Compute centroids for all buildings
+      buildingCentroids = [];
+      (fc.features || []).forEach(function (f) {
+        if (f.geometry) {
+          const centroid = turf.centroid(f);
+          buildingCentroids.push({
+            lng: centroid.geometry.coordinates[0],
+            lat: centroid.geometry.coordinates[1],
+            properties: f.properties,
+            feature: f
+          });
+        }
+      });
+      
       updateBuildingColors();
     })
     .catch(function () {});

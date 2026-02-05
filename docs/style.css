@@ -400,7 +400,7 @@ body {
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   border: 2px solid #fff;
-  transition: transform 0.15s;
+  transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s;
 }
 
 .amenity-marker:hover {
@@ -408,6 +408,51 @@ body {
   z-index: 10;
 }
 
+.amenity-marker.in-radius {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.5), 0 0 12px rgba(251, 191, 36, 0.6);
+  z-index: 5;
+}
+
+.amenity-marker.in-radius:hover {
+  z-index: 15;
+}
+
 .amenity-marker img {
   filter: brightness(0) invert(1);
+}
+
+#radius-info {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding: 12px 18px;
+  z-index: 10;
+  text-align: center;
+  min-width: 200px;
+}
+
+.radius-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.radius-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: center;
+}
+
+.radius-type {
+  font-size: 11px;
+  color: #6b7280;
+  white-space: nowrap;
 }
