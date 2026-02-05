@@ -1020,45 +1020,7 @@ rSlider.addEventListener("input", function () {
 });
 
 map.on("click", function (e) {
-  // Check if clicked on an amenity point
-  const amenityFeatures = map.queryRenderedFeatures(e.point, { 
-    layers: ["amenity-points", "amenity-points-highlighted"] 
-  });
-  if (amenityFeatures.length > 0) {
-    const props = amenityFeatures[0].properties;
-    const coords = amenityFeatures[0].geometry.coordinates;
-    
-    const typeName = formatTypeName(props);
-    const sub = props.subcategor || "";
-    const name = props.hebrew_nam || props.name || "";
-    
-    let html = "";
-    if (name) html += `<div style="font-weight: 600; margin-bottom: 4px;">${name}</div>`;
-    html += `<div style="color: #6b7280; font-size: 11px;">${typeName}`;
-    if (sub) html += ` • ${sub}`;
-    html += "</div>";
-    
-    new maplibregl.Popup({ offset: 15 })
-      .setLngLat(coords)
-      .setHTML(html)
-      .addTo(map);
-    return;
-  }
-  
-  // Check if clicked on a tree point
-  const treeFeatures = map.queryRenderedFeatures(e.point, { 
-    layers: ["tree-points", "tree-points-highlighted"] 
-  });
-  if (treeFeatures.length > 0) {
-    const coords = treeFeatures[0].geometry.coordinates;
-    new maplibregl.Popup({ offset: 10 })
-      .setLngLat(coords)
-      .setHTML('<div style="color: #22c55e; font-size: 12px;">Tree</div>')
-      .addTo(map);
-    return;
-  }
-  
-  // Otherwise, find closest building
+  // Find closest building for radius analysis (click only used for this)
   if (e.originalEvent.target !== map.getCanvas()) return;
   
   const closest = findClosestBuilding(e.lngLat);
@@ -1130,6 +1092,31 @@ map.on("mouseleave", "amenity-points", () => {
 });
 
 map.on("mouseleave", "amenity-points-highlighted", () => {
+  tooltip.style.display = "none";
+});
+
+// Show tooltip on tree hover
+map.on("mousemove", "tree-points", (e) => {
+  if (e.features.length === 0) return;
+  tooltip.textContent = "Tree";
+  tooltip.style.display = "block";
+  tooltip.style.left = (e.point.x + 12) + "px";
+  tooltip.style.top = (e.point.y + 12) + "px";
+});
+
+map.on("mousemove", "tree-points-highlighted", (e) => {
+  if (e.features.length === 0) return;
+  tooltip.textContent = "Tree";
+  tooltip.style.display = "block";
+  tooltip.style.left = (e.point.x + 12) + "px";
+  tooltip.style.top = (e.point.y + 12) + "px";
+});
+
+map.on("mouseleave", "tree-points", () => {
+  tooltip.style.display = "none";
+});
+
+map.on("mouseleave", "tree-points-highlighted", () => {
   tooltip.style.display = "none";
 });
 
