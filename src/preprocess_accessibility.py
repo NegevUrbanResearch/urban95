@@ -37,6 +37,22 @@ AMENITY_KEEP_COLUMNS = [
     "geometry",
 ]
 
+# Columns to keep for trees (minimal - just need location)
+TREE_KEEP_COLUMNS = ["geometry"]
+
+# Columns to keep for buildings (remove display-only metadata)
+BUILDING_DROP_COLUMNS = [
+    "background",
+    "Entrances",
+    "Not_reside",
+    "Used",
+    "RuleID",
+    "Name",
+    "Shape_Leng",
+    "Shape_Area",
+    "height",
+]
+
 # Amenity types to exclude from output (invalid or useless)
 EXCLUDED_AMENITY_TYPES = {"none", "other", "private_establishment"}
 
@@ -157,6 +173,47 @@ def simplify_geometries(gdf: gpd.GeoDataFrame, tolerance_m: float) -> gpd.GeoDat
         simplified = simplified.to_crs(original_crs)
     
     return simplified
+
+
+def write_minimal_geojson(gdf: gpd.GeoDataFrame, path: Path, precision: int = 5) -> None:
+    """Writes GeoJSON with minimal overhead (no CRS, reduced precision).
+    
+    This produces smaller files than geopandas default output by:
+    - Omitting the CRS property (web maps default to WGS84)
+    - Omitting the 'name' property
+    - Using reduced coordinate precision
+    """
+    import json
+    from shapely.geometry import mapping
+    
+    features = []
+    for _, row in gdf.iterrows():
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+        
+        geom_json = mapping(geom)
+        geom_json = _round_geojson_coords(geom_json, precision)
+        
+        props = {k: v for k, v in row.items() if k != gdf.geometry.name and v is not None}
+        # Convert numpy types to native Python types
+        for k, v in props.items():
+            if hasattr(v, 'item'):
+                props[k] = v.item()
+        
+        features.append({
+            "type": "Feature",
+            "properties": props,
+            "geometry": geom_json
+        })
+    
+    geojson = {
+        "type": "FeatureCollection",
+        "features": features
+    }
+    
+    with open(path, 'w') as f:
+        json.dump(geojson, f, separators=(',', ':'))
 
 
 def reduce_coordinate_precision(gdf: gpd.GeoDataFrame, precision: int = 6) -> gpd.GeoDataFrame:
@@ -369,28 +426,45 @@ def compute_building_accessibility(
     # Simplify building geometries for web (reduces file size significantly)
     logging.info("Simplifying building geometries (tolerance: %.1fm)...", BUILDING_SIMPLIFY_TOLERANCE_M)
     buildings_web = simplify_geometries(buildings_wgs84, BUILDING_SIMPLIFY_TOLERANCE_M)
-    buildings_web = reduce_coordinate_precision(buildings_web, precision=6)
+    buildings_web = reduce_coordinate_precision(buildings_web, precision=5)
     
-    original_size = len(buildings_wgs84.to_json())
-    simplified_size = len(buildings_web.to_json())
-    reduction_pct = (1 - simplified_size / original_size) * 100
-    logging.info("Building file size reduced by %.1f%% (%.1fMB -> %.1fMB)", 
-                 reduction_pct, original_size / 1e6, simplified_size / 1e6)
+    # Drop unused columns from buildings
+    cols_to_drop = [c for c in BUILDING_DROP_COLUMNS if c in buildings_web.columns]
+    if cols_to_drop:
+        buildings_web = buildings_web.drop(columns=cols_to_drop)
+        logging.info("Dropped %d unused columns from buildings: %s", len(cols_to_drop), cols_to_drop)
     
-    buildings_web.to_file(DOCS_DATA_DIR / "buildings_accessibility.geojson", driver="GeoJSON")
+    # Remove zero-value amenity columns to reduce file size
+    amen_cols = [c for c in buildings_web.columns if c.startswith("amen_")]
+    for col in amen_cols:
+        if buildings_web[col].sum() == 0:
+            buildings_web = buildings_web.drop(columns=[col])
+            logging.info("Dropped zero-sum column: %s", col)
     
-    # Also reduce coordinate precision for other layers
-    amenities_web = reduce_coordinate_precision(amenities_filtered, precision=6)
-    amenities_web.to_file(DOCS_DATA_DIR / "amenities_all.geojson", driver="GeoJSON")
+    # Write minimal GeoJSON (no CRS metadata, compact format)
+    logging.info("Writing optimized GeoJSON files...")
+    write_minimal_geojson(buildings_web, DOCS_DATA_DIR / "buildings_accessibility.geojson", precision=5)
+    buildings_file_size = (DOCS_DATA_DIR / "buildings_accessibility.geojson").stat().st_size
+    logging.info("Buildings: %.1fMB (%d features)", buildings_file_size / 1e6, len(buildings_web))
+    
+    # Amenities with minimal output
+    write_minimal_geojson(amenities_filtered, DOCS_DATA_DIR / "amenities_all.geojson", precision=5)
+    amenities_file_size = (DOCS_DATA_DIR / "amenities_all.geojson").stat().st_size
+    logging.info("Amenities: %.1fMB (%d features)", amenities_file_size / 1e6, len(amenities_filtered))
     
     if trees_wgs84 is not None:
-        trees_web = reduce_coordinate_precision(trees_wgs84, precision=6)
-        trees_web.to_file(DOCS_DATA_DIR / "trees.geojson", driver="GeoJSON")
+        # Strip all properties from trees - only need geometry for visualization
+        trees_web = trees_wgs84[TREE_KEEP_COLUMNS].copy()
+        write_minimal_geojson(trees_web, DOCS_DATA_DIR / "trees.geojson", precision=5)
+        trees_file_size = (DOCS_DATA_DIR / "trees.geojson").stat().st_size
+        logging.info("Trees: %.1fMB (%d features, geometry only)", trees_file_size / 1e6, len(trees_web))
+    
     if parks_wgs84 is not None:
         # Also simplify park geometries (usually large polygons, can use higher tolerance)
         parks_web = simplify_geometries(parks_wgs84, PARK_SIMPLIFY_TOLERANCE_M)
-        parks_web = reduce_coordinate_precision(parks_web, precision=6)
-        parks_web.to_file(DOCS_DATA_DIR / "parks.geojson", driver="GeoJSON")
+        write_minimal_geojson(parks_web, DOCS_DATA_DIR / "parks.geojson", precision=5)
+        parks_file_size = (DOCS_DATA_DIR / "parks.geojson").stat().st_size
+        logging.info("Parks: %.1fMB (%d features)", parks_file_size / 1e6, len(parks_web))
     
     logging.info("Accessibility preprocessing complete.")
 

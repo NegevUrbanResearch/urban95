@@ -177,6 +177,7 @@ let selectedBuildingCentroid = null;
 let amenitiesInRadiusIds = new Set();
 let treesInRadiusIds = new Set();
 let iconsLoaded = false;
+let treesLoadStarted = false;  // Track if tree loading has been triggered
 
 // Loading screen elements
 const loadingScreen = document.getElementById("loading-screen");
@@ -285,6 +286,29 @@ async function loadAmenityIcons() {
   
   await Promise.all(loadPromises);
   iconsLoaded = true;
+}
+
+// Lazy load trees when zoomed in (trees only visible at zoom 14+)
+function loadTreesIfNeeded() {
+  if (treesLoadStarted || allTreesData) return;
+  treesLoadStarted = true;
+  
+  fetch(TREES_URL).then(r => r.ok ? r.json() : null).then(function(treesData) {
+    if (!treesData) return;
+    allTreesData = treesData;
+    
+    // Rebuild filter items to include trees
+    const types = allAmenityTypes.slice();
+    buildFilterItems(types);
+    updateTreesSource();
+    
+    // Re-select building if one was selected (to update tree counts)
+    if (selectedBuildingCentroid) {
+      selectBuilding(selectedBuildingCentroid, false);
+    }
+  }).catch(function() {
+    console.warn("Failed to load trees");
+  });
 }
 
 // Update amenities source (without trees)
@@ -1171,13 +1195,9 @@ map.on("load", async function () {
     updateLoadingProgress();
   });
   
-  // Load trees and amenities separately
-  setLoadingStatus("Loading amenities and trees...");
-  Promise.all([
-    fetch(TREES_URL).then(r => r.ok ? r.json() : null),
-    fetch(AMENITIES_ALL_URL).then(r => r.json())
-  ]).then(function ([treesData, amenitiesData]) {
-    allTreesData = treesData;
+  // Load amenities first (trees are lazy-loaded when needed since they're only visible at zoom 14+)
+  setLoadingStatus("Loading amenities...");
+  fetch(AMENITIES_ALL_URL).then(r => r.json()).then(function (amenitiesData) {
     allAmenitiesData = amenitiesData;
     
     // Get amenity types for filter
@@ -1199,19 +1219,23 @@ map.on("load", async function () {
     });
     
     buildFilterItems(types);
-    
-    // Update both sources
     updateAmenitiesSource();
-    updateTreesSource();
     
-    loadingState.trees = true;
     loadingState.amenities = true;
     updateLoadingProgress();
+    
+    // Check if we should load trees now (if already zoomed in)
+    if (map.getZoom() >= 13) {
+      loadTreesIfNeeded();
+    }
   }).catch(function () {
-    loadingState.trees = true;
     loadingState.amenities = true;
     updateLoadingProgress();
   });
+  
+  // Mark trees as loaded for progress bar (they load lazily)
+  loadingState.trees = true;
+  updateLoadingProgress();
 
   map.getCanvas().style.cursor = "";
 });
@@ -1292,3 +1316,10 @@ modalTabs.forEach(tab => {
 if (!localStorage.getItem("urban95-modal-seen")) {
   showModal();
 }
+
+// Lazy load trees when zoomed in far enough
+map.on("zoomend", function() {
+  if (map.getZoom() >= 13) {
+    loadTreesIfNeeded();
+  }
+});
