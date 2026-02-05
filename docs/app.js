@@ -130,13 +130,12 @@ const allCheckbox = filterPopup.querySelector('input[value="all"]');
 const tooltip = document.getElementById("tooltip");
 const rSlider = document.getElementById("r-slider");
 const rVal = document.getElementById("r-val");
-const amenityLegendItems = document.querySelector(".amenity-legend-items");
-const amenityLegend = document.getElementById("amenity-legend");
 
 let radiusM = 100;
 let allAmenityTypes = [];
 let typesWithData = new Set();
 let allAmenitiesData = null;
+let allTreesData = null;
 let buildingsData = null;
 let buildingCentroids = [];  // Array of {lng, lat, properties, feature}
 let selectedMetric = "amenities";
@@ -373,9 +372,9 @@ function handleFilterChange(e) {
   renderMarkers();
   updateBuildingColors();
   
-  // Re-apply highlight to amenities in radius after re-rendering
+  // Update radius selection if a building is selected
   if (selectedBuildingCentroid) {
-    updateMarkerHighlights();
+    selectBuilding(selectedBuildingCentroid, false);
   }
 }
 
@@ -389,32 +388,6 @@ function formatArea(areaM2) {
     return (areaM2 / 10000).toFixed(2) + " ha";
   }
   return Math.round(areaM2).toLocaleString() + " m²";
-}
-
-function buildAmenityLegend(types) {
-  amenityLegendItems.innerHTML = "";
-  
-  const typesWithPoints = types.filter(t => typesWithData.has(t));
-  
-  if (typesWithPoints.length === 0) {
-    amenityLegend.style.display = "none";
-    return;
-  }
-  
-  amenityLegend.style.display = "block";
-  
-  typesWithPoints.forEach(type => {
-    const config = getAmenityConfig(type);
-    const item = document.createElement("div");
-    item.className = "amenity-legend-item";
-    item.innerHTML = `
-      <span class="amenity-legend-icon" style="background: ${config.color}">
-        <img src="${createIconUrl(config.icon)}" onerror="this.src='${createIconUrl('marker')}'"/>
-      </span>
-      <span>${config.label}</span>
-    `;
-    amenityLegendItems.appendChild(item);
-  });
 }
 
 function buildFilterItems(types) {
@@ -514,6 +487,28 @@ function getAmenitiesInRadius(centerLng, centerLat, radiusM) {
   return { indices, counts };
 }
 
+// Calculate number of trees within the radius of a point
+function getTreesInRadius(centerLng, centerLat, radiusM) {
+  if (!allTreesData) return 0;
+  
+  let count = 0;
+  
+  allTreesData.features.forEach(f => {
+    const coords = f.geometry.coordinates;
+    const dist = turf.distance(
+      [centerLng, centerLat],
+      coords,
+      { units: "meters" }
+    );
+    
+    if (dist <= radiusM) {
+      count++;
+    }
+  });
+  
+  return count;
+}
+
 // Select a building and show its radius with amenities
 function selectBuilding(building, flyTo = true) {
   selectedBuildingCentroid = building;
@@ -549,19 +544,90 @@ function selectBuilding(building, flyTo = true) {
   }
 }
 
+// Pluralize a label based on count
+function pluralize(label, count) {
+  if (count === 1) {
+    // Singular forms
+    if (label === "Healthcare") return "healthcare facility";
+    if (label === "Education") return "education facility";
+    if (label === "Commercial") return "commercial establishment";
+    if (label === "Services") return "service";
+    if (label === "Religious") return "religious institution";
+    if (label === "Recreation") return "recreation facility";
+    if (label === "Public") return "public institution";
+    if (label === "Fitness") return "fitness facility";
+    if (label === "Transport") return "transport stop";
+    if (label === "Financial") return "financial service";
+    if (label === "Tourism") return "tourism facility";
+    if (label === "Senior") return "senior facility";
+    return label.toLowerCase();
+  } else {
+    // Plural forms
+    if (label === "Healthcare") return "healthcare facilities";
+    if (label === "Education") return "education facilities";
+    if (label === "Commercial") return "commercial establishments";
+    if (label === "Services") return "services";
+    if (label === "Religious") return "religious institutions";
+    if (label === "Recreation") return "recreation facilities";
+    if (label === "Public") return "public institutions";
+    if (label === "Fitness") return "fitness facilities";
+    if (label === "Transport") return "transport stops";
+    if (label === "Financial") return "financial services";
+    if (label === "Tourism") return "tourism facilities";
+    if (label === "Senior") return "senior facilities";
+    return label.toLowerCase() + "s";
+  }
+}
+
 // Update displayed radius info
 function updateRadiusInfo(counts) {
   const infoPanel = document.getElementById("radius-info");
   if (!infoPanel) return;
   
+  // Calculate total based on current filter
   let total = 0;
-  Object.values(counts).forEach(c => total += c);
+  let filteredCounts = {};
   
-  let html = `<div class="radius-count">${total} amenities within ${radiusM}m</div>`;
+  if (selectedAmenityTypes.has("all") || selectedAmenityTypes.size === 0) {
+    // All types selected - sum everything
+    Object.entries(counts).forEach(([type, count]) => {
+      total += count;
+      filteredCounts[type] = count;
+    });
+  } else {
+    // Specific types selected - only count those
+    Array.from(selectedAmenityTypes).forEach(type => {
+      const count = counts[type] || 0;
+      total += count;
+      if (count > 0) {
+        filteredCounts[type] = count;
+      }
+    });
+  }
   
-  if (Object.keys(counts).length > 0 && Object.keys(counts).length <= 6) {
+  let html = '<div class="radius-count">';
+  
+  if (selectedAmenityTypes.has("all") || selectedAmenityTypes.size === 0) {
+    // All amenities selected
+    html += `${total} ${total === 1 ? "amenity" : "amenities"} within ${radiusM}m`;
+  } else if (selectedAmenityTypes.size === 1) {
+    // Single amenity type selected
+    const type = Array.from(selectedAmenityTypes)[0];
+    const config = AMENITY_TYPE_CONFIG[type];
+    const label = config ? config.label : type.replace(/_/g, " ");
+    html += `${total} ${pluralize(label, total)} within ${radiusM}m`;
+  } else {
+    // Multiple specific types selected
+    html += `${total} of selected amenity types within ${radiusM}m`;
+  }
+  
+  html += '</div>';
+  
+  // Show breakdown if multiple types and not too many
+  const filteredKeys = Object.keys(filteredCounts);
+  if (filteredKeys.length > 1 && filteredKeys.length <= 6) {
     html += '<div class="radius-breakdown">';
-    Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+    Object.entries(filteredCounts).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
       const config = getAmenityConfig(type);
       html += `<span class="radius-type"><span style="color:${config.color}">●</span> ${config.label}: ${count}</span>`;
     });
@@ -639,7 +705,10 @@ map.on("load", function () {
   }).catch(function () {});
   
   fetch(TREES_URL).then(function (r) { return r.ok ? r.json() : null; }).then(function (fc) {
-    if (fc && map.getSource("trees")) map.getSource("trees").setData(fc);
+    if (fc) {
+      allTreesData = fc;
+      if (map.getSource("trees")) map.getSource("trees").setData(fc);
+    }
   }).catch(function () {});
 
   fetch(AMENITIES_ALL_URL)
@@ -665,7 +734,6 @@ map.on("load", function () {
       });
       
       buildFilterItems(types);
-      buildAmenityLegend(types);
       renderMarkers();
     })
     .catch(function () {});
@@ -673,44 +741,12 @@ map.on("load", function () {
   map.getCanvas().style.cursor = "";
 });
 
-map.on("mousemove", "buildings-fill", function (e) {
+map.on("mouseenter", "buildings-fill", function () {
   map.getCanvas().style.cursor = "pointer";
-  const p = e.features[0].properties;
-  
-  const lines = [];
-  
-  if (selectedMetric === "trees") {
-    const count = p.num_trees != null ? p.num_trees : 0;
-    lines.push("Trees nearby: " + count);
-  } else {
-    if (selectedAmenityTypes.has("all") || selectedAmenityTypes.size === 0) {
-      const count = p.num_amenities != null ? p.num_amenities : 0;
-      lines.push("Amenities nearby: " + count);
-    } else {
-      let total = 0;
-      Array.from(selectedAmenityTypes).forEach(type => {
-        const key = "amen_" + type;
-        const val = p[key] != null ? parseInt(p[key]) : 0;
-        total += val;
-        const config = AMENITY_TYPE_CONFIG[type];
-        const label = config ? config.label : type.replace(/_/g, " ");
-        lines.push(label + ": " + val);
-      });
-      if (selectedAmenityTypes.size > 1) {
-        lines.push("Total: " + total);
-      }
-    }
-  }
-  
-  tooltip.textContent = lines.join("\n");
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.point.x + 12) + "px";
-  tooltip.style.top = (e.point.y + 12) + "px";
 });
 
 map.on("mouseleave", "buildings-fill", function () {
   map.getCanvas().style.cursor = "";
-  tooltip.style.display = "none";
 });
 
 map.on("mousemove", "parks-fill", function (e) {
