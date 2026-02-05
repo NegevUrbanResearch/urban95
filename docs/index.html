@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Urban95 Accessibility Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <link
+      href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <div id="controls">
+      <div class="panel-header">
+        <h2>Urban95</h2>
+        <span class="subtitle">Accessibility Explorer</span>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Accessibility Metric</div>
+        <div class="metric-options">
+          <label class="radio-option">
+            <input type="radio" name="metric" value="amenities" checked />
+            <span class="radio-custom"></span>
+            <span>Amenities</span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="metric" value="trees" />
+            <span class="radio-custom"></span>
+            <span>Trees</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="section" id="amenity-filter-section">
+        <div class="section-title">Filter Amenities</div>
+        <div class="filter-dropdown">
+          <button id="filter-btn" class="filter-btn">
+            <span id="filter-label">All Types</span>
+            <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
+          </button>
+          <div id="filter-popup" class="filter-popup">
+            <label class="filter-item">
+              <input type="checkbox" value="all" checked />
+              <span>All Types</span>
+            </label>
+            <div class="filter-divider"></div>
+            <div id="filter-items"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Analysis Radius</div>
+        <div class="radius-row">
+          <input id="r-slider" type="range" min="50" max="500" value="100" />
+          <span class="radius-val"><span id="r-val">100</span>m</span>
+        </div>
+        <div class="hint">Click map to show circle</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Show on Map</div>
+        <label class="toggle">
+          <input type="checkbox" id="layer-trees" />
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">Trees</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="layer-amenities" checked />
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">Amenities</span>
+        </label>
+      </div>
+
+      <div class="section legend-section">
+        <div class="section-title">Building Colors</div>
+        <div class="legend-gradient"></div>
+        <div class="legend-labels">
+          <span>0</span>
+          <span>5</span>
+          <span>10</span>
+          <span>20+</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="amenity-legend">
+      <div class="amenity-legend-items"></div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

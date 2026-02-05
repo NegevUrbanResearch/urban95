@@ -1,0 +1,28 @@
+{
+  "name": "urban95",
+  "version": "1.0.0",
+  "description": "A spatial analysis project to visualize and assess how child-friendly different parts of Beer Sheva's streetscape are. This project is a collaboration between **Urban95** and **NUR** as part of the \"Cities for Children\" initiative.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "http-server . -c-1",
+    "start:docs": "http-server docs -c-1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NegevUrbanResearch/urban95.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/NegevUrbanResearch/urban95/issues"
+  },
+  "homepage": "https://github.com/NegevUrbanResearch/urban95#readme",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

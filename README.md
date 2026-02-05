@@ -1,51 +1,68 @@
 # Cities for Children: Beer Sheva Streetscape Analysis
 
-A spatial analysis project to visualize and assess how child-friendly different parts of Beer Sheva's streetscape are. This project is a collaboration between **Urban95** and **NUR** as part of the "Cities for Children" initiative. 
+A spatial analysis project to visualize and assess how child-friendly different parts of Beer Sheva's streetscape are. This project is a collaboration between **Urban95** and **NUR** as part of the "Cities for Children" initiative.
 
 ## Getting Started
 
-New users should first unzip `data.zip` to extract the required data files, then install dependencies:
+1. Unzip `data.zip` to get the `data/` folder with GeoJSON layers (e.g. `buildings.geojson`, `amenities.geojson`).
+2. Install Python dependencies and (optional) Node for running the site locally:
 
 ```bash
 pip install -r requirements.txt
+npm install
 ```
 
 ## Project Structure
 
 ```
 urban95/
-├── data/
-│   ├── buildings/              # Building footprints shapefile and associated files
-│   ├── roads/                  # Road network shapefile and associated files
-│   ├── sidewalks_and_trees/    # Sidewalk and tree infrastructure shapefile and associated files
-│   ├── amenities/              # Amenities shapefile and associated files
-│   ├── parks_and_greenspaces/  # Parks and greenspace shapefile and associated files
-│   └── population/             # Population demographics shapefile and associated files
+├── data/                 # GeoJSON layers (from data.zip)
+├── output/               # Preprocessed GeoJSON for the web map (generated)
+├── filtered/             # Optional: distance-filtered layers (from src/filter.py)
+├── docs/                 # Static site for GitHub Pages (MapLibre GL map)
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
+├── src/
+│   ├── preprocess_accessibility.py   # Build accessibility metrics per building
+│   └── filter.py                     # Optional: filter layers by distance to neighborhoods
+├── requirements.txt
+├── package.json
 └── README.md
 ```
 
-## Data Description
+## Preprocessing (Python)
 
-### Spatial Data
+From the repo root, run the accessibility preprocessing. This writes `output/buildings_accessibility.geojson` and `output/amenities_<type>.geojson` for the web map:
 
-- **Buildings** (`data/buildings/`): Building footprint data for Beer Sheva
-- **Roads** (`data/roads/`): Road network and street infrastructure
-- **Sidewalks and Trees** (`data/sidewalks_and_trees/`): Sidewalk infrastructure and tree coverage data
-- **Amenities** (`data/amenities/`): Points of interest and amenities relevant to child-friendliness
-- **Parks and Greenspaces** (`data/parks_and_greenspaces/`): Public parks and green areas
-- **Population** (`data/population/`): Population demographics and statistics
+```bash
+python src/preprocess_accessibility.py
+```
 
-## Analysis Goals
+Optional: filter all layers to a distance from neighborhoods (writes to `filtered/`):
 
-The project aims to:
+```bash
+python src/filter.py
+```
 
-1. Map the spatial distribution of child-friendly infrastructure
-2. Identify areas with high/low child-friendliness scores
-3. Analyze accessibility to greenery, amenities, etc.
+## Web Map (vanilla JS + MapLibre GL)
 
-## Next Steps
+- **Local:** Serve the repo root so `docs/` can load `output/` GeoJSON. Then open the map:
 
-- Exploratory Data Analysis (EDA) of spatial datasets
-- Geospatial analysis and visualization
-- Development of child-friendliness metrics
-- Creation of interactive maps and visualizations
+```bash
+npm run start
+# Open http://localhost:8080/docs/index.html
+```
+
+- **GitHub Pages:** Publish from the `docs/` folder. Either commit the contents of `output/` into `docs/output/` so the app’s `../output/` (or `output/`) paths work, or host the GeoJSON elsewhere and set the URLs in `docs/app.js`.
+
+The map shows building footprints colored by number of amenities within radius, with an optional heatmap per amenity type.
+
+## Data
+
+- **Buildings:** Building footprints.
+- **Amenities:** Points of interest (type in `top_classi`); used for per-building counts and heatmaps.
+
+## License
+
+ISC
