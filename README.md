@@ -1,5 +1,7 @@
 # Cities for Children: Beer Sheva Streetscape Analysis
 
+**[View Live Map](https://negevurbanresearch.github.io/urban95/)**
+
 A spatial analysis project to visualize and assess how child-friendly different parts of Beer Sheva's streetscape are. This project is a collaboration between **Urban95** and **NUR** as part of the "Cities for Children" initiative.
 
 ## Getting Started

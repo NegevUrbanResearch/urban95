@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Urban95 Accessibility Map</title>
+    <title>Cities for Children</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <link
@@ -16,38 +16,25 @@
 
     <div id="controls">
       <div class="panel-header">
-        <h2>Urban95</h2>
+        <h2>Cities for Children</h2>
         <span class="subtitle">Accessibility Explorer</span>
-      </div>
-
-      <div class="section">
-        <div class="section-title">Accessibility Metric</div>
-        <div class="metric-options">
-          <label class="radio-option">
-            <input type="radio" name="metric" value="amenities" checked />
-            <span class="radio-custom"></span>
-            <span>Amenities</span>
-          </label>
-          <label class="radio-option">
-            <input type="radio" name="metric" value="trees" />
-            <span class="radio-custom"></span>
-            <span>Trees</span>
-          </label>
-        </div>
+        <button id="info-btn" class="info-btn" title="About this map">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="2.5"></circle>
+            <rect x="9.5" y="10" width="5" height="12" rx="1"></rect>
+          </svg>
+        </button>
       </div>
 
       <div class="section" id="amenity-filter-section">
-        <div class="section-title">Filter Amenities</div>
+        <div class="section-title">Filter</div>
         <div class="filter-dropdown">
           <button id="filter-btn" class="filter-btn">
             <span id="filter-label">All Types</span>
             <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
           </button>
           <div id="filter-popup" class="filter-popup">
-            <label class="filter-item">
-              <input type="checkbox" value="all" checked />
-              <span>All Types</span>
-            </label>
+            <button id="select-all-btn" class="select-all-btn">Select All</button>
             <div class="filter-divider"></div>
             <div id="filter-items"></div>
           </div>
@@ -63,24 +50,10 @@
         <div class="hint">Click map to analyze nearest building</div>
       </div>
 
-      <div class="section">
-        <div class="section-title">Show on Map</div>
-        <label class="toggle">
-          <input type="checkbox" id="layer-trees" />
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">Trees</span>
-        </label>
-        <label class="toggle">
-          <input type="checkbox" id="layer-amenities" checked />
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">Amenities</span>
-        </label>
-      </div>
-
       <div class="section legend-section">
         <div class="section-title">Building Colors</div>
         <div class="legend-gradient"></div>
-        <div class="legend-labels">
+        <div id="legend-labels" class="legend-labels">
           <span>0</span>
           <span>5</span>
           <span>10</span>
@@ -92,6 +65,59 @@
     <div id="radius-info"></div>
 
     <div id="tooltip"></div>
+
+    <div id="info-modal" class="modal">
+      <div class="modal-content">
+        <button id="modal-close" class="modal-close">&times;</button>
+        
+        <div class="modal-header">
+          <div class="modal-title">
+            <h2>Cities for Children</h2>
+            <p>Beer Sheva Accessibility Map</p>
+          </div>
+        </div>
+
+        <div class="modal-tabs">
+          <button class="modal-tab active" data-tab="howto">How to Use</button>
+          <button class="modal-tab" data-tab="about">About</button>
+        </div>
+
+        <div class="modal-tab-content active" id="tab-howto">
+          <ul class="howto-list">
+            <li>
+              <strong>Building Colors</strong>
+              <p>Each building is colored based on how many amenities are nearby. Green indicates high accessibility with many amenities within walking distance, while red indicates fewer nearby options.</p>
+            </li>
+            <li>
+              <strong>Analyze a Building</strong>
+              <p>Click anywhere on the map to select the nearest building. A circle will appear showing the analysis radius, and you'll see a count of all amenities within that area in the popup panel below.</p>
+            </li>
+            <li>
+              <strong>Filter Amenity Types</strong>
+              <p>Use the filter dropdown to focus on specific types of amenities such as healthcare, education, or recreation.</p>
+            </li>
+            <li>
+              <strong>Adjust Analysis Radius</strong>
+              <p>Use the radius slider to change the walking distance used for analysis, from 50 meters up to 500 meters.</p>
+            </li>
+          </ul>
+        </div>
+
+        <div class="modal-tab-content" id="tab-about">
+          <p>This map is a collaboration between <strong>Urban95</strong> and <strong>NUR</strong> as part of the "Cities for Children" initiative.</p>
+          <div class="about-section">
+            <strong>Methodology</strong>
+            <p>Each building's accessibility score is calculated by counting amenities within the specified walking radius. Trees are included in the analysis but weighted at 1/4 the value of other amenities.</p>
+          </div>
+          <div class="about-section">
+            <strong>Data </strong>
+            <p>The map uses building footprints, points of interest including healthcare facilities, educational institutions, commercial areas, and recreational spaces, as well as street tree locations throughout the city.</p>
+          </div>
+        </div>
+
+        <button id="modal-start" class="modal-start-btn">Start Exploring</button>
+      </div>
+    </div>
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
