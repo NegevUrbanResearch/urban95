@@ -40,37 +40,59 @@ AMENITY_KEEP_COLUMNS = [
 # Amenity types to exclude from output (invalid or useless)
 EXCLUDED_AMENITY_TYPES = {"none", "other", "private_establishment"}
 
+# Geometry simplification tolerance in meters (for web output)
+# Higher values = smaller files but less detailed shapes
+BUILDING_SIMPLIFY_TOLERANCE_M = 1.5  # 1.5 meter tolerance for buildings (good balance of size/detail)
+PARK_SIMPLIFY_TOLERANCE_M = 2.0  # Parks can use higher tolerance since they're larger shapes
 
-def repair_hebrew_encoding(text: str) -> str:
-    """Attempts to repair garbled Hebrew text (Mojibake from double UTF-8 encoding).
+
+def repair_text_encoding(text: str) -> str:
+    """Attempts to repair garbled text (Mojibake from double UTF-8 encoding).
     
     This fixes text that was UTF-8 encoded, then those bytes were incorrectly 
     interpreted as Latin-1, and then re-saved as UTF-8. This reverses that process
     by encoding to Latin-1 (to recover original UTF-8 bytes) then decoding as UTF-8.
+    
+    Handles both Hebrew (× patterns) and Arabic (Ø patterns) double-encoding.
     """
     if not isinstance(text, str) or not text:
         return text
     
-    # Check if text contains Mojibake patterns (double-encoded UTF-8 typically starts with ×)
-    if "×" not in text:
+    # Check if text contains Mojibake patterns:
+    # - Hebrew double-encoded UTF-8 typically contains ×
+    # - Arabic double-encoded UTF-8 typically contains Ø
+    # - Other RTL scripts may have similar patterns with Ù, Ú, etc.
+    mojibake_indicators = ("×", "Ø", "Ù", "Ú", "Û", "Ü")
+    
+    if not any(indicator in text for indicator in mojibake_indicators):
         return text
     
     try:
         # Reverse the double encoding: encode to latin-1, decode as utf-8
         repaired = text.encode("latin-1", errors="ignore").decode("utf-8", errors="ignore")
+        
+        # Verify the repair worked (repaired text should have actual RTL characters)
+        # If repair produces empty or same result, return original
+        if not repaired or repaired == text:
+            return text
+            
         return repaired
     except (UnicodeDecodeError, UnicodeEncodeError):
         return text
 
 
+# Keep old function name as alias for backwards compatibility
+repair_hebrew_encoding = repair_text_encoding
+
+
 def repair_dataframe_encoding(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Repairs Hebrew encoding in string columns of a GeoDataFrame."""
+    """Repairs text encoding (Hebrew, Arabic, etc.) in string columns of a GeoDataFrame."""
     gdf = gdf.copy()
     
     for col in gdf.columns:
         if gdf[col].dtype == object:
             gdf[col] = gdf[col].apply(
-                lambda x: repair_hebrew_encoding(x) if isinstance(x, str) else x
+                lambda x: repair_text_encoding(x) if isinstance(x, str) else x
             )
     
     return gdf
@@ -106,6 +128,86 @@ def load_layer(path: Path, target_crs: int) -> gpd.GeoDataFrame:
     return gdf
 
 
+def simplify_geometries(gdf: gpd.GeoDataFrame, tolerance_m: float) -> gpd.GeoDataFrame:
+    """Simplifies polygon geometries using Douglas-Peucker algorithm.
+    
+    Args:
+        gdf: GeoDataFrame with polygon geometries (should be in a metric CRS for accurate tolerance)
+        tolerance_m: Simplification tolerance in meters. Higher = more simplification.
+    
+    Returns:
+        GeoDataFrame with simplified geometries
+    """
+    simplified = gdf.copy()
+    original_crs = simplified.crs
+    
+    # Convert to metric CRS if not already (EPSG:2039 is Israel TM Grid)
+    if original_crs and original_crs.to_epsg() == 4326:
+        simplified = simplified.to_crs(epsg=2039)
+    
+    # Make geometries valid before simplifying (fixes self-intersections, etc.)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        simplified["geometry"] = simplified.geometry.make_valid()
+        # Simplify geometries, preserving topology
+        simplified["geometry"] = simplified.geometry.simplify(tolerance_m, preserve_topology=True)
+    
+    # Convert back to original CRS if we changed it
+    if original_crs and original_crs.to_epsg() == 4326:
+        simplified = simplified.to_crs(original_crs)
+    
+    return simplified
+
+
+def reduce_coordinate_precision(gdf: gpd.GeoDataFrame, precision: int = 6) -> gpd.GeoDataFrame:
+    """Reduces coordinate precision to save file size.
+    
+    Args:
+        gdf: GeoDataFrame in WGS84 (EPSG:4326)
+        precision: Number of decimal places (6 = ~10cm precision, 5 = ~1m precision)
+    
+    Returns:
+        GeoDataFrame with rounded coordinates
+    """
+    from shapely import wkt
+    from shapely.geometry import shape, mapping
+    import json
+    
+    reduced = gdf.copy()
+    
+    def round_coords(geom):
+        if geom is None or geom.is_empty:
+            return geom
+        # Convert to GeoJSON, round coordinates, convert back
+        geojson = mapping(geom)
+        rounded = _round_geojson_coords(geojson, precision)
+        return shape(rounded)
+    
+    reduced["geometry"] = reduced.geometry.apply(round_coords)
+    return reduced
+
+
+def _round_geojson_coords(geojson: dict, precision: int) -> dict:
+    """Recursively rounds coordinates in a GeoJSON geometry dict."""
+    geom_type = geojson.get("type")
+    coords = geojson.get("coordinates")
+    
+    if coords is None:
+        return geojson
+    
+    def round_coord(c):
+        if isinstance(c, (list, tuple)):
+            if len(c) >= 2 and isinstance(c[0], (int, float)):
+                # This is a coordinate pair/triple
+                return [round(x, precision) for x in c]
+            else:
+                # This is a list of coordinates or rings
+                return [round_coord(x) for x in c]
+        return c
+    
+    return {"type": geom_type, "coordinates": round_coord(coords)}
+
+
 def compute_building_accessibility(
     buffer_m: float = 100.0,
     amenity_type_column: str = "top_classi",
@@ -123,7 +225,7 @@ def compute_building_accessibility(
     buildings = load_layer(buildings_path, target_crs=crs_metric)
     amenities = load_layer(amenities_path, target_crs=crs_metric)
     
-    logging.info("Repairing Hebrew text encoding...")
+    logging.info("Repairing text encoding (Hebrew/Arabic)...")
     amenities = repair_dataframe_encoding(amenities)
 
     trees_gdf = None
@@ -264,13 +366,31 @@ def compute_building_accessibility(
     logging.info("Writing web files to docs/data/...")
     DOCS_DATA_DIR.mkdir(exist_ok=True)
     
-    buildings_wgs84.to_file(DOCS_DATA_DIR / "buildings_accessibility.geojson", driver="GeoJSON")
-    amenities_filtered.to_file(DOCS_DATA_DIR / "amenities_all.geojson", driver="GeoJSON")
+    # Simplify building geometries for web (reduces file size significantly)
+    logging.info("Simplifying building geometries (tolerance: %.1fm)...", BUILDING_SIMPLIFY_TOLERANCE_M)
+    buildings_web = simplify_geometries(buildings_wgs84, BUILDING_SIMPLIFY_TOLERANCE_M)
+    buildings_web = reduce_coordinate_precision(buildings_web, precision=6)
+    
+    original_size = len(buildings_wgs84.to_json())
+    simplified_size = len(buildings_web.to_json())
+    reduction_pct = (1 - simplified_size / original_size) * 100
+    logging.info("Building file size reduced by %.1f%% (%.1fMB -> %.1fMB)", 
+                 reduction_pct, original_size / 1e6, simplified_size / 1e6)
+    
+    buildings_web.to_file(DOCS_DATA_DIR / "buildings_accessibility.geojson", driver="GeoJSON")
+    
+    # Also reduce coordinate precision for other layers
+    amenities_web = reduce_coordinate_precision(amenities_filtered, precision=6)
+    amenities_web.to_file(DOCS_DATA_DIR / "amenities_all.geojson", driver="GeoJSON")
     
     if trees_wgs84 is not None:
-        trees_wgs84.to_file(DOCS_DATA_DIR / "trees.geojson", driver="GeoJSON")
+        trees_web = reduce_coordinate_precision(trees_wgs84, precision=6)
+        trees_web.to_file(DOCS_DATA_DIR / "trees.geojson", driver="GeoJSON")
     if parks_wgs84 is not None:
-        parks_wgs84.to_file(DOCS_DATA_DIR / "parks.geojson", driver="GeoJSON")
+        # Also simplify park geometries (usually large polygons, can use higher tolerance)
+        parks_web = simplify_geometries(parks_wgs84, PARK_SIMPLIFY_TOLERANCE_M)
+        parks_web = reduce_coordinate_precision(parks_web, precision=6)
+        parks_web.to_file(DOCS_DATA_DIR / "parks.geojson", driver="GeoJSON")
     
     logging.info("Accessibility preprocessing complete.")
 

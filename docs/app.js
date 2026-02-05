@@ -154,10 +154,15 @@ const filterPopup = document.getElementById("filter-popup");
 const filterLabel = document.getElementById("filter-label");
 const filterItems = document.getElementById("filter-items");
 const selectAllBtn = document.getElementById("select-all-btn");
+const filterBackdrop = document.getElementById("filter-backdrop");
 const legendLabels = document.getElementById("legend-labels");
 const tooltip = document.getElementById("tooltip");
 const rSlider = document.getElementById("r-slider");
 const rVal = document.getElementById("r-val");
+
+// Check if we're on a touch device
+const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
+                      window.matchMedia("(max-width: 480px)").matches;
 
 let radiusM = 100;
 let allAmenityTypes = [];
@@ -173,6 +178,59 @@ let amenitiesInRadiusIds = new Set();
 let treesInRadiusIds = new Set();
 let iconsLoaded = false;
 
+// Loading screen elements
+const loadingScreen = document.getElementById("loading-screen");
+const loadingStatus = document.querySelector(".loading-status");
+const loadingProgressBar = document.querySelector(".loading-progress-bar");
+
+// Track loading progress
+const loadingState = {
+  icons: false,
+  buildings: false,
+  parks: false,
+  trees: false,
+  amenities: false,
+  mapReady: false
+};
+
+function updateLoadingProgress() {
+  const items = Object.values(loadingState);
+  const loaded = items.filter(Boolean).length;
+  const total = items.length;
+  const percent = Math.round((loaded / total) * 100);
+  
+  if (loadingProgressBar) {
+    loadingProgressBar.style.width = percent + "%";
+  }
+  
+  // Check if everything is loaded
+  if (loaded === total) {
+    hideLoadingScreen();
+  }
+}
+
+function setLoadingStatus(message) {
+  if (loadingStatus) {
+    loadingStatus.textContent = message;
+  }
+}
+
+function hideLoadingScreen() {
+  if (loadingScreen && !loadingScreen.classList.contains("hidden")) {
+    setTimeout(() => {
+      loadingScreen.classList.add("hidden");
+    }, 300);
+  }
+}
+
+// Fallback: hide loading screen after 30 seconds regardless
+setTimeout(() => {
+  if (loadingScreen && !loadingScreen.classList.contains("hidden")) {
+    console.warn("Loading timeout - forcing hide");
+    hideLoadingScreen();
+  }
+}, 30000);
+
 // Load all amenity icons into the map
 async function loadAmenityIcons() {
   const iconNames = new Set();
@@ -181,20 +239,47 @@ async function loadAmenityIcons() {
   
   const loadPromises = Array.from(iconNames).map(iconName => {
     return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        if (!map.hasImage(iconName)) {
-          // Use SDF: true for tinting icons white
-          map.addImage(iconName, img, { sdf: true });
-        }
-        resolve();
-      };
-      img.onerror = () => {
-        console.warn(`Failed to load icon: ${iconName}`);
-        resolve();
-      };
-      img.src = `${ICONS_BASE}/${iconName}.svg`;
+      // Try loading via fetch first (more reliable on mobile)
+      fetch(`${ICONS_BASE}/${iconName}.svg`)
+        .then(response => {
+          if (!response.ok) throw new Error('Network response was not ok');
+          return response.text();
+        })
+        .then(svgText => {
+          // Create image from SVG blob for better mobile compatibility
+          const blob = new Blob([svgText], { type: 'image/svg+xml' });
+          const url = URL.createObjectURL(blob);
+          const img = new Image();
+          img.onload = () => {
+            if (!map.hasImage(iconName)) {
+              map.addImage(iconName, img, { sdf: true });
+            }
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          img.onerror = () => {
+            console.warn(`Failed to create image for icon: ${iconName}`);
+            URL.revokeObjectURL(url);
+            resolve();
+          };
+          img.src = url;
+        })
+        .catch(() => {
+          // Fallback: try direct image loading
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            if (!map.hasImage(iconName)) {
+              map.addImage(iconName, img, { sdf: true });
+            }
+            resolve();
+          };
+          img.onerror = () => {
+            console.warn(`Failed to load icon: ${iconName}`);
+            resolve();
+          };
+          img.src = `${ICONS_BASE}/${iconName}.svg`;
+        });
     });
   });
   
@@ -631,21 +716,71 @@ function buildFilterItems(types) {
   updateFilterLabel();
 }
 
+// Track if we just opened the popup (to prevent immediate close on touch)
+let popupJustOpened = false;
+
+function openFilterPopup() {
+  filterPopup.classList.add("show");
+  filterBtn.classList.add("open");
+  if (isTouchDevice && filterBackdrop) {
+    filterBackdrop.classList.add("show");
+  }
+  popupJustOpened = true;
+  setTimeout(function() { popupJustOpened = false; }, 100);
+}
+
+function closeFilterPopup() {
+  filterPopup.classList.remove("show");
+  filterBtn.classList.remove("open");
+  if (filterBackdrop) {
+    filterBackdrop.classList.remove("show");
+  }
+}
+
 filterBtn.addEventListener("click", function(e) {
+  e.preventDefault();
   e.stopPropagation();
-  filterPopup.classList.toggle("show");
-  filterBtn.classList.toggle("open");
+  
+  const isOpen = filterPopup.classList.contains("show");
+  if (isOpen) {
+    closeFilterPopup();
+  } else {
+    openFilterPopup();
+  }
 });
 
+// Handle touch separately to prevent issues
+filterBtn.addEventListener("touchend", function(e) {
+  e.preventDefault();
+});
+
+// Close popup when clicking backdrop
+if (filterBackdrop) {
+  filterBackdrop.addEventListener("click", closeFilterPopup);
+  filterBackdrop.addEventListener("touchstart", function(e) {
+    e.preventDefault();
+    closeFilterPopup();
+  });
+}
+
 document.addEventListener("click", function(e) {
-  if (!filterPopup.contains(e.target) && e.target !== filterBtn) {
-    filterPopup.classList.remove("show");
-    filterBtn.classList.remove("open");
+  if (popupJustOpened) return;
+  if (!filterPopup.contains(e.target) && e.target !== filterBtn && !filterBtn.contains(e.target)) {
+    closeFilterPopup();
+  }
+});
+
+// Close popup on touch outside on mobile
+document.addEventListener("touchstart", function(e) {
+  if (popupJustOpened) return;
+  if (!filterPopup.contains(e.target) && e.target !== filterBtn && !filterBtn.contains(e.target) && e.target !== filterBackdrop) {
+    closeFilterPopup();
   }
 });
 
 document.addEventListener("keydown", function(e) {
   if (e.key === "Escape") {
+    closeFilterPopup();
     clearRadiusSelection();
   }
 });
@@ -999,12 +1134,19 @@ map.on("mouseleave", "amenity-points-highlighted", () => {
 });
 
 map.on("load", async function () {
+  loadingState.mapReady = true;
+  updateLoadingProgress();
+  
   // Load icons first
+  setLoadingStatus("Loading icons...");
   await loadAmenityIcons();
+  loadingState.icons = true;
+  updateLoadingProgress();
   
   // Add amenity layers after icons are loaded
   addAmenityLayers();
   
+  setLoadingStatus("Loading buildings...");
   fetch(BUILDINGS_URL)
     .then(function (r) { return r.json(); })
     .then(function (fc) {
@@ -1024,14 +1166,26 @@ map.on("load", async function () {
       });
       
       updateBuildingColors();
+      loadingState.buildings = true;
+      updateLoadingProgress();
     })
-    .catch(function () {});
+    .catch(function () {
+      loadingState.buildings = true;
+      updateLoadingProgress();
+    });
 
+  setLoadingStatus("Loading parks...");
   fetch(PARKS_URL).then(function (r) { return r.ok ? r.json() : null; }).then(function (fc) {
     if (fc && map.getSource("parks")) map.getSource("parks").setData(fc);
-  }).catch(function () {});
+    loadingState.parks = true;
+    updateLoadingProgress();
+  }).catch(function () {
+    loadingState.parks = true;
+    updateLoadingProgress();
+  });
   
   // Load trees and amenities separately
+  setLoadingStatus("Loading amenities and trees...");
   Promise.all([
     fetch(TREES_URL).then(r => r.ok ? r.json() : null),
     fetch(AMENITIES_ALL_URL).then(r => r.json())
@@ -1062,7 +1216,15 @@ map.on("load", async function () {
     // Update both sources
     updateAmenitiesSource();
     updateTreesSource();
-  }).catch(function () {});
+    
+    loadingState.trees = true;
+    loadingState.amenities = true;
+    updateLoadingProgress();
+  }).catch(function () {
+    loadingState.trees = true;
+    loadingState.amenities = true;
+    updateLoadingProgress();
+  });
 
   map.getCanvas().style.cursor = "";
 });

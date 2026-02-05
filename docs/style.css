@@ -7,6 +7,76 @@ body {
   background: #f5f5f5;
 }
 
+/* Loading screen */
+#loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.4s ease-out, visibility 0.4s ease-out;
+}
+
+#loading-screen.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.loading-content {
+  text-align: center;
+  color: #fff;
+  padding: 20px;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.loading-status {
+  font-size: 14px;
+  opacity: 0.8;
+  margin-bottom: 20px;
+}
+
+.loading-progress {
+  width: 200px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.loading-progress-bar {
+  height: 100%;
+  background: #fff;
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.3s ease-out;
+}
+
 #map {
   position: fixed;
   top: 0;
@@ -157,6 +227,22 @@ body {
   display: block;
 }
 
+/* Backdrop for mobile filter popup */
+.filter-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 150;
+}
+
+.filter-backdrop.show {
+  display: block;
+}
+
 .filter-item {
   display: flex;
   align-items: center;
@@ -215,6 +301,7 @@ body {
   border-radius: 2px;
   background: #e5e7eb;
   appearance: none;
+  touch-action: none;
 }
 
 .radius-row input[type="range"]::-webkit-slider-thumb {
@@ -666,4 +753,267 @@ body {
 .modal-start-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 480px) {
+  #controls {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-width: none;
+  }
+
+  .panel-header {
+    padding: 12px 14px;
+  }
+
+  .panel-header h2 {
+    font-size: 15px;
+  }
+
+  .section {
+    padding: 10px 14px;
+  }
+
+  .section-title {
+    font-size: 9px;
+  }
+
+  .filter-btn {
+    padding: 12px 14px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  .filter-dropdown {
+    position: relative;
+    z-index: 100;
+  }
+
+  .filter-popup {
+    max-height: 50vh;
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 16px 16px 0 0;
+    padding: 12px;
+    padding-top: 20px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+    z-index: 200;
+  }
+
+  .filter-popup::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    background: #d1d5db;
+    border-radius: 2px;
+  }
+
+  .filter-item {
+    padding: 14px 12px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  .filter-item input {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+  }
+
+  .select-all-btn {
+    padding: 12px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  .radius-row input[type="range"] {
+    height: 6px;
+  }
+
+  .radius-row input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .radius-row input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .radius-val {
+    font-size: 14px;
+  }
+
+  .hint {
+    font-size: 11px;
+  }
+
+  #radius-info {
+    left: 10px;
+    right: 10px;
+    bottom: 16px;
+    transform: none;
+    min-width: 0;
+    padding: 10px 14px;
+  }
+
+  .radius-count {
+    font-size: 13px;
+  }
+
+  .radius-breakdown {
+    gap: 6px 10px;
+  }
+
+  .radius-type {
+    font-size: 10px;
+  }
+
+  /* Modal mobile adjustments */
+  .modal {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .modal-content {
+    max-height: 90vh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .modal-header {
+    padding: 20px 18px 16px;
+  }
+
+  .modal-title h2 {
+    font-size: 16px;
+  }
+
+  .modal-tabs {
+    padding: 0 18px;
+  }
+
+  .modal-tab {
+    padding: 12px 0;
+    font-size: 12px;
+  }
+
+  .modal-tab-content {
+    padding: 18px;
+    max-height: calc(90vh - 220px);
+    overflow-y: auto;
+  }
+
+  .howto-list li {
+    margin-bottom: 14px;
+  }
+
+  .howto-list strong,
+  .about-section strong {
+    font-size: 12px;
+  }
+
+  .howto-list p,
+  .about-section p,
+  .modal-tab-content > p {
+    font-size: 12px;
+  }
+
+  .modal-start-btn {
+    margin: 0 18px 18px;
+    width: calc(100% - 36px);
+    padding: 12px;
+    font-size: 13px;
+  }
+
+  .modal-close {
+    top: 12px;
+    right: 12px;
+  }
+
+  /* Hide tooltip on touch devices - hover doesn't work well */
+  #tooltip {
+    display: none !important;
+  }
+
+  /* Adjust map controls position */
+  .maplibregl-ctrl-top-right {
+    top: auto !important;
+    bottom: 80px !important;
+    right: 10px !important;
+  }
+}
+
+/* Tablet adjustments */
+@media (min-width: 481px) and (max-width: 768px) {
+  #controls {
+    width: 220px;
+  }
+
+  #radius-info {
+    max-width: 320px;
+  }
+
+  .modal-content {
+    max-width: 420px;
+  }
+}
+
+/* Touch-friendly improvements for all touch devices */
+@media (hover: none) and (pointer: coarse) {
+  .filter-btn {
+    min-height: 44px;
+  }
+
+  .filter-item {
+    padding: 14px 12px;
+    min-height: 44px;
+  }
+
+  .filter-item input {
+    width: 22px;
+    height: 22px;
+  }
+
+  .radius-row input[type="range"]::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .radius-row input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+
+  .select-all-btn {
+    padding: 12px 10px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  /* Hide tooltip on touch - use popups instead */
+  #tooltip {
+    display: none !important;
+  }
+
+  /* Prevent text selection on interactive elements */
+  .filter-btn,
+  .filter-item,
+  .select-all-btn,
+  .modal-tab,
+  .info-btn {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
 }

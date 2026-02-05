@@ -3,7 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <title>Cities for Children</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
     <link
       href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
@@ -12,6 +15,17 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <div id="loading-screen">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <div class="loading-title">Cities for Children</div>
+        <div class="loading-status">Loading map data...</div>
+        <div class="loading-progress">
+          <div class="loading-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="map"></div>
 
     <div id="controls">
@@ -65,6 +79,8 @@
     <div id="radius-info"></div>
 
     <div id="tooltip"></div>
+
+    <div id="filter-backdrop" class="filter-backdrop"></div>
 
     <div id="info-modal" class="modal">
       <div class="modal-content">
