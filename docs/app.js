@@ -165,6 +165,18 @@ const filterBackdrop = document.getElementById("filter-backdrop");
 const legendLabels = document.getElementById("legend-labels");
 const tooltip = document.getElementById("tooltip");
 const radiusToggle = document.getElementById("radius-toggle");
+const showPointsToggle = document.getElementById("show-points-toggle");
+
+const AMENITY_POINT_LAYER_IDS = [
+  "tree-heatmap",
+  "amenity-heatmap",
+  "tree-points-highlighted",
+  "tree-points",
+  "amenity-points-highlighted",
+  "amenity-points",
+  "amenity-icons-highlighted",
+  "amenity-icons",
+];
 
 // Check if we're on a touch device
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
@@ -627,6 +639,15 @@ function updateLegendLabels(breakpoints) {
   legendLabels.innerHTML = labels.map(l => `<span>${l}</span>`).join("");
 }
 
+function setAmenityPointsVisibility(visible) {
+  const v = visible ? "visible" : "none";
+  AMENITY_POINT_LAYER_IDS.forEach((id) => {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, "visibility", v);
+    }
+  });
+}
+
 function updateBuildingColors() {
   if (!buildingsData) return;
   
@@ -878,6 +899,12 @@ document.addEventListener("keydown", function(e) {
 });
 
 selectAllBtn.addEventListener("click", toggleSelectAll);
+
+if (showPointsToggle) {
+  showPointsToggle.addEventListener("change", function () {
+    setAmenityPointsVisibility(this.checked);
+  });
+}
 
 // Prevent clicks inside the popup from bubbling to document (which would close it)
 filterPopup.addEventListener("click", function(e) {
@@ -1245,7 +1272,8 @@ map.on("load", async function () {
   
   // Add amenity layers after icons are loaded
   addAmenityLayers();
-  
+  setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
+
   setLoadingStatus("Loading buildings...");
   fetch(BUILDINGS_URL)
     .then(function (r) { return r.json(); })
