@@ -164,8 +164,7 @@ const selectAllBtn = document.getElementById("select-all-btn");
 const filterBackdrop = document.getElementById("filter-backdrop");
 const legendLabels = document.getElementById("legend-labels");
 const tooltip = document.getElementById("tooltip");
-const rSlider = document.getElementById("r-slider");
-const rVal = document.getElementById("r-val");
+const radiusToggle = document.getElementById("radius-toggle");
 
 // Check if we're on a touch device
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
@@ -396,18 +395,20 @@ function addAmenityLayers() {
     maxzoom: 15,
     paint: {
       "heatmap-weight": 0.25,
-      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
+      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 14, 2],
       "heatmap-color": [
         "interpolate",
         ["linear"],
         ["heatmap-density"],
-        0, "rgba(0, 0, 0, 0)",
-        0.2, "rgba(134, 239, 172, 0.4)",
-        0.5, "rgba(74, 222, 128, 0.6)",
-        1, "rgba(34, 197, 94, 0.8)"
+        0,   "rgba(0, 0, 0, 0)",
+        0.1, "rgba(187, 247, 208, 0.15)",
+        0.3, "rgba(134, 239, 172, 0.25)",
+        0.5, "rgba(74, 222, 128, 0.35)",
+        0.7, "rgba(52, 211, 153, 0.42)",
+        1,   "rgba(34, 197, 94, 0.5)"
       ],
-      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 10, 14, 18],
-      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 1, 15, 0],
+      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 12, 14, 22],
+      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 15, 0],
     },
   });
 
@@ -419,20 +420,22 @@ function addAmenityLayers() {
     maxzoom: 15,
     paint: {
       "heatmap-weight": 1,
-      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 14, 1.5],
+      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 14, 2],
       "heatmap-color": [
         "interpolate",
         ["linear"],
         ["heatmap-density"],
-        0, "rgba(0, 0, 0, 0)",
-        0.1, "rgba(239, 68, 68, 0.5)",
-        0.3, "rgba(249, 115, 22, 0.6)",
-        0.5, "rgba(234, 179, 8, 0.7)",
-        0.7, "rgba(132, 204, 22, 0.8)",
-        1, "rgba(34, 197, 94, 0.9)"
+        0,    "rgba(0, 0, 0, 0)",
+        0.05, "rgba(254, 202, 202, 0.15)",
+        0.15, "rgba(239, 68, 68, 0.25)",
+        0.3,  "rgba(249, 115, 22, 0.32)",
+        0.45, "rgba(234, 179, 8, 0.38)",
+        0.6,  "rgba(163, 230, 53, 0.42)",
+        0.8,  "rgba(74, 222, 128, 0.48)",
+        1,    "rgba(34, 197, 94, 0.55)"
       ],
-      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 15, 14, 25],
-      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 1, 15, 0],
+      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 14, 30],
+      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 15, 0],
     },
   });
 
@@ -513,7 +516,7 @@ function addAmenityLayers() {
     filter: ["==", ["get", "_inRadius"], true],
     layout: {
       "icon-image": buildAmenityIconExpression(),
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.5, 16, 0.8],
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.9, 16, 1.4],
       "icon-allow-overlap": false,
     },
     paint: {
@@ -532,7 +535,7 @@ function addAmenityLayers() {
     filter: ["!=", ["get", "_inRadius"], true],
     layout: {
       "icon-image": buildAmenityIconExpression(),
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.45, 16, 0.7],
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.7, 16, 1.1],
       "icon-allow-overlap": false,
     },
     paint: {
@@ -543,7 +546,7 @@ function addAmenityLayers() {
   });
 }
 
-// Calculate nice round breakpoints for the color scale
+// Calculate logarithmically-spaced breakpoints for the color scale
 function calculateBreakpoints(maxVal) {
   if (maxVal <= 0) return [0, 1, 2, 3, 5];
   
@@ -558,12 +561,14 @@ function calculateBreakpoints(maxVal) {
   else if (maxVal <= 500) niceMax = 500;
   else niceMax = Math.ceil(maxVal / 100) * 100;
   
-  // Create 4 breakpoints (0, 1/4, 1/2, 3/4, max)
-  const quarter = Math.round(niceMax / 4);
-  const half = Math.round(niceMax / 2);
-  const threeQuarter = Math.round(niceMax * 3 / 4);
+  // Logarithmic spacing: more color variation at low counts
+  // Round intermediate values to nearest 5 for cleaner legend labels
+  const round5 = v => Math.max(5, Math.round(v / 5) * 5);
+  const b1 = round5(Math.pow(niceMax, 0.25));
+  const b2 = Math.max(b1 + 5, round5(Math.pow(niceMax, 0.5)));
+  const b3 = Math.max(b2 + 5, round5(Math.pow(niceMax, 0.75)));
   
-  return [0, quarter, half, threeQuarter, niceMax];
+  return [0, b1, b2, b3, niceMax];
 }
 
 // Get max value from buildings data for selected types (trees count 1/4, use 1/5 of max for outliers)
@@ -1099,37 +1104,20 @@ function clearRadiusSelection() {
   if (infoPanel) infoPanel.style.display = "none";
 }
 
-// Debounce helper for expensive operations
-let radiusUpdateTimeout = null;
-function debouncedRadiusUpdate() {
-  if (radiusUpdateTimeout) {
-    clearTimeout(radiusUpdateTimeout);
-  }
-  radiusUpdateTimeout = setTimeout(function() {
-    if (selectedBuildingCentroid) {
-      selectBuilding(selectedBuildingCentroid, false);
-    }
-  }, 50);
-}
-
-rSlider.addEventListener("input", function () {
-  radiusM = parseInt(this.value, 10);
-  rVal.textContent = radiusM;
+radiusToggle.addEventListener("click", function (e) {
+  const btn = e.target.closest(".radius-opt");
+  if (!btn) return;
   
-  // Update circle geometry immediately for visual feedback
+  radiusM = parseInt(btn.dataset.radius, 10);
+  
+  // Update active state
+  radiusToggle.querySelectorAll(".radius-opt").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  
+  // Update circle and recalculate
   if (selectedBuildingCentroid) {
-    const radiusKm = radiusM / 1000;
-    const circle = turf.circle(
-      [selectedBuildingCentroid.lng, selectedBuildingCentroid.lat], 
-      radiusKm, 
-      { units: "kilometers", steps: 64 }
-    );
-    const source = map.getSource("radius-circle");
-    if (source) source.setData(circle);
+    selectBuilding(selectedBuildingCentroid, false);
   }
-  
-  // Debounce the expensive calculations
-  debouncedRadiusUpdate();
 });
 
 map.on("click", function (e) {

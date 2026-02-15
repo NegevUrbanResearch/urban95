@@ -58,9 +58,10 @@
 
         <div class="section" id="radius-section">
           <div class="section-title">Radius</div>
-          <div class="radius-row">
-            <input id="r-slider" type="range" min="50" max="500" value="100" />
-            <span class="radius-val"><span id="r-val">100</span>m</span>
+          <div class="radius-toggle" id="radius-toggle">
+            <button class="radius-opt active" data-radius="100">100m</button>
+            <button class="radius-opt" data-radius="300">300m</button>
+            <button class="radius-opt" data-radius="500">500m</button>
           </div>
           <div class="hint">Click map to analyze nearest building</div>
         </div>
@@ -116,7 +117,7 @@
             </li>
             <li>
               <strong>Adjust Analysis Radius</strong>
-              <p>Use the radius slider to change the walking distance used for analysis, from 50 meters up to 500 meters.</p>
+              <p>Use the radius slider to switch between 100, 300, or 500 meter walking distances for the analysis.</p>
             </li>
           </ul>
         </div>
@@ -125,7 +126,7 @@
           <p>This map is a collaboration between <strong>Urban95</strong> and <strong>NUR</strong> as part of the "Cities for Children" initiative.</p>
           <div class="about-section">
             <strong>Methodology</strong>
-            <p>Each building's accessibility score is calculated by counting amenities within the specified walking radius. Trees are included in the analysis but weighted at 1/4 the value of other amenities.</p>
+            <p>Each building's accessibility score is calculated by counting amenities within the specified walking radius (100, 300, or 500 meters). Trees are included in the analysis but weighted at 1/4 the value of other amenities. Building colors use a logarithmic scale so that differences at lower counts are more visible.</p>
           </div>
           <div class="about-section">
             <strong>Data </strong>

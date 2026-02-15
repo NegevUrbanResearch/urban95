@@ -289,46 +289,36 @@ body {
   background: #e5e7eb;
 }
 
-.radius-row {
+.radius-toggle {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
 }
 
-.radius-row input[type="range"] {
+.radius-opt {
   flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: #e5e7eb;
-  appearance: none;
-  touch-action: none;
-}
-
-.radius-row input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(59, 130, 246, 0.4);
-}
-
-.radius-row input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
+  padding: 6px 0;
   border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.radius-val {
-  font-size: 12px;
-  font-weight: 600;
+.radius-opt:hover {
+  color: #374151;
+}
+
+.radius-opt.active {
+  background: #fff;
   color: #3b82f6;
-  min-width: 40px;
-  text-align: right;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .hint {
@@ -844,40 +834,23 @@ body {
     background: #ebebeb;
   }
 
-  /* Radius control - compact pill */
-  .radius-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: #f5f5f5;
+  /* Radius control - segmented toggle */
+  .radius-toggle {
+    background: #f0f0f0;
     border-radius: 10px;
-    padding: 0 10px;
     height: 40px;
+    padding: 3px;
   }
 
-  .radius-row input[type="range"] {
-    flex: 1;
-    min-width: 60px;
-    height: 4px;
-    background: #d4d4d4;
-  }
-
-  .radius-row input[type="range"]::-webkit-slider-thumb {
-    width: 20px;
-    height: 20px;
-  }
-
-  .radius-row input[type="range"]::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-  }
-
-  .radius-val {
+  .radius-opt {
     font-size: 13px;
-    font-weight: 600;
-    min-width: 40px;
-    text-align: right;
-    color: #3b82f6;
+    border-radius: 8px;
+    padding: 0;
+    line-height: 34px;
+  }
+
+  .radius-opt:active {
+    background: rgba(255, 255, 255, 0.5);
   }
 
   /* Hide legend on mobile - keep UI minimal */
@@ -1100,15 +1073,14 @@ body {
     min-height: 36px;
   }
 
-  .radius-row {
+  .radius-toggle {
     height: 36px;
-    padding: 0 8px;
-    gap: 6px;
+    padding: 2px;
   }
 
-  .radius-val {
-    font-size: 12px;
-    min-width: 36px;
+  .radius-opt {
+    font-size: 11px;
+    line-height: 32px;
   }
 
   #map {
@@ -1133,7 +1105,8 @@ body {
   .filter-item,
   .select-all-btn,
   .modal-tab,
-  .info-btn {
+  .info-btn,
+  .radius-opt {
     -webkit-user-select: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
