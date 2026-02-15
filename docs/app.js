@@ -400,12 +400,17 @@ function addAmenityLayers() {
         "interpolate",
         ["linear"],
         ["heatmap-density"],
-        0,   "rgba(0, 0, 0, 0)",
-        0.1, "rgba(187, 247, 208, 0.15)",
-        0.3, "rgba(134, 239, 172, 0.25)",
-        0.5, "rgba(74, 222, 128, 0.35)",
-        0.7, "rgba(52, 211, 153, 0.42)",
-        1,   "rgba(34, 197, 94, 0.5)"
+        0,    "rgba(0, 0, 0, 0)",
+        0.05, "rgba(220, 252, 231, 0.08)",
+        0.1,  "rgba(187, 247, 208, 0.15)",
+        0.2,  "rgba(163, 243, 191, 0.2)",
+        0.3,  "rgba(134, 239, 172, 0.25)",
+        0.4,  "rgba(104, 232, 152, 0.3)",
+        0.5,  "rgba(74, 222, 128, 0.35)",
+        0.6,  "rgba(62, 216, 140, 0.38)",
+        0.7,  "rgba(52, 211, 153, 0.42)",
+        0.85, "rgba(42, 204, 124, 0.46)",
+        1,    "rgba(34, 197, 94, 0.5)"
       ],
       "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 12, 14, 22],
       "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 15, 0],
@@ -426,12 +431,19 @@ function addAmenityLayers() {
         ["linear"],
         ["heatmap-density"],
         0,    "rgba(0, 0, 0, 0)",
+        0.03, "rgba(254, 226, 226, 0.08)",
         0.05, "rgba(254, 202, 202, 0.15)",
+        0.1,  "rgba(248, 143, 143, 0.2)",
         0.15, "rgba(239, 68, 68, 0.25)",
+        0.22, "rgba(244, 92, 45, 0.28)",
         0.3,  "rgba(249, 115, 22, 0.32)",
+        0.38, "rgba(242, 147, 15, 0.35)",
         0.45, "rgba(234, 179, 8, 0.38)",
+        0.52, "rgba(199, 205, 30, 0.4)",
         0.6,  "rgba(163, 230, 53, 0.42)",
+        0.7,  "rgba(119, 226, 90, 0.45)",
         0.8,  "rgba(74, 222, 128, 0.48)",
+        0.9,  "rgba(54, 210, 111, 0.52)",
         1,    "rgba(34, 197, 94, 0.55)"
       ],
       "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 14, 30],
@@ -1114,9 +1126,9 @@ radiusToggle.addEventListener("click", function (e) {
   radiusToggle.querySelectorAll(".radius-opt").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
   
-  // Update circle and recalculate
+  // Update circle and recalculate, fly to show full radius
   if (selectedBuildingCentroid) {
-    selectBuilding(selectedBuildingCentroid, false);
+    selectBuilding(selectedBuildingCentroid, true);
   }
 });
 
