@@ -320,6 +320,9 @@ function loadTreesIfNeeded() {
     buildFilterItems(types);
     updateTreesSource();
     
+    // Update building colors now that trees are available and filter is rebuilt
+    updateBuildingColors();
+    
     // Re-select building if one was selected (to update tree counts)
     if (selectedBuildingCentroid) {
       selectBuilding(selectedBuildingCentroid, false);
@@ -586,19 +589,38 @@ function calculateBreakpoints(maxVal) {
   else niceMax = Math.ceil(maxVal / 100) * 100;
   
   // Logarithmic spacing: more color variation at low counts
-  // Round intermediate values to nearest 5 for cleaner legend labels
-  const round5 = v => Math.max(5, Math.round(v / 5) * 5);
-  const b1 = round5(Math.pow(niceMax, 0.25));
-  const b2 = Math.max(b1 + 5, round5(Math.pow(niceMax, 0.5)));
-  const b3 = Math.max(b2 + 5, round5(Math.pow(niceMax, 0.75)));
+  // Calculate intermediate breakpoints using logarithmic distribution
+  let b1 = Math.max(1, Math.round(Math.pow(niceMax, 0.25)));
+  let b2 = Math.max(b1 + 1, Math.round(Math.pow(niceMax, 0.5)));
+  let b3 = Math.max(b2 + 1, Math.round(Math.pow(niceMax, 0.75)));
   
-  return [0, b1, b2, b3, niceMax];
+  // Ensure all breakpoints are strictly ascending and less than niceMax
+  b1 = Math.min(b1, Math.max(1, niceMax - 3));
+  b2 = Math.min(Math.max(b2, b1 + 1), Math.max(b1 + 1, niceMax - 2));
+  b3 = Math.min(Math.max(b3, b2 + 1), Math.max(b2 + 1, niceMax - 1));
+  
+  // Build the breakpoints array: [0, b1, b2, b3, niceMax]
+  const breakpoints = [0, b1, b2, b3, niceMax];
+  
+  // Final validation: ensure strictly ascending order
+  for (let i = 1; i < breakpoints.length; i++) {
+    if (breakpoints[i] <= breakpoints[i - 1]) {
+      // Adjust to ensure strict ascending order
+      breakpoints[i] = breakpoints[i - 1] + 1;
+    }
+  }
+  
+  // Ensure the last breakpoint equals niceMax (may have been adjusted)
+  breakpoints[breakpoints.length - 1] = Math.max(breakpoints[breakpoints.length - 1], niceMax);
+  
+  return breakpoints;
 }
 
 // Get max value from buildings data for selected types (trees count 1/4, use 1/5 of max for outliers)
 function getMaxValueForSelection() {
-  if (!buildingsData || !buildingsData.features) return 20;
+  if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return 20;
   if (selectedAmenityTypes.size === 0) return 0;
+  if (allFilterTypes.length === 0) return 20;
   
   let maxVal = 0;
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
@@ -624,6 +646,7 @@ function getMaxValueForSelection() {
   });
   
   // Use 1/5 of max to handle outliers - most buildings will show meaningful color variation
+  // Ensure we return at least 5 to avoid zero breakpoints
   return Math.max(Math.round(maxVal / 5), 5);
 }
 
@@ -649,7 +672,10 @@ function setAmenityPointsVisibility(visible) {
 }
 
 function updateBuildingColors() {
-  if (!buildingsData) return;
+  if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return;
+  
+  // Wait for filter types to be initialized
+  if (allFilterTypes.length === 0) return;
   
   // If nothing selected, all buildings show as lowest accessibility (red)
   if (selectedAmenityTypes.size === 0) {
@@ -664,7 +690,33 @@ function updateBuildingColors() {
   
   // Calculate max value and breakpoints
   const maxVal = getMaxValueForSelection();
+  
+  // Ensure we have a valid max value
+  if (maxVal <= 0) {
+    // Fallback: use default breakpoints if no data found
+    const defaultBreakpoints = [0, 1, 2, 3, 5];
+    updateLegendLabels(defaultBreakpoints);
+    if (map.getLayer("buildings-fill")) {
+      map.setPaintProperty("buildings-fill", "fill-color", "#ef4444");
+    }
+    return;
+  }
+  
   const breakpoints = calculateBreakpoints(maxVal);
+  
+  // Validate breakpoints are strictly ascending
+  for (let i = 1; i < breakpoints.length; i++) {
+    if (breakpoints[i] <= breakpoints[i - 1]) {
+      console.error("Invalid breakpoints:", breakpoints, "maxVal:", maxVal);
+      // Fallback to safe default breakpoints
+      const safeBreakpoints = [0, 1, 2, 3, 5];
+      updateLegendLabels(safeBreakpoints);
+      if (map.getLayer("buildings-fill")) {
+        map.setPaintProperty("buildings-fill", "fill-color", "#ef4444");
+      }
+      return;
+    }
+  }
   
   // Update legend
   updateLegendLabels(breakpoints);
@@ -685,7 +737,12 @@ function updateBuildingColors() {
       const amenKey = "amen_" + type;
       return ["coalesce", ["to-number", ["get", amenKey]], 0];
     });
-    sumExpr = sumParts.length === 1 ? sumParts[0] : ["+", ...sumParts];
+    // Always wrap in addition expression for consistency, even for single type
+    if (sumParts.length === 1) {
+      sumExpr = sumParts[0];
+    } else {
+      sumExpr = ["+", ...sumParts];
+    }
   }
   
   // Red-green gradient with dynamic breakpoints
@@ -1337,6 +1394,10 @@ map.on("load", async function () {
     
     buildFilterItems(types);
     updateAmenitiesSource();
+    
+    // Update building colors now that filter types are initialized
+    // (buildings may have loaded first)
+    updateBuildingColors();
     
     loadingState.amenities = true;
     updateLoadingProgress();
