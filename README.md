@@ -65,6 +65,26 @@ The map shows building footprints colored by number of amenities within radius, 
 - **Buildings:** Building footprints.
 - **Amenities:** Points of interest (type in `top_classi`); used for per-building counts and heatmaps.
 
-## License
 
-ISC
+
+## To do list
+For Maya/Kfir:
+- deduplication and removing internal businesses from centers
+- dividing the categories better and giving scores
+- create default index map
+
+to discuss:
+- creating option for users to update scores
+
+good libraries:
+
+Python: folium (probably the easiest), there is also pydeck
+JS: deck.gl / maplibre GL JS
+
+For Noam:
+- update web tool to calculate proportions of land with canopy coverage in area around each building radius
+- visualization improvement: merging nearby points into groups 5
+- calculate using open trip planner accessibility metrics instead of euclidean distance, for the key categories
+
+General question for index calculations:
+house -> block  -> neighborhood ->  city scale effects
