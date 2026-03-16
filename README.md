@@ -74,17 +74,22 @@ For Maya/Kfir:
 - create default index map
 
 to discuss:
-- creating option for users to update scores
+- creating option for users to update scoring method
 
 good libraries:
 
 Python: folium (probably the easiest), there is also pydeck
 JS: deck.gl / maplibre GL JS
 
-For Noam:
+Developer notes for Noam/Tuval:
 - update web tool to calculate proportions of land with canopy coverage in area around each building radius
 - visualization improvement: merging nearby points into groups 5
-- calculate using open trip planner accessibility metrics instead of euclidean distance, for the key categories
-
+- calculate using open trip planner accessibility metrics instead of euclidean distance, for the key categories, consider querying other api's within free tier, mapbox api is pretty good for walking and car, but not PT for pulling isochrones
 General question for index calculations:
 house -> block  -> neighborhood ->  city scale effects
+- add comparison against citywide averages on each of the above scales
+- click between different modes: house, block, neighborhood, city
+- generates overall statistics, on city some sort of overall summary statistics, maybe a score? (scores are merav/maya/kfir responsibility)
+- click on house in house mode, a block in block mode or a neighborhood in neighborhood mode and see number of amenities, trees coverage, etc. as well as comparison with citywide average, maybe highlight percentile
+
+Once we complete all the above, share with yonatan for UI/UX review
