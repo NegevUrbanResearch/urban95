@@ -20,6 +20,12 @@ for handler in logging.root.handlers:
 
 import geopandas as gpd
 import pandas as pd
+import json
+import time
+
+import requests
+from dotenv import load_dotenv
+from shapely.geometry import shape as shapely_shape
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
@@ -60,6 +66,9 @@ EXCLUDED_AMENITY_TYPES = {"none", "other", "private_establishment"}
 # Higher values = smaller files but less detailed shapes
 BUILDING_SIMPLIFY_TOLERANCE_M = 1.5  # 1.5 meter tolerance for buildings (good balance of size/detail)
 PARK_SIMPLIFY_TOLERANCE_M = 2.0  # Parks can use higher tolerance since they're larger shapes
+
+WALK_MINUTES = [5, 10, 15]
+ISOCHRONE_CACHE_DIR = OUTPUT_DIR / "isochrone_cache"
 
 
 def repair_text_encoding(text: str) -> str:
@@ -265,12 +274,90 @@ def _round_geojson_coords(geojson: dict, precision: int) -> dict:
     return {"type": geom_type, "coordinates": round_coord(coords)}
 
 
+_session = None
+
+
+def _get_session() -> requests.Session:
+    """Returns a reusable requests session (connection pooling)."""
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=4)
+        _session.mount("https://", adapter)
+    return _session
+
+
+def load_mapbox_token() -> str:
+    """Loads the Mapbox access token from the .env file."""
+    load_dotenv(REPO_ROOT / ".env")
+    token = os.getenv("mapbox_access_token")
+    if not token:
+        raise ValueError("mapbox_access_token not found in .env file")
+    return token
+
+
+def fetch_isochrones(lng: float, lat: float, token: str, minutes: list = None) -> dict:
+    """Fetches walking isochrone polygons from Mapbox API with local file caching.
+
+    Returns a dict mapping minute values to Shapely polygons (WGS84).
+    Cache hits skip the network entirely.
+    """
+    if minutes is None:
+        minutes = WALK_MINUTES
+
+    ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_key = f"{lng:.5f}_{lat:.5f}"
+    cache_file = ISOCHRONE_CACHE_DIR / f"{cache_key}.json"
+
+    if cache_file.exists():
+        with open(cache_file) as f:
+            data = json.load(f)
+    else:
+        contours = ",".join(str(m) for m in minutes)
+        url = f"https://api.mapbox.com/isochrone/v1/mapbox/walking/{lng},{lat}"
+        params = {
+            "contours_minutes": contours,
+            "polygons": "true",
+            "access_token": token,
+        }
+        session = _get_session()
+
+        resp = None
+        for attempt in range(5):
+            resp = session.get(url, params=params, timeout=30)
+            if resp.status_code == 429:
+                wait = min(2 ** (attempt + 1), 30)
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            break
+        else:
+            if resp is not None:
+                resp.raise_for_status()
+
+        if not resp.text.strip():
+            raise ValueError("Empty response from Mapbox API")
+
+        data = resp.json()
+        if "features" not in data:
+            raise ValueError(f"Unexpected API response: {list(data.keys())}")
+
+        with open(cache_file, "w") as f:
+            json.dump(data, f)
+
+    result = {}
+    for feature in data.get("features", []):
+        contour = feature["properties"]["contour"]
+        result[contour] = shapely_shape(feature["geometry"])
+    return result
+
+
 def compute_building_accessibility(
-    buffer_m: float = 100.0,
     amenity_type_column: str = "top_classi",
 ) -> None:
-    """Computes per-building accessibility metrics for each amenity type and writes optimized GeoJSON outputs."""
+    """Computes per-building accessibility metrics using Mapbox walking isochrones and writes optimized GeoJSON outputs."""
     OUTPUT_DIR.mkdir(exist_ok=True)
+    token = load_mapbox_token()
 
     buildings_path = DATA_DIR / "buildings.geojson"
     amenities_path = DATA_DIR / "amenities.geojson"
@@ -281,7 +368,7 @@ def compute_building_accessibility(
     crs_metric = 2039
     buildings = load_layer(buildings_path, target_crs=crs_metric)
     amenities = load_layer(amenities_path, target_crs=crs_metric)
-    
+
     logging.info("Repairing text encoding (Hebrew/Arabic)...")
     amenities = repair_dataframe_encoding(amenities)
 
@@ -298,7 +385,7 @@ def compute_building_accessibility(
         except Exception as e:
             logging.warning("Could not load parks: %s", e)
 
-    logging.info("Preparing building buffers...")
+    logging.info("Preparing buildings...")
     buildings = buildings.reset_index(drop=True)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -309,9 +396,6 @@ def compute_building_accessibility(
             pass
     buildings = buildings[valid].copy()
     buildings["building_id"] = buildings.index
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        buildings["buffer_m"] = buildings.geometry.buffer(buffer_m)
 
     logging.info("Preparing amenities with type classification...")
     amenities = amenities.copy()
@@ -329,47 +413,159 @@ def compute_building_accessibility(
     )
     amenities = amenities[~amenities["amenity_type"].isna()]
 
-    logging.info("Running spatial join between amenities and building buffers...")
-    joined = gpd.sjoin(
-        amenities.set_geometry("geometry"),
-        buildings.set_geometry("buffer_m")[["building_id", "buffer_m", "geometry"]],
-        predicate="within",
-        how="left",
-    )
+    # Compute building centroids in WGS84 for Mapbox API
+    logging.info("Computing building centroids...")
+    centroids_metric = buildings.geometry.centroid
+    centroids_wgs84 = gpd.GeoDataFrame(
+        {"building_id": buildings["building_id"]},
+        geometry=centroids_metric,
+        crs=f"EPSG:{crs_metric}",
+    ).to_crs(epsg=4326)
 
-    logging.info("Aggregating counts per building and amenity type...")
-    counts = (
-        joined.dropna(subset=["building_id"])
-        .groupby(["building_id", "amenity_type"])
-        .size()
-        .reset_index(name="count")
-    )
+    # Fetch walking isochrones for all buildings
+    total = len(centroids_wgs84)
+    all_isochrones = {}
+    failed_buildings = []
+    ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    pivot = counts.pivot(index="building_id", columns="amenity_type", values="count").fillna(0)
-    pivot.columns = [f"amen_{str(c).replace(' ', '_')}" for c in pivot.columns]
-    pivot = pivot.reset_index()
+    # Build task list and count cached
+    tasks = []
+    cached_count = 0
+    for _, row in centroids_wgs84.iterrows():
+        bid = row["building_id"]
+        lng, lat = row.geometry.x, row.geometry.y
+        cache_key = f"{lng:.5f}_{lat:.5f}"
+        is_cached = (ISOCHRONE_CACHE_DIR / f"{cache_key}.json").exists()
+        if is_cached:
+            cached_count += 1
+        tasks.append((bid, lng, lat, is_cached))
 
-    logging.info("Merging accessibility metrics back to buildings...")
-    buildings = buildings.merge(pivot, on="building_id", how="left")
-    metric_cols = [c for c in buildings.columns if c.startswith("amen_")]
-    for c in metric_cols:
-        buildings[c] = buildings[c].fillna(0).astype(int)
-    buildings["num_amenities"] = buildings[metric_cols].sum(axis=1).astype(int)
+    api_needed = total - cached_count
+    logging.info("Fetching isochrones: %d buildings (%d cached, %d need API calls)...", total, cached_count, api_needed)
 
-    if trees_gdf is not None:
-        logging.info("Computing num_trees per building...")
-        tree_join = gpd.sjoin(
-            trees_gdf,
-            buildings.set_geometry("buffer_m")[["building_id", "buffer_m"]],
+    api_count = 0
+    for idx, (bid, lng, lat, is_cached) in enumerate(tasks):
+        try:
+            polys = fetch_isochrones(lng, lat, token)
+            all_isochrones[bid] = polys
+        except Exception as e:
+            logging.warning("Isochrone fetch failed for building %d: %s", bid, e)
+            all_isochrones[bid] = {}
+            failed_buildings.append((bid, lng, lat))
+
+        if not is_cached:
+            api_count += 1
+            time.sleep(1.0)
+            if api_count % 50 == 0:
+                logging.info("  API calls: %d/%d (total progress: %d/%d)", api_count, api_needed, idx + 1, total)
+        elif (idx + 1) % 2000 == 0:
+            logging.info("  Cache progress: %d/%d buildings...", idx + 1, total)
+
+    # Retry failed buildings in rounds with increasing delays
+    max_retries = 3
+    for retry_round in range(max_retries):
+        if not failed_buildings:
+            break
+        delay = 2.0 * (retry_round + 1)
+        logging.info("Retry round %d/%d: %d failed buildings (%.0fs delay)...", retry_round + 1, max_retries, len(failed_buildings), delay)
+        still_failed = []
+        for bid, lng, lat in failed_buildings:
+            time.sleep(delay)
+            try:
+                polys = fetch_isochrones(lng, lat, token)
+                all_isochrones[bid] = polys
+            except Exception:
+                still_failed.append((bid, lng, lat))
+        recovered = len(failed_buildings) - len(still_failed)
+        if recovered:
+            logging.info("  Recovered %d buildings in round %d.", recovered, retry_round + 1)
+        failed_buildings = still_failed
+
+    if failed_buildings:
+        logging.warning("%d buildings still failed after %d retries (will have zero metrics). They will be re-attempted on next run.", len(failed_buildings), max_retries)
+
+    success_count = sum(1 for v in all_isochrones.values() if v)
+    logging.info("Fetched isochrones for %d/%d buildings.", success_count, total)
+
+    # Compute accessibility for each walking time threshold
+    for minutes in WALK_MINUTES:
+        suffix = f"_{minutes}min"
+        logging.info("Computing %d-minute walking accessibility...", minutes)
+
+        # Build GeoDataFrame of isochrone polygons for this threshold
+        iso_records = []
+        for bid, polys in all_isochrones.items():
+            if minutes in polys:
+                iso_records.append({"building_id": bid, "geometry": polys[minutes]})
+
+        if not iso_records:
+            logging.warning("No isochrone polygons for %d-min threshold.", minutes)
+            buildings[f"num_amenities{suffix}"] = 0
+            buildings[f"num_trees{suffix}"] = 0
+            continue
+
+        iso_gdf = gpd.GeoDataFrame(iso_records, crs="EPSG:4326").to_crs(epsg=crs_metric)
+
+        # Spatial join: amenities within isochrone polygons
+        joined = gpd.sjoin(
+            amenities.set_geometry("geometry"),
+            iso_gdf.set_geometry("geometry")[["building_id", "geometry"]],
             predicate="within",
-            how="left",
+            how="inner",
         )
-        tree_counts = tree_join.dropna(subset=["building_id"]).groupby("building_id").size()
-        buildings["num_trees"] = buildings["building_id"].map(tree_counts).fillna(0).astype(int)
-    else:
-        buildings["num_trees"] = 0
 
-    to_export = buildings.drop(columns=["buffer_m"], errors="ignore")
+        if len(joined) > 0:
+            counts = (
+                joined.groupby(["building_id", "amenity_type"])
+                .size()
+                .reset_index(name="count")
+            )
+            pivot = counts.pivot(index="building_id", columns="amenity_type", values="count").fillna(0)
+            pivot.columns = [f"amen_{str(c).replace(' ', '_')}{suffix}" for c in pivot.columns]
+            pivot = pivot.reset_index()
+            buildings = buildings.merge(pivot, on="building_id", how="left")
+
+        metric_cols = [c for c in buildings.columns if c.startswith("amen_") and c.endswith(suffix)]
+        for c in metric_cols:
+            buildings[c] = buildings[c].fillna(0).astype(int)
+        buildings[f"num_amenities{suffix}"] = buildings[metric_cols].sum(axis=1).astype(int) if metric_cols else 0
+
+        # Trees within isochrone
+        if trees_gdf is not None:
+            tree_join = gpd.sjoin(
+                trees_gdf,
+                iso_gdf.set_geometry("geometry")[["building_id", "geometry"]],
+                predicate="within",
+                how="inner",
+            )
+            tree_counts = tree_join.groupby("building_id").size()
+            buildings[f"num_trees{suffix}"] = buildings["building_id"].map(tree_counts).fillna(0).astype(int)
+        else:
+            buildings[f"num_trees{suffix}"] = 0
+
+    # Export isochrone polygons as GeoJSON for the frontend
+    DOCS_DATA_DIR.mkdir(exist_ok=True)
+    logging.info("Building isochrone GeoJSON for web...")
+    iso_features = []
+    for bid, polys in all_isochrones.items():
+        for mins, geom in polys.items():
+            if geom is None or geom.is_empty:
+                continue
+            iso_features.append({
+                "building_id": int(bid),
+                "minutes": int(mins),
+                "geometry": geom,
+            })
+    if iso_features:
+        iso_export = gpd.GeoDataFrame(iso_features, crs="EPSG:4326")
+        # Simplify isochrone polygons to reduce file size
+        iso_export = simplify_geometries(iso_export, 5.0)
+        iso_export = reduce_coordinate_precision(iso_export, precision=4)
+        write_minimal_geojson(iso_export, DOCS_DATA_DIR / "isochrones.geojson", precision=4)
+        iso_size = (DOCS_DATA_DIR / "isochrones.geojson").stat().st_size
+        logging.info("Isochrones: %.1fMB (%d features)", iso_size / 1e6, len(iso_export))
+
+    to_export = buildings.copy()
     geom_cols = [c for c in to_export.columns if c != to_export.geometry.name and hasattr(to_export[c].dtype, "name") and str(to_export[c].dtype.name).lower() == "geometry"]
     for c in geom_cols:
         to_export = to_export.drop(columns=[c])

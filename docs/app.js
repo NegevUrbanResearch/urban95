@@ -6,6 +6,7 @@ const BUILDINGS_URL = BASE + "/buildings_accessibility.geojson";
 const PARKS_URL = BASE + "/parks.geojson";
 const TREES_URL = BASE + "/trees.geojson";
 const AMENITIES_ALL_URL = BASE + "/amenities_all.geojson";
+const ISOCHRONES_URL = BASE + "/isochrones.geojson";
 
 const AMENITY_TYPE_CONFIG = {
   trees: { color: "#22c55e", icon: "park-alt1", label: "Trees" },
@@ -31,20 +32,18 @@ function getAmenityConfig(type) {
   return config || DEFAULT_CONFIG;
 }
 
-// Calculate appropriate zoom level to show the entire circle (diameter)
-function getZoomForRadius(radiusM) {
-  // We want the full circle diameter to fit comfortably in the viewport
-  // Use ~60% of the smaller viewport dimension as target
-  const viewportMin = Math.min(window.innerWidth, window.innerHeight);
-  const targetPixels = viewportMin * 0.6;
-  const diameterM = radiusM * 2;
-  
-  // At zoom 15, 1 pixel ≈ 4.77 meters at equator (varies by latitude, but close enough)
-  const metersPerPixelAtZoom15 = 4.77;
-  const metersPerPixel = diameterM / targetPixels;
-  const zoomDiff = Math.log2(metersPerPixelAtZoom15 / metersPerPixel);
-  
-  return Math.min(Math.max(15 + zoomDiff, 12), 18);
+// Calculate appropriate zoom level to fit a GeoJSON polygon in the viewport
+function getZoomForPolygon(polygon) {
+  const bbox = turf.bbox(polygon);
+  const sw = [bbox[0], bbox[1]];
+  const ne = [bbox[2], bbox[3]];
+  const dLng = ne[0] - sw[0];
+  const dLat = ne[1] - sw[1];
+  const maxSpan = Math.max(dLng, dLat);
+  if (maxSpan <= 0) return 15;
+  // Rough degrees-to-zoom: at zoom 15, ~0.01 deg is visible in viewport
+  const zoom = Math.log2(0.01 / maxSpan) + 15;
+  return Math.min(Math.max(zoom, 12), 18);
 }
 
 // Build color expression for amenity types
@@ -182,7 +181,7 @@ const AMENITY_POINT_LAYER_IDS = [
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
                       window.matchMedia("(max-width: 480px)").matches;
 
-let radiusM = 100;
+let walkMinutes = 5;
 let allAmenityTypes = [];
 let typesWithData = new Set();
 let allAmenitiesData = null;
@@ -195,7 +194,9 @@ let selectedBuildingCentroid = null;
 let amenitiesInRadiusIds = new Set();
 let treesInRadiusIds = new Set();
 let iconsLoaded = false;
-let treesLoadStarted = false;  // Track if tree loading has been triggered
+let treesLoadStarted = false;
+let isochronesLoaded = false;
+let isochroneIndex = {}; // { "buildingId_minutes": GeoJSON feature }
 
 // Loading screen elements
 const loadingScreen = document.getElementById("loading-screen");
@@ -625,19 +626,19 @@ function getMaxValueForSelection() {
   let maxVal = 0;
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   
+  const suffix = "_" + walkMinutes + "min";
   buildingsData.features.forEach(f => {
     const props = f.properties || {};
     let val = 0;
     
     if (useAll) {
-      // Trees count 1/4 as much as amenities
-      val = (Number(props.num_amenities) || 0) + (Number(props.num_trees) || 0) * 0.25;
+      val = (Number(props["num_amenities" + suffix]) || 0) + (Number(props["num_trees" + suffix]) || 0) * 0.25;
     } else {
       selectedAmenityTypes.forEach(type => {
         if (type === "trees") {
-          val += (Number(props.num_trees) || 0) * 0.25;
+          val += (Number(props["num_trees" + suffix]) || 0) * 0.25;
         } else {
-          val += Number(props["amen_" + type]) || 0;
+          val += Number(props["amen_" + type + suffix]) || 0;
         }
       });
     }
@@ -722,22 +723,22 @@ function updateBuildingColors() {
   updateLegendLabels(breakpoints);
   
   // Build the sum expression (trees count 1/4 as much)
+  const sfx = "_" + walkMinutes + "min";
   let sumExpr;
   if (useAll) {
     sumExpr = ["+", 
-      ["coalesce", ["to-number", ["get", "num_amenities"]], 0],
-      ["*", ["coalesce", ["to-number", ["get", "num_trees"]], 0], 0.25]
+      ["coalesce", ["to-number", ["get", "num_amenities" + sfx]], 0],
+      ["*", ["coalesce", ["to-number", ["get", "num_trees" + sfx]], 0], 0.25]
     ];
   } else {
     const types = Array.from(selectedAmenityTypes);
     const sumParts = types.map(type => {
       if (type === "trees") {
-        return ["*", ["coalesce", ["to-number", ["get", "num_trees"]], 0], 0.25];
+        return ["*", ["coalesce", ["to-number", ["get", "num_trees" + sfx]], 0], 0.25];
       }
-      const amenKey = "amen_" + type;
+      const amenKey = "amen_" + type + sfx;
       return ["coalesce", ["to-number", ["get", amenKey]], 0];
     });
-    // Always wrap in addition expression for consistency, even for single type
     if (sumParts.length === 1) {
       sumExpr = sumParts[0];
     } else {
@@ -993,83 +994,112 @@ function findClosestBuilding(lngLat) {
   return closest;
 }
 
-// Calculate which items are within the radius of a point (filtered by selection)
-function getItemsInRadius(centerLng, centerLat, radiusM) {
+// Load isochrone polygons from precomputed file
+function loadIsochrones() {
+  if (isochronesLoaded) return;
+  isochronesLoaded = true;
+  fetch(ISOCHRONES_URL).then(r => r.ok ? r.json() : null).then(function(data) {
+    if (!data || !data.features) return;
+    data.features.forEach(function(f) {
+      const bid = f.properties.building_id;
+      const mins = f.properties.minutes;
+      isochroneIndex[bid + "_" + mins] = f;
+    });
+    // Re-select building if one was selected (to show isochrone now that data is loaded)
+    if (selectedBuildingCentroid) {
+      selectBuilding(selectedBuildingCentroid, false);
+    }
+  }).catch(function() {
+    console.warn("Failed to load isochrones file");
+  });
+}
+
+// Look up the precomputed isochrone polygon for a building
+function getIsochrone(buildingId, minutes) {
+  const key = buildingId + "_" + minutes;
+  return isochroneIndex[key] || null;
+}
+
+// Calculate which items are within an isochrone polygon (filtered by selection)
+function getItemsInPolygon(polygon) {
   const amenityIndices = new Set();
   const treeIndices = new Set();
   const counts = {};
-  
-  // If nothing selected, return empty
-  if (selectedAmenityTypes.size === 0) {
+
+  if (selectedAmenityTypes.size === 0 || !polygon) {
     return { amenityIndices, treeIndices, counts };
   }
-  
-  const centerPt = [centerLng, centerLat];
+
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
-  
-  // Check amenities
+
   if (allAmenitiesData && allAmenitiesData.features) {
     allAmenitiesData.features.forEach((f, index) => {
       const type = f.properties.amenity_type;
       if (!useAll && !selectedAmenityTypes.has(type)) return;
-      
-      const coords = f.geometry.coordinates;
-      const dist = turf.distance(centerPt, coords, { units: "meters" });
-      
-      if (dist <= radiusM) {
+      const pt = turf.point(f.geometry.coordinates);
+      if (turf.booleanPointInPolygon(pt, polygon)) {
         amenityIndices.add(index);
         counts[type] = (counts[type] || 0) + 1;
       }
     });
   }
-  
-  // Check trees
+
   if (allTreesData && allTreesData.features && (useAll || selectedAmenityTypes.has("trees"))) {
     allTreesData.features.forEach((f, index) => {
-      const coords = f.geometry.coordinates;
-      const dist = turf.distance(centerPt, coords, { units: "meters" });
-      
-      if (dist <= radiusM) {
+      const pt = turf.point(f.geometry.coordinates);
+      if (turf.booleanPointInPolygon(pt, polygon)) {
         treeIndices.add(index);
         counts["trees"] = (counts["trees"] || 0) + 1;
       }
     });
   }
-  
+
   return { amenityIndices, treeIndices, counts };
 }
 
-// Select a building and show its radius with items
+// Select a building and show its walking isochrone with items
 function selectBuilding(building, flyTo = true) {
   selectedBuildingCentroid = building;
-  
-  // Draw radius circle around building centroid
-  const radiusKm = radiusM / 1000;
-  const circle = turf.circle([building.lng, building.lat], radiusKm, { units: "kilometers", steps: 64 });
-  const source = map.getSource("radius-circle");
-  if (source) source.setData(circle);
-  
+
   // Highlight the selected building outline
   const buildingSource = map.getSource("selected-building");
   if (buildingSource && building.feature) {
     buildingSource.setData({ type: "FeatureCollection", features: [building.feature] });
   }
-  
-  // Calculate items in radius (filtered by selection)
-  const result = getItemsInRadius(building.lng, building.lat, radiusM);
+
+  // Trigger lazy load of isochrones if not yet loaded
+  loadIsochrones();
+
+  // Look up precomputed isochrone polygon
+  const buildingId = building.feature ? building.feature.properties.building_id : null;
+  let polygon = null;
+  if (buildingId != null) {
+    polygon = getIsochrone(buildingId, walkMinutes);
+  }
+
+  if (polygon) {
+    const source = map.getSource("radius-circle");
+    if (source) source.setData(polygon);
+  } else {
+    // Fallback to a turf circle when isochrone data isn't loaded yet or missing
+    const fallbackRadiusKm = walkMinutes * 0.08;
+    const circle = turf.circle([building.lng, building.lat], fallbackRadiusKm, { units: "kilometers", steps: 64 });
+    polygon = circle;
+    const source = map.getSource("radius-circle");
+    if (source) source.setData(circle);
+  }
+
+  // Calculate items within isochrone polygon
+  const result = getItemsInPolygon(polygon);
   amenitiesInRadiusIds = result.amenityIndices;
   treesInRadiusIds = result.treeIndices;
-  
-  // Update data sources with in-radius flags
+
   updateAmenitiesSource();
   updateTreesSource();
-  
-  // Update the info panel with counts
   updateRadiusInfo(result.counts);
-  
+
   if (flyTo) {
-    const zoom = getZoomForRadius(radiusM);
-    
+    const zoom = getZoomForPolygon(polygon);
     map.flyTo({
       center: [building.lng, building.lat],
       zoom: zoom,
@@ -1132,7 +1162,7 @@ function updateRadiusInfo(counts) {
   let html = '<div class="radius-count">';
   let total = 0;
   
-  // Counts are already filtered by getItemsInRadius
+  // Counts are already filtered by getItemsInPolygon
   Object.values(counts).forEach(count => {
     total += count;
   });
@@ -1145,16 +1175,16 @@ function updateRadiusInfo(counts) {
     const [type] = typesWithItems[0];
     const config = AMENITY_TYPE_CONFIG[type];
     const label = config ? config.label : type.replace(/_/g, " ");
-    html += `${total} ${pluralize(label, total)} within ${radiusM}m`;
+    html += `${total} ${pluralize(label, total)} within ${walkMinutes} min walk`;
   } else if (useAll) {
-    html += `${total} items within ${radiusM}m`;
+    html += `${total} items within ${walkMinutes} min walk`;
   } else if (selectedAmenityTypes.size === 1) {
     const type = Array.from(selectedAmenityTypes)[0];
     const config = AMENITY_TYPE_CONFIG[type];
     const label = config ? config.label : type.replace(/_/g, " ");
-    html += `${total} ${pluralize(label, total)} within ${radiusM}m`;
+    html += `${total} ${pluralize(label, total)} within ${walkMinutes} min walk`;
   } else {
-    html += `${total} of selected types within ${radiusM}m`;
+    html += `${total} of selected types within ${walkMinutes} min walk`;
   }
   
   html += '</div>';
@@ -1204,13 +1234,14 @@ radiusToggle.addEventListener("click", function (e) {
   const btn = e.target.closest(".radius-opt");
   if (!btn) return;
   
-  radiusM = parseInt(btn.dataset.radius, 10);
+  walkMinutes = parseInt(btn.dataset.minutes, 10);
   
   // Update active state
   radiusToggle.querySelectorAll(".radius-opt").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
   
-  // Update circle and recalculate, fly to show full radius
+  // Update building choropleth for new walking time and re-analyze selected building
+  updateBuildingColors();
   if (selectedBuildingCentroid) {
     selectBuilding(selectedBuildingCentroid, true);
   }
