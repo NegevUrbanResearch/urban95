@@ -89,7 +89,7 @@ body {
   position: fixed;
   top: 16px;
   left: 16px;
-  width: 240px;
+  width: 280px;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
@@ -621,10 +621,11 @@ body {
 
 .mode-opt {
   flex: 1;
-  padding: 6px 0;
+  padding: 7px 4px;
   border: none;
   background: transparent;
-  font-size: 11px;
+  font-family: inherit;
+  font-size: 12px;
   font-weight: 500;
   color: #6b7280;
   border-radius: 6px;
@@ -633,7 +634,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 .mode-opt:hover {
@@ -1462,7 +1464,7 @@ body {
 /* Tablet adjustments */
 @media (min-width: 481px) and (max-width: 768px) {
   #controls {
-    width: 280px;
+    width: 290px;
   }
 
   #radius-info {
