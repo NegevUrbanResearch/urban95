@@ -7,6 +7,8 @@ const PARKS_URL = BASE + "/parks.geojson";
 const TREES_URL = BASE + "/trees.geojson";
 const AMENITIES_ALL_URL = BASE + "/amenities_all.geojson";
 const ISOCHRONES_URL = BASE + "/isochrones.geojson";
+const NEIGHBORHOODS_URL = BASE + "/neighborhoods.geojson";
+const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
 
 const AMENITY_TYPE_CONFIG = {
   trees: { color: "#2E7D32", icon: "park-alt1", label: "Trees" },
@@ -50,6 +52,7 @@ const map = new maplibregl.Map({
   container: "map",
   style: {
     version: 8,
+    glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
     sources: {
       osm: {
         type: "raster",
@@ -70,6 +73,10 @@ const map = new maplibregl.Map({
         data: { type: "FeatureCollection", features: [] },
       },
       trees: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      },
+      neighborhoods: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
@@ -183,6 +190,14 @@ let deckAmenityIconsCache = new Map();
 let metricDisplayMode = "raw";
 let latestRadiusCounts = {};
 const percentileSeriesCache = new Map();
+
+// Analysis mode state
+let currentMode = "house"; // "house" | "neighborhood" | "citywide"
+let neighborhoodsData = null;
+let citywideStats = null;
+let selectedNeighborhood = null;
+let citywideCharts = [];
+let neighborhoodCharts = [];
 
 // Loading screen elements
 const loadingScreen = document.getElementById("loading-screen");
@@ -495,63 +510,34 @@ function addAmenityLayers() {
 
 }
 
-// Calculate logarithmically-spaced breakpoints for the color scale
-function calculateBreakpoints(maxVal) {
-  if (maxVal <= 0) return [0, 1, 2, 3, 5];
-  
-  // Find a nice max that's a round number
-  let niceMax;
-  if (maxVal <= 5) niceMax = 5;
-  else if (maxVal <= 10) niceMax = 10;
-  else if (maxVal <= 20) niceMax = 20;
-  else if (maxVal <= 50) niceMax = 50;
-  else if (maxVal <= 100) niceMax = 100;
-  else if (maxVal <= 200) niceMax = 200;
-  else if (maxVal <= 500) niceMax = 500;
-  else niceMax = Math.ceil(maxVal / 100) * 100;
-  
-  // Logarithmic spacing: more color variation at low counts
-  // Calculate intermediate breakpoints using logarithmic distribution
-  let b1 = Math.max(1, Math.round(Math.pow(niceMax, 0.25)));
-  let b2 = Math.max(b1 + 1, Math.round(Math.pow(niceMax, 0.5)));
-  let b3 = Math.max(b2 + 1, Math.round(Math.pow(niceMax, 0.75)));
-  
-  // Ensure all breakpoints are strictly ascending and less than niceMax
-  b1 = Math.min(b1, Math.max(1, niceMax - 3));
-  b2 = Math.min(Math.max(b2, b1 + 1), Math.max(b1 + 1, niceMax - 2));
-  b3 = Math.min(Math.max(b3, b2 + 1), Math.max(b2 + 1, niceMax - 1));
-  
-  // Build the breakpoints array: [0, b1, b2, b3, niceMax]
-  const breakpoints = [0, b1, b2, b3, niceMax];
-  
-  // Final validation: ensure strictly ascending order
-  for (let i = 1; i < breakpoints.length; i++) {
-    if (breakpoints[i] <= breakpoints[i - 1]) {
-      // Adjust to ensure strict ascending order
-      breakpoints[i] = breakpoints[i - 1] + 1;
-    }
+// Compute percentile-based breakpoints (p0, p25, p50, p75, p100) from a values array
+function percentileBreakpoints(values) {
+  if (!values || values.length === 0) return [0, 1, 2, 3, 5];
+  const sorted = values.slice().sort((a, b) => a - b);
+  const n = sorted.length;
+
+  const bp = [0, 25, 50, 75, 100].map(p => {
+    const idx = Math.min(Math.round(p / 100 * (n - 1)), n - 1);
+    return sorted[idx];
+  });
+
+  for (let i = 1; i < bp.length; i++) {
+    if (bp[i] <= bp[i - 1]) bp[i] = bp[i - 1] + 0.001;
   }
-  
-  // Ensure the last breakpoint equals niceMax (may have been adjusted)
-  breakpoints[breakpoints.length - 1] = Math.max(breakpoints[breakpoints.length - 1], niceMax);
-  
-  return breakpoints;
+  return bp;
 }
 
-// Get max value from buildings data for selected types (trees count 1/4, use 1/5 of max for outliers)
-function getMaxValueForSelection() {
-  if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return 20;
-  if (selectedAmenityTypes.size === 0) return 0;
-  if (allFilterTypes.length === 0) return 20;
-  
-  let maxVal = 0;
-  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
-  
+// Collect weighted accessibility score for every building under current filter selection
+function collectBuildingScores() {
+  if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return [];
+  if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) return [];
+
   const suffix = "_" + walkMinutes + "min";
-  buildingsData.features.forEach(f => {
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
+
+  return buildingsData.features.map(f => {
     const props = f.properties || {};
     let val = 0;
-    
     if (useAll) {
       val = (Number(props["num_amenities" + suffix]) || 0) + (Number(props["num_trees" + suffix]) || 0) * 0.25;
     } else {
@@ -563,24 +549,45 @@ function getMaxValueForSelection() {
         }
       });
     }
-    
-    if (val > maxVal) maxVal = val;
+    return val;
   });
-  
-  // Use 1/5 of max to handle outliers - most buildings will show meaningful color variation
-  // Ensure we return at least 5 to avoid zero breakpoints
-  return Math.max(Math.round(maxVal / 5), 5);
+}
+
+// Interpolate the same red→green gradient used on the basemap
+function getColorForValue(value, breakpoints) {
+  const stops = [
+    [239, 68, 68],   // #ef4444
+    [249, 115, 22],  // #f97316
+    [234, 179, 8],   // #eab308
+    [132, 204, 22],  // #84cc16
+    [34, 197, 94],   // #22c55e
+  ];
+
+  if (value <= breakpoints[0]) return `rgb(${stops[0].join(",")})`;
+  if (value >= breakpoints[breakpoints.length - 1]) return `rgb(${stops[stops.length - 1].join(",")})`;
+
+  for (let i = 0; i < breakpoints.length - 1; i++) {
+    if (value <= breakpoints[i + 1]) {
+      const t = (value - breakpoints[i]) / (breakpoints[i + 1] - breakpoints[i]);
+      const r = Math.round(stops[i][0] + (stops[i + 1][0] - stops[i][0]) * t);
+      const g = Math.round(stops[i][1] + (stops[i + 1][1] - stops[i][1]) * t);
+      const b = Math.round(stops[i][2] + (stops[i + 1][2] - stops[i][2]) * t);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  return `rgb(${stops[stops.length - 1].join(",")})`;
 }
 
 // Update the legend labels
 function updateLegendLabels(breakpoints) {
   if (!legendLabels) return;
-  
+
   const labels = breakpoints.map((val, i) => {
-    if (i === breakpoints.length - 1) return val + "+";
-    return val;
+    const rounded = Math.round(val);
+    if (i === breakpoints.length - 1) return rounded + "+";
+    return rounded;
   });
-  
+
   legendLabels.innerHTML = labels.map(l => `<span>${l}</span>`).join("");
 }
 
@@ -928,38 +935,11 @@ function updateBuildingColors() {
   }
   
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
-  
-  // Calculate max value and breakpoints
-  const maxVal = getMaxValueForSelection();
-  
-  // Ensure we have a valid max value
-  if (maxVal <= 0) {
-    // Fallback: use default breakpoints if no data found
-    const defaultBreakpoints = [0, 1, 2, 3, 5];
-    updateLegendLabels(defaultBreakpoints);
-    if (map.getLayer("buildings-fill")) {
-      map.setPaintProperty("buildings-fill", "fill-color", "#ef4444");
-    }
-    return;
-  }
-  
-  const breakpoints = calculateBreakpoints(maxVal);
-  
-  // Validate breakpoints are strictly ascending
-  for (let i = 1; i < breakpoints.length; i++) {
-    if (breakpoints[i] <= breakpoints[i - 1]) {
-      console.error("Invalid breakpoints:", breakpoints, "maxVal:", maxVal);
-      // Fallback to safe default breakpoints
-      const safeBreakpoints = [0, 1, 2, 3, 5];
-      updateLegendLabels(safeBreakpoints);
-      if (map.getLayer("buildings-fill")) {
-        map.setPaintProperty("buildings-fill", "fill-color", "#ef4444");
-      }
-      return;
-    }
-  }
-  
-  // Update legend
+
+  // Percentile-based breakpoints from building score distribution
+  const scores = collectBuildingScores();
+  const breakpoints = percentileBreakpoints(scores);
+
   updateLegendLabels(breakpoints);
   
   // Build the sum expression (trees count 1/4 as much)
@@ -1326,7 +1306,14 @@ document.addEventListener("touchstart", function(e) {
 document.addEventListener("keydown", function(e) {
   if (e.key === "Escape") {
     closeFilterPopup();
-    clearRadiusSelection();
+    if (currentMode === "house") {
+      clearRadiusSelection();
+    } else     if (currentMode === "neighborhood") {
+      hideNeighborhoodModal();
+    } else if (currentMode === "citywide") {
+      hideCitywideModal();
+      switchMode("house");
+    }
   }
 });
 
@@ -1676,14 +1663,16 @@ radiusToggle.addEventListener("click", function (e) {
   btn.classList.add("active");
   
   // Update building choropleth for new walking time and re-analyze selected building
-  updateBuildingColors();
-  if (selectedBuildingCentroid) {
-    selectBuilding(selectedBuildingCentroid, true);
+  if (currentMode === "house") {
+    updateBuildingColors();
+    if (selectedBuildingCentroid) {
+      selectBuilding(selectedBuildingCentroid, true);
+    }
   }
 });
 
 map.on("click", function (e) {
-  // Find closest building for radius analysis (click only used for this)
+  if (currentMode !== "house") return;
   if (e.originalEvent.target !== map.getCanvas()) return;
   
   const closest = findClosestBuilding(e.lngLat);
@@ -1907,5 +1896,597 @@ if (!localStorage.getItem("urban95-modal-seen")) {
 map.on("zoomend", function() {
   if (map.getZoom() >= 13) {
     loadTreesIfNeeded();
+  }
+});
+
+// ─── Analysis Mode Management ───────────────────────────────────────
+
+const modeToggle = document.getElementById("mode-toggle");
+const modeHint = document.getElementById("mode-hint");
+
+function loadNeighborhoods() {
+  if (neighborhoodsData) return Promise.resolve(neighborhoodsData);
+  return fetch(NEIGHBORHOODS_URL).then(r => r.json()).then(data => {
+    neighborhoodsData = data;
+    console.log("[Neighborhood] Loaded", data.features.length, "neighborhoods");
+    return data;
+  });
+}
+
+function loadCitywideStats() {
+  if (citywideStats) return Promise.resolve(citywideStats);
+  return fetch(CITYWIDE_STATS_URL).then(r => r.json()).then(data => {
+    citywideStats = data;
+    return data;
+  });
+}
+
+function addNeighborhoodLayers() {
+  if (map.getLayer("neighborhoods-fill")) return;
+  console.log("[Neighborhood] Adding layers dynamically");
+
+  map.addLayer({
+    id: "neighborhoods-fill",
+    type: "fill",
+    source: "neighborhoods",
+    paint: { "fill-color": "#3b82f6", "fill-opacity": 0.6 },
+    layout: { visibility: "none" },
+  });
+  map.addLayer({
+    id: "neighborhoods-line",
+    type: "line",
+    source: "neighborhoods",
+    paint: { "line-color": "#1e3a5f", "line-width": 2.5, "line-opacity": 0.9 },
+    layout: { visibility: "none" },
+  });
+  // Skip label layer to avoid glyphs requirement issues
+}
+
+
+function updateNeighborhoodColors() {
+  if (!neighborhoodsData || !map.getLayer("neighborhoods-fill")) return;
+
+  const sfx = "_" + walkMinutes + "min";
+  const avgKey = "avg_overall" + sfx;
+
+  // Percentile-based breakpoints from neighborhood average scores
+  const values = neighborhoodsData.features.map(f => (f.properties || {})[avgKey] || 0);
+  const breakpoints = percentileBreakpoints(values);
+
+  const colorExpr = [
+    "interpolate",
+    ["linear"],
+    ["coalesce", ["get", avgKey], 0],
+    breakpoints[0], "#ef4444",
+    breakpoints[1], "#f97316",
+    breakpoints[2], "#eab308",
+    breakpoints[3], "#84cc16",
+    breakpoints[4], "#22c55e",
+  ];
+
+  map.setPaintProperty("neighborhoods-fill", "fill-color", colorExpr);
+  updateLegendLabels(breakpoints);
+}
+
+function switchMode(mode) {
+  if (mode === currentMode) return;
+  const prevMode = currentMode;
+  currentMode = mode;
+
+  // Update toggle active state
+  modeToggle.querySelectorAll(".mode-opt").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+
+  // Clean up previous mode
+  if (prevMode === "house") {
+    clearRadiusSelection();
+  }
+  if (prevMode === "neighborhood") {
+    hideNeighborhoodModal();
+    selectedNeighborhood = null;
+  }
+  if (prevMode === "citywide") {
+    hideCitywideModal();
+  }
+
+  // Activate new mode
+  if (mode === "house") {
+    enterHouseMode();
+  } else if (mode === "neighborhood") {
+    enterNeighborhoodMode();
+  } else if (mode === "citywide") {
+    enterCitywideMode();
+  }
+}
+
+function setControlsForMode(mode) {
+  const showPointsSection = showPointsToggle ? showPointsToggle.closest(".section") : null;
+  const metricSection = metricDisplayToggle ? metricDisplayToggle.closest(".section") : null;
+  const legendSection = document.querySelector(".legend-section");
+
+  if (mode === "house") {
+    if (showPointsSection) showPointsSection.style.display = "";
+    if (metricSection) metricSection.style.display = "";
+    if (legendSection) legendSection.style.display = "";
+    if (modeHint) modeHint.textContent = "Click map to analyze nearest building";
+  } else if (mode === "neighborhood") {
+    if (showPointsSection) showPointsSection.style.display = "none";
+    if (metricSection) metricSection.style.display = "none";
+    if (legendSection) legendSection.style.display = "";
+    if (modeHint) modeHint.textContent = "Click a neighborhood for details";
+  } else {
+    if (showPointsSection) showPointsSection.style.display = "none";
+    if (metricSection) metricSection.style.display = "none";
+    if (legendSection) legendSection.style.display = "none";
+    if (modeHint) modeHint.textContent = "";
+  }
+}
+
+function enterHouseMode() {
+  setControlsForMode("house");
+
+  // Show buildings, hide neighborhoods
+  if (map.getLayer("buildings-fill")) {
+    map.setLayoutProperty("buildings-fill", "visibility", "visible");
+    map.setPaintProperty("buildings-fill", "fill-opacity", 0.85);
+  }
+  if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "none");
+  if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "none");
+  if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "none");
+
+  setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
+  updateBuildingColors();
+}
+
+function enterNeighborhoodMode() {
+  console.log("[Neighborhood] Entering neighborhood mode");
+  clearRadiusSelection();
+  setControlsForMode("neighborhood");
+  const radiusInfo = document.getElementById("radius-info");
+  if (radiusInfo) radiusInfo.style.display = "none";
+
+  // Hide buildings and parks entirely — neighborhood mode shows only polygons
+  if (map.getLayer("buildings-fill")) {
+    map.setLayoutProperty("buildings-fill", "visibility", "none");
+  }
+  if (map.getLayer("parks-fill")) {
+    map.setLayoutProperty("parks-fill", "visibility", "none");
+  }
+  setAmenityPointsVisibility(false);
+
+  // Load and show neighborhoods
+  loadNeighborhoods().then(data => {
+    const src = map.getSource("neighborhoods");
+    if (src) src.setData(data);
+    addNeighborhoodLayers();
+    updateNeighborhoodColors();
+
+    if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
+    if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
+    if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
+    console.log("[Neighborhood] Layers visible, source updated with", data.features.length, "features");
+
+    if (data.features.length > 0) {
+      const bbox = turf.bbox(data);
+      map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 600 });
+    }
+  });
+}
+
+function exitNeighborhoodMode() {
+  if (map.getLayer("buildings-fill")) {
+    map.setLayoutProperty("buildings-fill", "visibility", "visible");
+    map.setPaintProperty("buildings-fill", "fill-opacity", 0.85);
+  }
+  if (map.getLayer("parks-fill")) {
+    map.setLayoutProperty("parks-fill", "visibility", "visible");
+  }
+}
+
+function enterCitywideMode() {
+  clearRadiusSelection();
+  setControlsForMode("citywide");
+
+  // Show neighborhood polygons as context
+  loadNeighborhoods().then(data => {
+    const src = map.getSource("neighborhoods");
+    if (src) src.setData(data);
+    addNeighborhoodLayers();
+    updateNeighborhoodColors();
+    if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
+    if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
+    if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
+  });
+
+  if (map.getLayer("buildings-fill")) {
+    map.setPaintProperty("buildings-fill", "fill-opacity", 0.15);
+    map.setPaintProperty("buildings-fill", "fill-color", "#9ca3af");
+  }
+  setAmenityPointsVisibility(false);
+
+  // Show citywide modal
+  loadCitywideStats().then(() => {
+    renderCitywideModal();
+    showCitywideModal();
+  });
+}
+
+// Neighborhood modal
+function showNeighborhoodModal(feature) {
+  if (!feature || !feature.properties) return;
+  selectedNeighborhood = feature;
+  const props = feature.properties;
+  const sfx = "_" + walkMinutes + "min";
+  const pct = props["pct_overall" + sfx] || 0;
+  console.log("[Neighborhood] Showing modal for", props.Name, "pct:", pct);
+
+  document.getElementById("neighborhood-modal-title").textContent = props.Name || "Unknown";
+  document.getElementById("neighborhood-modal-subtitle").textContent =
+    `${pct}${getOrdinalSuffix(pct)} percentile • ${walkMinutes}-min walk`;
+
+  const body = document.getElementById("neighborhood-modal-body");
+  neighborhoodCharts.forEach(c => c.destroy());
+  neighborhoodCharts = [];
+
+  let html = "";
+
+  // Summary cards
+  html += '<div class="cw-summary">';
+  html += `<div class="cw-stat-card"><div class="cw-stat-value">${props.building_count || 0}</div><div class="cw-stat-label">Buildings</div></div>`;
+  html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(props["avg_amenities" + sfx] || 0)}</div><div class="cw-stat-label">Avg Amenities</div></div>`;
+  html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
+  html += `<div class="cw-stat-card"><div class="cw-stat-value">${pct}%</div><div class="cw-stat-label">Percentile</div></div>`;
+  html += "</div>";
+
+  // Amenity breakdown pie chart
+  html += '<div class="cw-section">';
+  html += '<div class="cw-section-title">Amenity Breakdown</div>';
+  html += '<div class="cw-chart-container cw-pie-chart"><canvas id="hood-amenity-pie"></canvas></div>';
+  html += "</div>";
+
+  // Collect type data for bar chart (exclude trees)
+  const types = Object.keys(AMENITY_TYPE_CONFIG).filter(t => t !== "trees");
+  const typeData = types.map(t => {
+    const config = getAmenityConfig(t);
+    const avg = props["avg_" + t + sfx] || 0;
+    return { type: t, label: config.label, color: config.color, avg };
+  }).filter(d => d.avg > 0).sort((a, b) => b.avg - a.avg);
+
+  if (typeData.length > 0) {
+    html += '<div class="cw-section">';
+    html += '<div class="cw-section-title">Average Amenities per Building</div>';
+    html += `<div class="cw-chart-container" style="height:${Math.max(200, typeData.length * 28)}px"><canvas id="hood-type-bar"></canvas></div>`;
+    html += "</div>";
+  }
+
+  // Type percentile rankings (trees already excluded from types)
+  const typePercentiles = types.map(t => {
+    const config = getAmenityConfig(t);
+    const pctT = props["pct_" + t + sfx];
+    const avg = props["avg_" + t + sfx] || 0;
+    if (pctT === undefined) return null;
+    return { label: config.label, color: config.color, avg, pct: pctT };
+  }).filter(Boolean).sort((a, b) => b.pct - a.pct);
+
+  if (typePercentiles.length > 0) {
+    html += '<div class="cw-section">';
+    html += '<div class="cw-section-title">Percentile Ranking by Type</div>';
+    html += '<ul class="cw-ranking-list">';
+    typePercentiles.forEach((item, i) => {
+      let barColor;
+      if (item.pct >= 70) barColor = "#22c55e";
+      else if (item.pct >= 40) barColor = "#eab308";
+      else barColor = "#ef4444";
+
+      html += '<div class="cw-ranking-item">';
+      html += `<div class="cw-rank-num" style="background:${item.color};color:#fff">${i + 1}</div>`;
+      html += `<div class="cw-rank-name">${item.label}</div>`;
+      html += `<div class="cw-rank-bar-wrap"><div class="cw-rank-bar" style="width:${item.pct}%;background:${barColor}"></div></div>`;
+      html += `<div class="cw-rank-score">${item.pct}%</div>`;
+      html += "</div>";
+    });
+    html += "</ul></div>";
+  }
+
+  body.innerHTML = html;
+  document.getElementById("neighborhood-modal").classList.add("show");
+  requestAnimationFrame(() => renderNeighborhoodCharts(props, sfx, typeData));
+}
+
+function hideNeighborhoodModal() {
+  const modal = document.getElementById("neighborhood-modal");
+  if (modal) modal.classList.remove("show");
+  neighborhoodCharts.forEach(c => c.destroy());
+  neighborhoodCharts = [];
+}
+
+function renderNeighborhoodCharts(props, sfx, typeData) {
+  if (typeof Chart === "undefined") return;
+  Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+
+  // Amenity pie chart
+  const pieCanvas = document.getElementById("hood-amenity-pie");
+  if (pieCanvas) {
+    const labels = [];
+    const values = [];
+    const colors = [];
+
+    Object.keys(AMENITY_TYPE_CONFIG).forEach(type => {
+      if (type === "trees") return;
+      const avg = props["avg_" + type + sfx] || 0;
+      if (avg > 0) {
+        const config = getAmenityConfig(type);
+        labels.push(config.label);
+        values.push(avg);
+        colors.push(config.color);
+      }
+    });
+
+    if (values.length > 0) {
+      neighborhoodCharts.push(new Chart(pieCanvas, {
+        type: "doughnut",
+        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#fff" }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "right", labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }
+          }
+        }
+      }));
+    }
+  }
+
+  // Type comparison bar chart
+  const barCanvas = document.getElementById("hood-type-bar");
+  if (barCanvas && typeData && typeData.length > 0) {
+    neighborhoodCharts.push(new Chart(barCanvas, {
+      type: "bar",
+      data: {
+        labels: typeData.map(d => d.label),
+        datasets: [{ data: typeData.map(d => d.avg), backgroundColor: typeData.map(d => d.color), borderRadius: 3 }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: "y",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: "#f3f4f6" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Avg count per building", font: { size: 11 } } },
+          y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+        }
+      }
+    }));
+  }
+}
+
+// Neighborhood click handler
+map.on("click", "neighborhoods-fill", function(e) {
+  if (currentMode !== "neighborhood") return;
+  if (!e.features || e.features.length === 0) return;
+
+  const feature = e.features[0];
+  console.log("[Neighborhood] Clicked:", feature.properties.Name);
+  showNeighborhoodModal(feature);
+});
+
+map.on("mouseenter", "neighborhoods-fill", function() {
+  if (currentMode === "neighborhood") map.getCanvas().style.cursor = "pointer";
+});
+
+map.on("mouseleave", "neighborhoods-fill", function() {
+  if (currentMode === "neighborhood") {
+    map.getCanvas().style.cursor = "";
+    tooltip.style.display = "none";
+  }
+});
+
+map.on("mousemove", "neighborhoods-fill", function(e) {
+  if (currentMode !== "neighborhood" || !e.features || e.features.length === 0) return;
+  const props = e.features[0].properties;
+  const sfx = "_" + walkMinutes + "min";
+  const avg = props["avg_overall" + sfx] || 0;
+  tooltip.textContent = `${props.Name || "?"}\nAvg score: ${formatMetricNumber(avg)}`;
+  tooltip.style.display = "block";
+  tooltip.style.left = (e.point.x + 12) + "px";
+  tooltip.style.top = (e.point.y + 12) + "px";
+});
+
+// ─── Citywide Modal ─────────────────────────────────────────────────
+
+function showCitywideModal() {
+  const modal = document.getElementById("citywide-modal");
+  if (modal) modal.classList.add("show");
+}
+
+function hideCitywideModal() {
+  const modal = document.getElementById("citywide-modal");
+  if (modal) modal.classList.remove("show");
+  citywideCharts.forEach(c => c.destroy());
+  citywideCharts = [];
+}
+
+document.getElementById("citywide-close").addEventListener("click", function() {
+  hideCitywideModal();
+  switchMode("house");
+});
+
+document.getElementById("citywide-modal").addEventListener("click", function(e) {
+  if (e.target === this) {
+    hideCitywideModal();
+    switchMode("house");
+  }
+});
+
+// Neighborhood modal close handlers
+document.getElementById("neighborhood-modal-close").addEventListener("click", hideNeighborhoodModal);
+document.getElementById("neighborhood-modal").addEventListener("click", function(e) {
+  if (e.target === this) hideNeighborhoodModal();
+});
+
+function renderCitywideModal() {
+  const body = document.getElementById("citywide-body");
+  if (!body || !citywideStats) return;
+
+  citywideCharts.forEach(c => c.destroy());
+  citywideCharts = [];
+
+  const sfx = "_" + walkMinutes + "min";
+  const stats = citywideStats;
+
+  let html = '';
+
+  // Summary cards
+  html += '<div class="cw-summary">';
+  html += `<div class="cw-stat-card"><div class="cw-stat-value">${(stats.total_buildings || 0).toLocaleString()}</div><div class="cw-stat-label">Buildings</div></div>`;
+  html += `<div class="cw-stat-card"><div class="cw-stat-value">${(stats.total_amenities || 0).toLocaleString()}</div><div class="cw-stat-label">Amenities</div></div>`;
+  html += '</div>';
+
+  // Amenity distribution chart
+  html += '<div class="cw-section">';
+  html += '<div class="cw-section-title">Amenity Distribution</div>';
+  html += '<div class="cw-chart-container cw-pie-chart"><canvas id="cw-amenity-pie"></canvas></div>';
+  html += '</div>';
+
+  // Score distribution histogram
+  html += '<div class="cw-section">';
+  html += `<div class="cw-section-title">Building Score Distribution (${walkMinutes}-min walk)</div>`;
+  html += '<div class="cw-chart-container"><canvas id="cw-score-hist"></canvas></div>';
+  html += '</div>';
+
+  // Neighborhood ranking
+  const ranking = (stats.neighborhood_ranking || [])
+    .slice()
+    .sort((a, b) => (b["avg_overall" + sfx] || 0) - (a["avg_overall" + sfx] || 0));
+
+  html += '<div class="cw-section">';
+  html += '<div class="cw-section-title">Neighborhood Ranking</div>';
+  const maxScore = ranking.length > 0 ? ranking[0]["avg_overall" + sfx] : 1;
+  html += '<ul class="cw-ranking-list">';
+  ranking.forEach((r, i) => {
+    const score = r["avg_overall" + sfx] || 0;
+    const pct = r["pct_overall" + sfx] || 0;
+    const barPct = maxScore > 0 ? (score / maxScore * 100) : 0;
+    let barColor;
+    if (pct >= 70) barColor = "#22c55e";
+    else if (pct >= 40) barColor = "#eab308";
+    else barColor = "#ef4444";
+
+    html += `<div class="cw-ranking-item">`;
+    html += `<div class="cw-rank-num">${i + 1}</div>`;
+    html += `<div class="cw-rank-name">${r.name}</div>`;
+    html += `<div class="cw-rank-bar-wrap"><div class="cw-rank-bar" style="width:${barPct}%;background:${barColor}"></div></div>`;
+    html += `<div class="cw-rank-score">${formatMetricNumber(score)}</div>`;
+    html += `</div>`;
+  });
+  html += '</ul></div>';
+
+  body.innerHTML = html;
+
+  // Render charts after DOM update
+  requestAnimationFrame(() => renderCitywideCharts(sfx));
+}
+
+function renderCitywideCharts(sfx) {
+  if (!citywideStats || typeof Chart === "undefined") return;
+
+  const chartFont = { family: "Inter, system-ui, sans-serif" };
+  Chart.defaults.font.family = chartFont.family;
+
+  // Amenity distribution pie
+  const pieCanvas = document.getElementById("cw-amenity-pie");
+  if (pieCanvas) {
+    const counts = citywideStats.amenity_counts || {};
+    const labels = [];
+    const values = [];
+    const colors = [];
+    Object.entries(counts)
+      .filter(([type]) => type !== "trees")
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([type, count]) => {
+        const config = getAmenityConfig(type);
+        labels.push(config.label);
+        values.push(count);
+        colors.push(config.color);
+      });
+
+    const pieChart = new Chart(pieCanvas, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#fff" }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: "right", labels: { boxWidth: 12, padding: 8, font: { size: 11 } } }
+        }
+      }
+    });
+    citywideCharts.push(pieChart);
+  }
+
+  // Score distribution histogram — colors match the basemap gradient
+  const histCanvas = document.getElementById("cw-score-hist");
+  if (histCanvas) {
+    const dist = citywideStats["distribution" + sfx];
+    if (dist) {
+      const bldBreakpoints = percentileBreakpoints(collectBuildingScores());
+      const labels = dist.edges.slice(0, -1).map((e, i) => `${e}-${dist.edges[i + 1]}`);
+      const histChart = new Chart(histCanvas, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            data: dist.counts,
+            backgroundColor: dist.edges.slice(0, -1).map((edge, i) => {
+              const midpoint = (edge + dist.edges[i + 1]) / 2;
+              return getColorForValue(midpoint, bldBreakpoints);
+            }),
+            borderRadius: 3,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 9 } } },
+            y: { grid: { color: "#f3f4f6" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Buildings", font: { size: 11 } } }
+          }
+        }
+      });
+      citywideCharts.push(histChart);
+    }
+  }
+
+}
+
+// Mode toggle click handler
+modeToggle.addEventListener("click", function(e) {
+  const btn = e.target.closest(".mode-opt");
+  if (!btn) return;
+  const mode = btn.dataset.mode;
+
+  // Exit previous neighborhood mode visuals
+  if (currentMode === "neighborhood" || currentMode === "citywide") {
+    exitNeighborhoodMode();
+  }
+
+  switchMode(mode);
+});
+
+// Update walking time handler to also update neighborhood colors
+radiusToggle.addEventListener("click", function() {
+  if (currentMode === "neighborhood") {
+    updateNeighborhoodColors();
+    if (selectedNeighborhood && document.getElementById("neighborhood-modal").classList.contains("show")) {
+      showNeighborhoodModal(selectedNeighborhood);
+    }
+  }
+  if (currentMode === "citywide" && document.getElementById("citywide-modal").classList.contains("show")) {
+    renderCitywideModal();
   }
 });

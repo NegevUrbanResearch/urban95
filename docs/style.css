@@ -606,6 +606,271 @@ body {
   color: #111827;
 }
 
+/* Analysis mode toggle */
+.mode-section {
+  padding: 10px 16px !important;
+}
+
+.mode-toggle {
+  display: flex;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.mode-opt {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.mode-opt:hover {
+  color: #374151;
+}
+
+.mode-opt.active {
+  background: #fff;
+  color: #2563eb;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.mode-opt svg {
+  flex-shrink: 0;
+}
+
+/* Neighborhood info panel (legacy, now uses modal) */
+
+.hood-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.hood-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.hood-rank {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #2563eb;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.hood-rank.low { background: #ef4444; }
+.hood-rank.mid { background: #eab308; color: #1f2937; }
+.hood-rank.high { background: #22c55e; }
+
+.hood-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hood-stat {
+  text-align: center;
+  padding: 8px 4px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.hood-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.hood-stat-label {
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+.hood-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.hood-type-item {
+  font-size: 11px;
+  color: #4b5563;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.hood-type-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+/* Citywide / Neighborhood modals */
+.modal-content.citywide-content {
+  max-width: 900px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-content.citywide-content > .modal-header {
+  flex-shrink: 0;
+}
+
+.citywide-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.cw-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.cw-stat-card {
+  text-align: center;
+  padding: 14px 8px;
+  background: #f0f7ff;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+}
+
+.cw-stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: #2563eb;
+  line-height: 1.1;
+}
+
+.cw-stat-label {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.cw-section {
+  margin-bottom: 24px;
+}
+
+.cw-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cw-chart-container {
+  position: relative;
+  height: 280px;
+  margin-bottom: 12px;
+}
+
+.cw-pie-chart {
+  height: 320px;
+}
+
+.cw-ranking-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.cw-ranking-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.cw-ranking-item:last-child {
+  border-bottom: none;
+}
+
+.cw-rank-num {
+  width: 22px;
+  height: 22px;
+  background: #f3f4f6;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.cw-ranking-item:nth-child(1) .cw-rank-num { background: #fef3c7; color: #92400e; }
+.cw-ranking-item:nth-child(2) .cw-rank-num { background: #e5e7eb; color: #374151; }
+.cw-ranking-item:nth-child(3) .cw-rank-num { background: #fed7aa; color: #9a3412; }
+
+.cw-rank-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cw-rank-bar-wrap {
+  flex: 2;
+  height: 18px;
+  background: #f3f4f6;
+  border-radius: 9px;
+  overflow: hidden;
+  position: relative;
+}
+
+.cw-rank-bar {
+  height: 100%;
+  border-radius: 9px;
+  transition: width 0.5s ease;
+}
+
+.cw-rank-score {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  width: 40px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* Controls row - wraps filter and radius */
 .controls-row {
   display: contents;
@@ -664,7 +929,7 @@ body {
   border-radius: 20px;
   width: 100%;
   max-width: 480px;
-  max-height: 85vh;
+  max-height: 92vh;
   overflow: hidden;
   position: relative;
   box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
@@ -953,6 +1218,45 @@ body {
   /* Hide legend on mobile - keep UI minimal */
   .legend-section {
     display: none;
+  }
+
+  /* Mode toggle on mobile - full-width above filter row */
+  .mode-section {
+    padding: 6px 12px 0 !important;
+    border: none !important;
+  }
+
+  .mode-toggle {
+    height: 36px;
+    padding: 3px;
+    border-radius: 10px;
+    background: #f0f0f0;
+  }
+
+  .mode-opt {
+    font-size: 12px;
+    border-radius: 8px;
+    padding: 0;
+    gap: 3px;
+  }
+
+  .mode-opt svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .hood-stats {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .cw-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .modal-content.citywide-content {
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
   }
 
   /* Info button - top left floating on mobile */

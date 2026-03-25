@@ -41,6 +41,24 @@
         </button>
       </div>
 
+      <div class="section mode-section">
+        <div class="section-title">Analysis</div>
+        <div class="mode-toggle" id="mode-toggle">
+          <button class="mode-opt active" data-mode="house">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+            <span>House</span>
+          </button>
+          <button class="mode-opt" data-mode="neighborhood">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            <span>Neighborhood</span>
+          </button>
+          <button class="mode-opt" data-mode="citywide">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="6" width="5" height="14"/><rect x="7" y="3" width="5" height="17"/><rect x="13" y="8" width="5" height="12"/><rect x="19" y="5" width="4" height="15"/></svg>
+            <span>City</span>
+          </button>
+        </div>
+      </div>
+
       <div class="controls-row">
         <div class="section" id="amenity-filter-section">
           <div class="section-title">Filter</div>
@@ -64,7 +82,7 @@
             <button class="radius-opt" data-minutes="10">10 min</button>
             <button class="radius-opt" data-minutes="15">15 min</button>
           </div>
-          <div class="hint">Click map to analyze nearest building</div>
+          <div class="hint" id="mode-hint">Click map to analyze nearest building</div>
         </div>
       </div>
 
@@ -108,6 +126,32 @@
 
     <div id="filter-backdrop" class="filter-backdrop"></div>
 
+    <div id="neighborhood-modal" class="modal">
+      <div class="modal-content citywide-content">
+        <button id="neighborhood-modal-close" class="modal-close">&times;</button>
+        <div class="modal-header">
+          <div class="modal-title">
+            <h2 id="neighborhood-modal-title">Neighborhood</h2>
+            <p id="neighborhood-modal-subtitle">Accessibility details</p>
+          </div>
+        </div>
+        <div id="neighborhood-modal-body" class="citywide-body"></div>
+      </div>
+    </div>
+
+    <div id="citywide-modal" class="modal">
+      <div class="modal-content citywide-content">
+        <button id="citywide-close" class="modal-close">&times;</button>
+        <div class="modal-header">
+          <div class="modal-title">
+            <h2>Beer Sheva — City Overview</h2>
+            <p>Accessibility across the city</p>
+          </div>
+        </div>
+        <div class="citywide-body" id="citywide-body"></div>
+      </div>
+    </div>
+
     <div id="info-modal" class="modal">
       <div class="modal-content">
         <button id="modal-close" class="modal-close">&times;</button>
@@ -149,7 +193,7 @@
           <p>This map is a collaboration between <strong>Urban95</strong> and <strong>NUR</strong> as part of the "Cities for Children" initiative.</p>
           <div class="about-section">
             <strong>Methodology</strong>
-            <p>Each building's accessibility score is calculated by counting amenities reachable within walking-time isochrones (5, 10, or 15 minutes) using the Mapbox walking directions API. Trees are included in the analysis but weighted at 1/4 the value of other amenities. Building colors use a logarithmic scale so that differences at lower counts are more visible.</p>
+            <p>Each building's accessibility score is calculated by counting amenities reachable within walking-time isochrones (5, 10, or 15 minutes) using the Mapbox walking directions API. Trees are included in the analysis but weighted at 1/4 the value of other amenities. Building colors use a percentile scale — each color band represents an equal share of buildings, so relative differences are clearly visible regardless of the count range.</p>
           </div>
           <div class="about-section">
             <strong>Data </strong>
@@ -164,6 +208,7 @@
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
     <script src="https://unpkg.com/deck.gl@9.0.31/dist.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
