@@ -1,4 +1,4 @@
-/* global maplibregl, turf */
+/* global maplibregl, turf, deck */
 
 const BASE = "./data";
 const ICONS_BASE = "./icons";
@@ -44,28 +44,6 @@ function getZoomForPolygon(polygon) {
   // Rough degrees-to-zoom: at zoom 15, ~0.01 deg is visible in viewport
   const zoom = Math.log2(0.01 / maxSpan) + 15;
   return Math.min(Math.max(zoom, 12), 18);
-}
-
-// Build color expression for amenity types
-function buildAmenityColorExpression() {
-  const cases = ["case"];
-  Object.entries(AMENITY_TYPE_CONFIG).forEach(([type, config]) => {
-    cases.push(["==", ["get", "amenity_type"], type]);
-    cases.push(config.color);
-  });
-  cases.push(DEFAULT_CONFIG.color);
-  return cases;
-}
-
-// Build icon expression for amenity types
-function buildAmenityIconExpression() {
-  const cases = ["case"];
-  Object.entries(AMENITY_TYPE_CONFIG).forEach(([type, config]) => {
-    cases.push(["==", ["get", "amenity_type"], type]);
-    cases.push(config.icon);
-  });
-  cases.push(DEFAULT_CONFIG.icon);
-  return cases;
 }
 
 const map = new maplibregl.Map({
@@ -171,11 +149,12 @@ const AMENITY_POINT_LAYER_IDS = [
   "amenity-heatmap",
   "tree-points-highlighted",
   "tree-points",
-  "amenity-points-highlighted",
-  "amenity-points",
-  "amenity-icons-highlighted",
-  "amenity-icons",
 ];
+
+const AMENITY_CLUSTER_MIN_ZOOM = 13;
+const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
+const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
+const AMENITY_CLUSTER_MAX_COUNT = 50;
 
 // Check if we're on a touch device
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
@@ -197,6 +176,9 @@ let iconsLoaded = false;
 let treesLoadStarted = false;
 let isochronesLoaded = false;
 let isochroneIndex = {}; // { "buildingId_minutes": GeoJSON feature }
+let visibleAmenityFeatures = [];
+let deckAmenityOverlay = null;
+let deckAmenityIconsCache = new Map();
 
 // Loading screen elements
 const loadingScreen = document.getElementById("loading-screen");
@@ -343,6 +325,8 @@ function updateAmenitiesSource() {
   // If nothing selected, show nothing
   if (selectedAmenityTypes.size === 0) {
     source.setData({ type: "FeatureCollection", features: [] });
+    visibleAmenityFeatures = [];
+    updateDeckAmenityLayers();
     return;
   }
   
@@ -351,6 +335,8 @@ function updateAmenitiesSource() {
   
   if (!showAmenities) {
     source.setData({ type: "FeatureCollection", features: [] });
+    visibleAmenityFeatures = [];
+    updateDeckAmenityLayers();
     return;
   }
   
@@ -367,6 +353,8 @@ function updateAmenitiesSource() {
   });
   
   source.setData({ type: "FeatureCollection", features: updatedFeatures });
+  visibleAmenityFeatures = updatedFeatures;
+  updateDeckAmenityLayers();
 }
 
 // Update trees source (separate layer)
@@ -501,77 +489,6 @@ function addAmenityLayers() {
     },
   });
 
-  // Amenity points (highlighted)
-  map.addLayer({
-    id: "amenity-points-highlighted",
-    type: "circle",
-    source: "amenities",
-    minzoom: 13,
-    filter: ["==", ["get", "_inRadius"], true],
-    paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 6, 16, 14],
-      "circle-color": buildAmenityColorExpression(),
-      "circle-stroke-width": 3,
-      "circle-stroke-color": "#fbbf24",
-      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
-      "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
-    },
-  });
-
-  // Amenity points (not highlighted)
-  map.addLayer({
-    id: "amenity-points",
-    type: "circle",
-    source: "amenities",
-    minzoom: 13,
-    filter: ["!=", ["get", "_inRadius"], true],
-    paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 4, 16, 12],
-      "circle-color": buildAmenityColorExpression(),
-      "circle-stroke-width": 2,
-      "circle-stroke-color": "#fff",
-      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
-      "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0, 14, 1],
-    },
-  });
-
-  // Amenity icons (highlighted)
-  map.addLayer({
-    id: "amenity-icons-highlighted",
-    type: "symbol",
-    source: "amenities",
-    minzoom: 14,
-    filter: ["==", ["get", "_inRadius"], true],
-    layout: {
-      "icon-image": buildAmenityIconExpression(),
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.9, 16, 1.4],
-      "icon-allow-overlap": false,
-    },
-    paint: {
-      "icon-color": "#fff",
-      "icon-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 1],
-      "icon-opacity-transition": { duration: 0 },
-    },
-  });
-
-  // Amenity icons (not highlighted)
-  map.addLayer({
-    id: "amenity-icons",
-    type: "symbol",
-    source: "amenities",
-    minzoom: 14,
-    filter: ["!=", ["get", "_inRadius"], true],
-    layout: {
-      "icon-image": buildAmenityIconExpression(),
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.7, 16, 1.1],
-      "icon-allow-overlap": false,
-    },
-    paint: {
-      "icon-color": "#fff",
-      "icon-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 1],
-      "icon-opacity-transition": { duration: 0 },
-    },
-  });
 }
 
 // Calculate logarithmically-spaced breakpoints for the color scale
@@ -670,6 +587,325 @@ function setAmenityPointsVisibility(visible) {
       map.setLayoutProperty(id, "visibility", v);
     }
   });
+  updateDeckAmenityLayers();
+}
+
+function describeTypeMix(typeCounts) {
+  return Object.entries(typeCounts || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => `${type}:${count}`)
+    .join("|");
+}
+
+function createAmenityIconDataUrl(typeCounts, inRadius, isCluster) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const cx = 32;
+  const cy = 32;
+  const radius = isCluster ? 23 : 20;
+  const ringWidth = isCluster ? 9 : 7;
+  const borderColor = inRadius ? "#fbbf24" : "rgba(255, 255, 255, 0.94)";
+  const shadowColor = "rgba(15, 23, 42, 0.3)";
+
+  const entries = Object.entries(typeCounts || {}).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((sum, [, count]) => sum + count, 0) || 1;
+
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.shadowColor = shadowColor;
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+
+  if (entries.length <= 1) {
+    const type = entries.length === 1 ? entries[0][0] : "other";
+    const color = getAmenityConfig(type).color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  } else {
+    let startAngle = -Math.PI / 2;
+    entries.forEach(([type, count]) => {
+      const angle = (count / total) * Math.PI * 2;
+      const endAngle = startAngle + angle;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, radius, startAngle, endAngle);
+      ctx.closePath();
+      ctx.fillStyle = getAmenityConfig(type).color;
+      ctx.fill();
+      startAngle = endAngle;
+    });
+  }
+
+  ctx.shadowColor = "transparent";
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.lineWidth = inRadius ? 4 : 3;
+  ctx.strokeStyle = borderColor;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(4, radius - ringWidth), 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
+  ctx.fill();
+
+  return canvas.toDataURL("image/png");
+}
+
+function getAmenityDeckIcon(item) {
+  const cappedCount = Math.min(item.count, AMENITY_CLUSTER_MAX_COUNT);
+  const mixSignature = describeTypeMix(item.typeCounts);
+  const key = `${mixSignature}|${item.inRadius ? 1 : 0}|${item.isCluster ? 1 : 0}|${cappedCount}`;
+  if (!deckAmenityIconsCache.has(key)) {
+    deckAmenityIconsCache.set(key, {
+      url: createAmenityIconDataUrl(item.typeCounts, item.inRadius, item.isCluster),
+      width: 64,
+      height: 64,
+      anchorX: 32,
+      anchorY: 32
+    });
+  }
+  return deckAmenityIconsCache.get(key);
+}
+
+function clusterVisibleAmenities(features) {
+  if (!features || features.length === 0) return [];
+  const zoom = map.getZoom();
+  const includeSingles = zoom >= AMENITY_CLUSTER_MIN_ZOOM;
+  if (!includeSingles) return [];
+  if (zoom >= AMENITY_CLUSTER_DISSOLVE_ZOOM) {
+    return features.map((feature) => {
+      const coordinates = feature.geometry && feature.geometry.coordinates;
+      if (!coordinates || coordinates.length < 2) return null;
+      const props = feature.properties || {};
+      const amenityType = props.amenity_type || "other";
+      const name = props.hebrew_nam || props.name || "";
+      return {
+        position: coordinates,
+        count: 1,
+        countLabel: "",
+        amenityType,
+        typeCounts: { [amenityType]: 1 },
+        inRadius: Boolean(props._inRadius),
+        isCluster: false,
+        sampleNames: name ? [name] : [],
+        members: [coordinates]
+      };
+    }).filter(Boolean);
+  }
+
+  const buckets = [];
+  for (let i = 0; i < features.length; i++) {
+    const feature = features[i];
+    const coordinates = feature.geometry && feature.geometry.coordinates;
+    if (!coordinates || coordinates.length < 2) continue;
+
+    const projected = map.project(coordinates);
+    let bucket = null;
+    for (let j = 0; j < buckets.length; j++) {
+      const candidate = buckets[j];
+      const dx = candidate.centerX - projected.x;
+      const dy = candidate.centerY - projected.y;
+      if ((dx * dx + dy * dy) <= (AMENITY_CLUSTER_PIXEL_RADIUS * AMENITY_CLUSTER_PIXEL_RADIUS)) {
+        bucket = candidate;
+        break;
+      }
+    }
+
+    if (!bucket) {
+      bucket = {
+        centerX: projected.x,
+        centerY: projected.y,
+        count: 0,
+        weightedLng: 0,
+        weightedLat: 0,
+        inRadiusCount: 0,
+        typeCounts: {},
+        names: [],
+        members: []
+      };
+      buckets.push(bucket);
+    }
+
+    const props = feature.properties || {};
+    const amenityType = props.amenity_type || "other";
+    bucket.count += 1;
+    bucket.weightedLng += coordinates[0];
+    bucket.weightedLat += coordinates[1];
+    bucket.typeCounts[amenityType] = (bucket.typeCounts[amenityType] || 0) + 1;
+    if (props._inRadius) bucket.inRadiusCount += 1;
+
+    const name = props.hebrew_nam || props.name || "";
+    if (name && bucket.names.length < 3) {
+      bucket.names.push(name);
+    }
+    bucket.members.push(coordinates);
+  }
+
+  return buckets.map((bucket) => {
+    let dominantType = "other";
+    let dominantCount = -1;
+    Object.entries(bucket.typeCounts).forEach(([type, count]) => {
+      if (count > dominantCount) {
+        dominantType = type;
+        dominantCount = count;
+      }
+    });
+
+    const count = bucket.count;
+    const isCluster = count > 1;
+    const cappedCount = Math.min(count, AMENITY_CLUSTER_MAX_COUNT);
+    const countLabel = count > AMENITY_CLUSTER_MAX_COUNT ? `${AMENITY_CLUSTER_MAX_COUNT}+` : String(cappedCount);
+
+    return {
+      position: [bucket.weightedLng / count, bucket.weightedLat / count],
+      count,
+      countLabel: isCluster ? countLabel : "",
+      amenityType: dominantType,
+      typeCounts: bucket.typeCounts,
+      inRadius: bucket.inRadiusCount > 0,
+      isCluster,
+      sampleNames: bucket.names,
+      members: bucket.members
+    };
+  });
+}
+
+function updateDeckAmenityLayers() {
+  if (!deckAmenityOverlay) return;
+
+  const showPoints = showPointsToggle ? showPointsToggle.checked : true;
+  const shouldRender = showPoints && map.getZoom() >= AMENITY_CLUSTER_MIN_ZOOM;
+  if (!shouldRender) {
+    deckAmenityOverlay.setProps({ layers: [] });
+    tooltip.style.display = "none";
+    map.getCanvas().style.cursor = "";
+    return;
+  }
+
+  const clusteredAmenities = clusterVisibleAmenities(visibleAmenityFeatures);
+  const iconLayer = new deck.IconLayer({
+    id: "amenity-cluster-icons",
+    data: clusteredAmenities,
+    pickable: true,
+    sizeUnits: "pixels",
+    sizeScale: 1,
+    getPosition: d => d.position,
+    getIcon: getAmenityDeckIcon,
+    getSize: d => {
+      if (!d.isCluster) return d.inRadius ? 24 : 20;
+      const size = 20 + Math.sqrt(Math.min(d.count, AMENITY_CLUSTER_MAX_COUNT)) * 4;
+      return d.inRadius ? size + 3 : size;
+    },
+    updateTriggers: {
+      getIcon: [visibleAmenityFeatures.length]
+    },
+    onHover: ({ object, x, y }) => {
+      if (!object) {
+        tooltip.style.display = "none";
+        map.getCanvas().style.cursor = "";
+        return;
+      }
+
+      const typeLabel = getAmenityConfig(object.amenityType).label;
+      const topTypes = Object.entries(object.typeCounts || {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([type, count]) => `${getAmenityConfig(type).label}: ${count}`);
+      const lines = [];
+      if (object.isCluster) {
+        lines.push(`${object.countLabel} nearby amenities`);
+        lines.push(`Main type: ${typeLabel}`);
+        if (topTypes.length > 1) {
+          lines.push(topTypes.join(" | "));
+        }
+      } else {
+        lines.push(typeLabel);
+      }
+      if (object.sampleNames && object.sampleNames.length > 0) {
+        lines.push(object.sampleNames[0]);
+      }
+
+      tooltip.textContent = lines.join("\n");
+      tooltip.style.display = "block";
+      tooltip.style.left = `${x + 12}px`;
+      tooltip.style.top = `${y + 12}px`;
+      map.getCanvas().style.cursor = "pointer";
+    },
+    onClick: ({ object }) => {
+      if (!object || !object.isCluster) return;
+      const members = Array.isArray(object.members) ? object.members : [];
+      if (members.length === 0) return;
+
+      let minLng = Infinity;
+      let minLat = Infinity;
+      let maxLng = -Infinity;
+      let maxLat = -Infinity;
+      members.forEach(([lng, lat]) => {
+        if (lng < minLng) minLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lng > maxLng) maxLng = lng;
+        if (lat > maxLat) maxLat = lat;
+      });
+
+      const zeroSpan = (maxLng - minLng) < 1e-6 && (maxLat - minLat) < 1e-6;
+      if (zeroSpan) {
+        map.easeTo({
+          center: object.position,
+          zoom: Math.max(AMENITY_CLUSTER_DISSOLVE_ZOOM + 1, map.getZoom() + 2),
+          duration: 420
+        });
+        return;
+      }
+
+      map.once("moveend", () => {
+        if (map.getZoom() < AMENITY_CLUSTER_DISSOLVE_ZOOM) {
+          map.easeTo({
+            center: object.position,
+            zoom: AMENITY_CLUSTER_DISSOLVE_ZOOM,
+            duration: 260
+          });
+        }
+      });
+
+      map.fitBounds([[minLng, minLat], [maxLng, maxLat]], {
+        padding: 80,
+        maxZoom: 18,
+        duration: 480
+      });
+    }
+  });
+
+  const textLayer = new deck.TextLayer({
+    id: "amenity-cluster-counts",
+    data: clusteredAmenities.filter(d => d.isCluster),
+    pickable: false,
+    getPosition: d => d.position,
+    getText: d => d.countLabel,
+    getSize: 12,
+    sizeUnits: "pixels",
+    getColor: [255, 255, 255, 245],
+    getTextAnchor: "middle",
+    getAlignmentBaseline: "center",
+    fontFamily: "Inter, system-ui, sans-serif",
+    fontWeight: 700
+  });
+
+  deckAmenityOverlay.setProps({ layers: [iconLayer, textLayer] });
+}
+
+function initDeckAmenityOverlay() {
+  if (deckAmenityOverlay || typeof deck === "undefined" || !deck.MapboxOverlay) return;
+  deckAmenityOverlay = new deck.MapboxOverlay({ interleaved: true, layers: [] });
+  map.addControl(deckAmenityOverlay);
+
+  map.on("moveend", updateDeckAmenityLayers);
+  map.on("zoomend", updateDeckAmenityLayers);
+  map.on("resize", updateDeckAmenityLayers);
 }
 
 function updateBuildingColors() {
@@ -1257,71 +1493,11 @@ map.on("click", function (e) {
   }
 });
 
-// Hover effect for amenity points
-map.on("mouseenter", "amenity-points", () => map.getCanvas().style.cursor = "pointer");
-map.on("mouseenter", "amenity-points-highlighted", () => map.getCanvas().style.cursor = "pointer");
-map.on("mouseleave", "amenity-points", () => map.getCanvas().style.cursor = "");
-map.on("mouseleave", "amenity-points-highlighted", () => map.getCanvas().style.cursor = "");
-
 // Hover effect for tree points
 map.on("mouseenter", "tree-points", () => map.getCanvas().style.cursor = "pointer");
 map.on("mouseenter", "tree-points-highlighted", () => map.getCanvas().style.cursor = "pointer");
 map.on("mouseleave", "tree-points", () => map.getCanvas().style.cursor = "");
 map.on("mouseleave", "tree-points-highlighted", () => map.getCanvas().style.cursor = "");
-
-// Format amenity type for display
-function formatTypeName(props) {
-  const type = props.amenity_type;
-  if (type === "trees") return "Tree";
-  return props.top_classi || type || "Unknown";
-}
-
-// Show tooltip on amenity hover
-map.on("mousemove", "amenity-points", (e) => {
-  if (e.features.length === 0) return;
-  const props = e.features[0].properties;
-  
-  const typeName = formatTypeName(props);
-  const sub = props.subcategor || "";
-  const name = props.hebrew_nam || props.name || "";
-  
-  const lines = [];
-  if (name) lines.push(name);
-  lines.push(typeName);
-  if (sub) lines.push(sub);
-  
-  tooltip.textContent = lines.join("\n");
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.point.x + 12) + "px";
-  tooltip.style.top = (e.point.y + 12) + "px";
-});
-
-map.on("mousemove", "amenity-points-highlighted", (e) => {
-  if (e.features.length === 0) return;
-  const props = e.features[0].properties;
-  
-  const typeName = formatTypeName(props);
-  const sub = props.subcategor || "";
-  const name = props.hebrew_nam || props.name || "";
-  
-  const lines = [];
-  if (name) lines.push(name);
-  lines.push(typeName);
-  if (sub) lines.push(sub);
-  
-  tooltip.textContent = lines.join("\n");
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.point.x + 12) + "px";
-  tooltip.style.top = (e.point.y + 12) + "px";
-});
-
-map.on("mouseleave", "amenity-points", () => {
-  tooltip.style.display = "none";
-});
-
-map.on("mouseleave", "amenity-points-highlighted", () => {
-  tooltip.style.display = "none";
-});
 
 // Show tooltip on tree hover
 map.on("mousemove", "tree-points", (e) => {
@@ -1360,6 +1536,7 @@ map.on("load", async function () {
   
   // Add amenity layers after icons are loaded
   addAmenityLayers();
+  initDeckAmenityOverlay();
   setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
 
   setLoadingStatus("Loading buildings...");
