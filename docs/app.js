@@ -9,19 +9,19 @@ const AMENITIES_ALL_URL = BASE + "/amenities_all.geojson";
 const ISOCHRONES_URL = BASE + "/isochrones.geojson";
 
 const AMENITY_TYPE_CONFIG = {
-  trees: { color: "#22c55e", icon: "park-alt1", label: "Trees" },
-  healthcare: { color: "#dc2626", icon: "hospital", label: "Healthcare" },
-  education: { color: "#2563eb", icon: "school", label: "Education" },
-  commercial: { color: "#d97706", icon: "shop", label: "Commercial" },
-  services: { color: "#6b7280", icon: "town-hall", label: "Services" },
-  religious_institutions: { color: "#7c3aed", icon: "place-of-worship", label: "Religious" },
-  parks_and_recreation: { color: "#16a34a", icon: "restaurant", label: "Recreation" },
-  public_institutions: { color: "#0f172a", icon: "building", label: "Public" },
-  fitness: { color: "#0d9488", icon: "fitness-centre", label: "Fitness" },
-  transportation: { color: "#475569", icon: "bus", label: "Transport" },
-  financial_services: { color: "#0284c7", icon: "bank", label: "Financial" },
-  tourism: { color: "#db2777", icon: "lodging", label: "Tourism" },
-  senior_services_and_living: { color: "#ea580c", icon: "home", label: "Senior" },
+  trees: { color: "#2E7D32", icon: "park-alt1", label: "Trees" },
+  healthcare: { color: "#C62828", icon: "hospital", label: "Healthcare" },
+  education: { color: "#8E24AA", icon: "school", label: "Education" },
+  commercial: { color: "#EF6C00", icon: "shop", label: "Commercial" },
+  services: { color: "#00897B", icon: "town-hall", label: "Services" },
+  religious_institutions: { color: "#AD1457", icon: "place-of-worship", label: "Religious" },
+  parks_and_recreation: { color: "#7CB342", icon: "restaurant", label: "Recreation" },
+  public_institutions: { color: "#8D6E63", icon: "building", label: "Public" },
+  fitness: { color: "#D81B60", icon: "fitness-centre", label: "Fitness" },
+  transportation: { color: "#F9A825", icon: "bus", label: "Transport" },
+  financial_services: { color: "#3949AB", icon: "bank", label: "Financial" },
+  tourism: { color: "#00ACC1", icon: "lodging", label: "Tourism" },
+  senior_services_and_living: { color: "#FF7043", icon: "home", label: "Senior" },
 };
 
 const DEFAULT_CONFIG = { color: "#6b7280", icon: "marker", label: "Other" };
@@ -1070,6 +1070,26 @@ function formatArea(areaM2) {
   return Math.round(areaM2).toLocaleString() + " m²";
 }
 
+function colorWithAlpha(hexColor, alpha) {
+  if (typeof hexColor !== "string" || !hexColor.startsWith("#")) {
+    return `rgba(107, 114, 128, ${alpha})`;
+  }
+
+  let hex = hexColor.slice(1);
+  if (hex.length === 3) {
+    hex = hex.split("").map(ch => ch + ch).join("");
+  }
+  if (hex.length !== 6) {
+    return `rgba(107, 114, 128, ${alpha})`;
+  }
+
+  const value = parseInt(hex, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function buildFilterItems(types) {
   filterItems.innerHTML = "";
   allFilterTypes = [];
@@ -1080,9 +1100,10 @@ function buildFilterItems(types) {
     allFilterTypes.push("trees");
     selectedAmenityTypes.add("trees");
     const treesConfig = AMENITY_TYPE_CONFIG["trees"];
+    const treesColor = treesConfig.color || DEFAULT_CONFIG.color;
     const treesLabel = document.createElement("label");
     treesLabel.className = "filter-item";
-    treesLabel.innerHTML = `<input type="checkbox" value="trees" checked /><span>${treesConfig.label}</span>`;
+    treesLabel.innerHTML = `<input type="checkbox" value="trees" checked /><span class="filter-type-pill" style="--pill-color:${treesColor};--pill-bg:${colorWithAlpha(treesColor, 0.14)};--pill-border:${colorWithAlpha(treesColor, 0.35)}">${treesConfig.label}</span>`;
     treesLabel.querySelector("input").addEventListener("change", handleFilterChange);
     filterItems.appendChild(treesLabel);
   }
@@ -1092,10 +1113,11 @@ function buildFilterItems(types) {
   typesWithPoints.forEach(type => {
     allFilterTypes.push(type);
     selectedAmenityTypes.add(type);
-    const config = AMENITY_TYPE_CONFIG[type] || { label: type.replace(/_/g, " ") };
+    const config = getAmenityConfig(type);
     const label = document.createElement("label");
     label.className = "filter-item";
-    label.innerHTML = `<input type="checkbox" value="${type}" checked /><span>${config.label}</span>`;
+    const color = config.color || DEFAULT_CONFIG.color;
+    label.innerHTML = `<input type="checkbox" value="${type}" checked /><span class="filter-type-pill" style="--pill-color:${color};--pill-bg:${colorWithAlpha(color, 0.14)};--pill-border:${colorWithAlpha(color, 0.35)}">${config.label}</span>`;
     label.querySelector("input").addEventListener("change", handleFilterChange);
     filterItems.appendChild(label);
   });
@@ -1317,12 +1339,26 @@ function selectBuilding(building, flyTo = true) {
     const source = map.getSource("radius-circle");
     if (source) source.setData(polygon);
   } else {
-    // Fallback to a turf circle when isochrone data isn't loaded yet or missing
-    const fallbackRadiusKm = walkMinutes * 0.08;
-    const circle = turf.circle([building.lng, building.lat], fallbackRadiusKm, { units: "kilometers", steps: 64 });
-    polygon = circle;
     const source = map.getSource("radius-circle");
-    if (source) source.setData(circle);
+    if (source) source.setData({ type: "FeatureCollection", features: [] });
+
+    amenitiesInRadiusIds.clear();
+    treesInRadiusIds.clear();
+    updateAmenitiesSource();
+    updateTreesSource();
+    const infoPanel = document.getElementById("radius-info");
+    if (infoPanel) infoPanel.style.display = "none";
+
+    if (flyTo) {
+      map.flyTo({
+        center: [building.lng, building.lat],
+        zoom: Math.max(map.getZoom(), 16),
+        speed: 1.2,
+        curve: 1.42,
+        essential: true
+      });
+    }
+    return;
   }
 
   // Calculate items within isochrone polygon

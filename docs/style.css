@@ -266,6 +266,17 @@ body {
   cursor: pointer;
 }
 
+.filter-type-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--pill-border, rgba(107, 114, 128, 0.3));
+  background: var(--pill-bg, rgba(107, 114, 128, 0.12));
+  color: var(--pill-color, #374151);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
 .filter-divider {
   height: 1px;
   background: #e5e7eb;
@@ -908,6 +919,10 @@ body {
     font-size: 15px;
     min-height: 48px;
     border-radius: 8px;
+  }
+
+  .filter-type-pill {
+    padding: 4px 10px;
   }
 
   .filter-item:active {
