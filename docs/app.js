@@ -143,6 +143,7 @@ const legendLabels = document.getElementById("legend-labels");
 const tooltip = document.getElementById("tooltip");
 const radiusToggle = document.getElementById("radius-toggle");
 const showPointsToggle = document.getElementById("show-points-toggle");
+const metricDisplayToggle = document.getElementById("metric-display-toggle");
 
 const AMENITY_POINT_LAYER_IDS = [
   "tree-heatmap",
@@ -179,6 +180,9 @@ let isochroneIndex = {}; // { "buildingId_minutes": GeoJSON feature }
 let visibleAmenityFeatures = [];
 let deckAmenityOverlay = null;
 let deckAmenityIconsCache = new Map();
+let metricDisplayMode = "raw";
+let latestRadiusCounts = {};
+const percentileSeriesCache = new Map();
 
 // Loading screen elements
 const loadingScreen = document.getElementById("loading-screen");
@@ -999,6 +1003,117 @@ function updateBuildingColors() {
   }
 }
 
+function getBuildingOverallScore(props, minutes) {
+  const suffix = "_" + minutes + "min";
+  const amenities = Number(props["num_amenities" + suffix]) || 0;
+  const trees = Number(props["num_trees" + suffix]) || 0;
+  return amenities + trees * 0.25;
+}
+
+function getBuildingTypeScore(props, type, minutes) {
+  const suffix = "_" + minutes + "min";
+  if (type === "trees") {
+    return (Number(props["num_trees" + suffix]) || 0) * 0.25;
+  }
+  return Number(props["amen_" + type + suffix]) || 0;
+}
+
+function computePercentileRank(values, targetValue) {
+  if (!values || values.length === 0) return null;
+  let atOrBelow = 0;
+  values.forEach((value) => {
+    if (value <= targetValue) atOrBelow += 1;
+  });
+  return Math.round((atOrBelow / values.length) * 100);
+}
+
+function computeAverage(values) {
+  if (!values || values.length === 0) return 0;
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return total / values.length;
+}
+
+function getOrdinalSuffix(value) {
+  const v = Math.abs(Number(value)) || 0;
+  const mod100 = v % 100;
+  if (mod100 >= 11 && mod100 <= 13) return "th";
+  const mod10 = v % 10;
+  if (mod10 === 1) return "st";
+  if (mod10 === 2) return "nd";
+  if (mod10 === 3) return "rd";
+  return "th";
+}
+
+function formatMetricNumber(value) {
+  if (!Number.isFinite(value)) return "0";
+  if (Math.abs(value - Math.round(value)) < 0.01) {
+    return Math.round(value).toLocaleString();
+  }
+  return value.toFixed(1);
+}
+
+function getPercentileSeriesForMinutes(minutes) {
+  const cacheKey = String(minutes);
+  if (percentileSeriesCache.has(cacheKey)) {
+    return percentileSeriesCache.get(cacheKey);
+  }
+
+  if (!buildingsData || !Array.isArray(buildingsData.features)) {
+    return null;
+  }
+
+  const byType = {};
+  allFilterTypes.forEach((type) => {
+    byType[type] = [];
+  });
+
+  const overall = [];
+  buildingsData.features.forEach((feature) => {
+    const props = feature.properties || {};
+    overall.push(getBuildingOverallScore(props, minutes));
+    allFilterTypes.forEach((type) => {
+      byType[type].push(getBuildingTypeScore(props, type, minutes));
+    });
+  });
+
+  const series = { overall, byType };
+  percentileSeriesCache.set(cacheKey, series);
+  return series;
+}
+
+function buildPercentileMetrics(buildingProps) {
+  if (!buildingProps) return null;
+  const series = getPercentileSeriesForMinutes(walkMinutes);
+  if (!series || series.overall.length === 0) return null;
+
+  const overallScore = getBuildingOverallScore(buildingProps, walkMinutes);
+  const overallPercentile = computePercentileRank(series.overall, overallScore);
+  const overallAverage = computeAverage(series.overall);
+
+  const perAmenity = allFilterTypes.map((type) => {
+    const config = getAmenityConfig(type);
+    const score = getBuildingTypeScore(buildingProps, type, walkMinutes);
+    const values = series.byType[type] || [];
+    const percentile = computePercentileRank(values, score);
+    const average = computeAverage(values);
+    return {
+      type,
+      label: config.label,
+      color: config.color || DEFAULT_CONFIG.color,
+      score,
+      average,
+      percentile
+    };
+  });
+
+  return {
+    overallScore,
+    overallAverage,
+    overallPercentile,
+    perAmenity
+  };
+}
+
 function updateFilterLabel() {
   const total = allFilterTypes.length;
   const selected = selectedAmenityTypes.size;
@@ -1123,6 +1238,7 @@ function buildFilterItems(types) {
   });
   
   updateFilterLabel();
+  percentileSeriesCache.clear();
 }
 
 // Track if we just opened the popup (to prevent immediate close on touch)
@@ -1344,6 +1460,7 @@ function selectBuilding(building, flyTo = true) {
 
     amenitiesInRadiusIds.clear();
     treesInRadiusIds.clear();
+    latestRadiusCounts = {};
     updateAmenitiesSource();
     updateTreesSource();
     const infoPanel = document.getElementById("radius-info");
@@ -1365,6 +1482,7 @@ function selectBuilding(building, flyTo = true) {
   const result = getItemsInPolygon(polygon);
   amenitiesInRadiusIds = result.amenityIndices;
   treesInRadiusIds = result.treeIndices;
+  latestRadiusCounts = result.counts;
 
   updateAmenitiesSource();
   updateTreesSource();
@@ -1421,6 +1539,39 @@ function pluralize(label, count) {
 function updateRadiusInfo(counts) {
   const infoPanel = document.getElementById("radius-info");
   if (!infoPanel) return;
+
+  if (metricDisplayMode === "percentile") {
+    infoPanel.classList.add("percentile-mode");
+    if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) {
+      infoPanel.style.display = "none";
+      return;
+    }
+
+    const metrics = buildPercentileMetrics(selectedBuildingCentroid.feature.properties || {});
+    if (!metrics || metrics.overallPercentile == null) {
+      infoPanel.innerHTML = '<div class="radius-count">Percentile data unavailable</div>';
+      infoPanel.style.display = "block";
+      return;
+    }
+
+    let html = '<div class="percentile-summary">';
+    html += '<div class="percentile-label">All amenities</div>';
+    html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
+    html += `<div class="percentile-context">Your score ${formatMetricNumber(metrics.overallScore)} vs citywide average ${formatMetricNumber(metrics.overallAverage)}</div>`;
+    html += "</div>";
+
+    html += '<div class="percentile-breakdown">';
+    metrics.perAmenity.forEach((metric) => {
+      html += `<span class="percentile-item"><span class="percentile-dot" style="background:${metric.color}"></span>${metric.label}: <strong>${metric.percentile}%</strong></span>`;
+    });
+    html += "</div>";
+
+    infoPanel.innerHTML = html;
+    infoPanel.style.display = "block";
+    return;
+  }
+
+  infoPanel.classList.remove("percentile-mode");
   
   // If nothing selected, show message
   if (selectedAmenityTypes.size === 0) {
@@ -1488,6 +1639,7 @@ function clearRadiusSelection() {
   selectedBuildingCentroid = null;
   amenitiesInRadiusIds.clear();
   treesInRadiusIds.clear();
+  latestRadiusCounts = {};
   
   const source = map.getSource("radius-circle");
   if (source) source.setData({ type: "FeatureCollection", features: [] });
@@ -1500,6 +1652,17 @@ function clearRadiusSelection() {
   
   const infoPanel = document.getElementById("radius-info");
   if (infoPanel) infoPanel.style.display = "none";
+}
+
+if (metricDisplayToggle) {
+  metricDisplayToggle.addEventListener("change", function (e) {
+    const input = e.target;
+    if (!input || input.name !== "metric-display") return;
+    metricDisplayMode = input.value === "percentile" ? "percentile" : "raw";
+    if (selectedBuildingCentroid) {
+      updateRadiusInfo(latestRadiusCounts);
+    }
+  });
 }
 
 radiusToggle.addEventListener("click", function (e) {
@@ -1580,6 +1743,7 @@ map.on("load", async function () {
     .then(function (r) { return r.json(); })
     .then(function (fc) {
       buildingsData = fc;
+      percentileSeriesCache.clear();
       
       buildingCentroids = [];
       (fc.features || []).forEach(function (f) {

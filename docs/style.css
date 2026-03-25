@@ -498,6 +498,12 @@ body {
   z-index: 10;
   text-align: center;
   min-width: 200px;
+  max-width: calc(100vw - 24px);
+}
+
+#radius-info.percentile-mode {
+  width: min(920px, calc(100vw - 24px));
+  padding: 12px 18px;
 }
 
 .radius-count {
@@ -518,6 +524,86 @@ body {
   font-size: 11px;
   color: #6b7280;
   white-space: nowrap;
+}
+
+.percentile-summary {
+  margin-bottom: 6px;
+}
+
+.percentile-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
+.percentile-value {
+  font-size: 42px;
+  line-height: 1;
+  font-weight: 800;
+  color: #2563eb;
+}
+
+.percentile-value span {
+  font-size: 20px;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+.percentile-value em {
+  font-size: 67%;
+  font-style: normal;
+  font-weight: inherit;
+  color: inherit;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.percentile-caption {
+  font-size: 12px;
+  color: #374151;
+  margin-top: 2px;
+}
+
+.percentile-context {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.percentile-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 8px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.percentile-item {
+  font-size: 11px;
+  color: #4b5563;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.percentile-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.percentile-item strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: #111827;
 }
 
 /* Controls row - wraps filter and radius */
@@ -968,6 +1054,16 @@ body {
 
   .radius-type {
     font-size: 12px;
+  }
+
+  .percentile-value {
+    font-size: 36px;
+  }
+
+  .percentile-breakdown {
+    justify-content: flex-start;
+    gap: 3px 8px;
+    max-height: 118px;
   }
 
   /* Modal - modern bottom sheet */
