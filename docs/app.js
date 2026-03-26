@@ -186,6 +186,8 @@ let visibleAmenityFeatures = [];
 let deckAmenityOverlay = null;
 let metricDisplayMode = "raw";
 let _deckUpdateTimer = null;
+let _deckHovering = false;
+let _lastDeckClickTime = 0;
 let latestRadiusCounts = {};
 const percentileSeriesCache = new Map();
 
@@ -209,6 +211,7 @@ const loadingState = {
   parks: false,
   trees: false,
   amenities: false,
+  isochrones: false,
   mapReady: false
 };
 
@@ -242,13 +245,13 @@ function hideLoadingScreen() {
   }
 }
 
-// Fallback: hide loading screen after 30 seconds regardless
+// Fallback: hide loading screen after 60 seconds regardless
 setTimeout(() => {
   if (loadingScreen && !loadingScreen.classList.contains("hidden")) {
     console.warn("Loading timeout - forcing hide");
     hideLoadingScreen();
   }
-}, 30000);
+}, 60000);
 
 // Load all amenity icons into the map
 async function loadAmenityIcons() {
@@ -764,10 +767,13 @@ function updateDeckAmenityLayers() {
     },
     onHover: ({ object, x, y }) => {
       if (!object) {
+        _deckHovering = false;
         tooltip.style.display = "none";
         map.getCanvas().style.cursor = "";
         return;
       }
+
+      _deckHovering = true;
 
       const typeLabel = getAmenityConfig(object.amenityType).label;
       const topTypes = Object.entries(object.typeCounts || {})
@@ -795,7 +801,9 @@ function updateDeckAmenityLayers() {
       map.getCanvas().style.cursor = "pointer";
     },
     onClick: ({ object }) => {
-      if (!object || !object.isCluster) return;
+      if (!object) return;
+      _lastDeckClickTime = Date.now();
+      if (!object.isCluster) return;
       const members = Array.isArray(object.members) ? object.members : [];
       if (members.length === 0) return;
 
@@ -1308,16 +1316,12 @@ function findClosestBuilding(lngLat) {
   return closest;
 }
 
-// Load isochrone polygons from precomputed file with retry support
+// Load isochrone polygons from precomputed file
 function loadIsochrones() {
   if (isochronesLoaded || isochroneLoadStarted) return;
   isochroneLoadStarted = true;
 
-  const radiusInfo = document.getElementById("radius-info");
-  if (radiusInfo && selectedBuildingCentroid) {
-    radiusInfo.innerHTML = '<div class="radius-count">Loading walking areas\u2026</div>';
-    radiusInfo.style.display = "block";
-  }
+  setLoadingStatus("Loading walking areas\u2026");
 
   fetch(ISOCHRONES_URL)
     .then(function (r) {
@@ -1332,6 +1336,8 @@ function loadIsochrones() {
         isochroneIndex[bid + "_" + mins] = f;
       });
       isochronesLoaded = true;
+      loadingState.isochrones = true;
+      updateLoadingProgress();
       if (selectedBuildingCentroid) {
         selectBuilding(selectedBuildingCentroid, false);
       }
@@ -1339,17 +1345,8 @@ function loadIsochrones() {
     .catch(function (err) {
       console.error("Failed to load isochrones:", err);
       isochroneLoadStarted = false;
-      if (radiusInfo && selectedBuildingCentroid) {
-        radiusInfo.innerHTML = '<div class="radius-count">Failed to load walking areas. <a href="#" id="retry-isochrones-link">Retry</a></div>';
-        radiusInfo.style.display = "block";
-        var retryLink = document.getElementById("retry-isochrones-link");
-        if (retryLink) {
-          retryLink.addEventListener("click", function (e) {
-            e.preventDefault();
-            loadIsochrones();
-          });
-        }
-      }
+      loadingState.isochrones = true;
+      updateLoadingProgress();
     });
 }
 
@@ -1396,8 +1393,13 @@ function getItemsInPolygon(polygon) {
   return { amenityIndices, treeIndices, counts };
 }
 
+// Smooth ease-in-out curve for pan animations
+function easeInOutQuad(t) {
+  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
 // Select a building and show its walking isochrone with items
-function selectBuilding(building, flyTo = true) {
+function selectBuilding(building, doFly = true) {
   selectedBuildingCentroid = building;
 
   // Highlight the selected building outline
@@ -1405,9 +1407,6 @@ function selectBuilding(building, flyTo = true) {
   if (buildingSource && building.feature) {
     buildingSource.setData({ type: "FeatureCollection", features: [building.feature] });
   }
-
-  // Trigger lazy load of isochrones if not yet loaded
-  loadIsochrones();
 
   // Look up precomputed isochrone polygon
   const buildingId = building.feature ? building.feature.properties.building_id : null;
@@ -1430,46 +1429,44 @@ function selectBuilding(building, flyTo = true) {
     updateTreesSource();
 
     const infoPanel = document.getElementById("radius-info");
-    if (infoPanel) {
-      if (isochroneLoadStarted && !isochronesLoaded) {
-        infoPanel.innerHTML = '<div class="radius-count">Loading walking areas\u2026</div>';
-        infoPanel.style.display = "block";
-      } else {
-        infoPanel.style.display = "none";
-      }
-    }
+    if (infoPanel) infoPanel.style.display = "none";
 
-    if (flyTo) {
-      map.flyTo({
+    if (doFly) {
+      map.easeTo({
         center: [building.lng, building.lat],
         zoom: Math.max(map.getZoom(), 16),
-        speed: 0.6,
-        curve: 1.8,
+        duration: 1400,
+        easing: easeInOutQuad,
         essential: true
       });
     }
     return;
   }
 
-  // Calculate items within isochrone polygon
-  const result = getItemsInPolygon(polygon);
-  amenitiesInRadiusIds = result.amenityIndices;
-  treesInRadiusIds = result.treeIndices;
-  latestRadiusCounts = result.counts;
+  // Calculate items within isochrone polygon — defer heavy work until after
+  // the pan animation starts so the first frames don't stutter
+  const applyRadius = () => {
+    const result = getItemsInPolygon(polygon);
+    amenitiesInRadiusIds = result.amenityIndices;
+    treesInRadiusIds = result.treeIndices;
+    latestRadiusCounts = result.counts;
+    updateAmenitiesSource();
+    updateTreesSource();
+    updateRadiusInfo(result.counts);
+  };
 
-  updateAmenitiesSource();
-  updateTreesSource();
-  updateRadiusInfo(result.counts);
-
-  if (flyTo) {
+  if (doFly) {
     const zoom = getZoomForPolygon(polygon);
-    map.flyTo({
+    requestAnimationFrame(applyRadius);
+    map.easeTo({
       center: [building.lng, building.lat],
       zoom: zoom,
-      speed: 0.6,
-      curve: 1.8,
+      duration: 1400,
+      easing: easeInOutQuad,
       essential: true
     });
+  } else {
+    applyRadius();
   }
 }
 
@@ -1660,6 +1657,7 @@ radiusToggle.addEventListener("click", function (e) {
 map.on("click", function (e) {
   if (currentMode !== "house") return;
   if (e.originalEvent.target !== map.getCanvas()) return;
+  if (Date.now() - _lastDeckClickTime < 300) return;
   
   const closest = findClosestBuilding(e.lngLat);
   if (closest) {
@@ -1784,18 +1782,22 @@ map.on("load", async function () {
   loadingState.trees = true;
   updateLoadingProgress();
 
+  // Load isochrones eagerly so they're ready when a building is clicked
+  loadIsochrones();
+
   map.getCanvas().style.cursor = "";
 });
 
 map.on("mouseenter", "buildings-fill", function () {
-  map.getCanvas().style.cursor = "pointer";
+  if (!_deckHovering) map.getCanvas().style.cursor = "pointer";
 });
 
 map.on("mouseleave", "buildings-fill", function () {
-  map.getCanvas().style.cursor = "";
+  if (!_deckHovering) map.getCanvas().style.cursor = "";
 });
 
 map.on("mousemove", "parks-fill", function (e) {
+  if (_deckHovering) return;
   map.getCanvas().style.cursor = "pointer";
   const p = e.features[0].properties;
   
@@ -1814,7 +1816,7 @@ map.on("mousemove", "parks-fill", function (e) {
 });
 
 map.on("mouseleave", "parks-fill", function () {
-  map.getCanvas().style.cursor = "";
+  if (!_deckHovering) map.getCanvas().style.cursor = "";
   tooltip.style.display = "none";
 });
 

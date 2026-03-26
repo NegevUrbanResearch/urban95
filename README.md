@@ -82,11 +82,5 @@ Python: folium (probably the easiest), there is also pydeck
 JS: deck.gl / maplibre GL JS
 
 Developer notes for Noam/Tuval:
-- update web tool to calculate proportions of land with canopy coverage in area around each building radius
-
-
-- click between different modes: house, block, neighborhood, city
-- generates overall statistics, on city some sort of overall summary statistics
-- click on house in house mode, a block in block mode or a neighborhood in neighborhood mode and see number of amenities, trees coverage, etc. as well as comparison with citywide average, maybe highlight percentile
-
-Once we complete all the above, share with yonatan for UI/UX review
+- update web tool to calculate proportions of land with canopy coverage in area around each building radius 
+(note this became an issue since lots of trees are missing canopy values)
