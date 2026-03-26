@@ -296,6 +296,28 @@ def load_mapbox_token() -> str:
     return token
 
 
+def _load_valid_cached_isochrone_payload(cache_file: Path):
+    """Loads a cached isochrone payload and deletes it if invalid."""
+    if not cache_file.exists():
+        return None
+
+    try:
+        with open(cache_file) as f:
+            data = json.load(f)
+    except Exception:
+        logging.warning("Invalid JSON cache file, deleting: %s", cache_file.name)
+        cache_file.unlink(missing_ok=True)
+        return None
+
+    features = data.get("features")
+    if not isinstance(features, list):
+        logging.warning("Invalid isochrone cache payload, deleting: %s", cache_file.name)
+        cache_file.unlink(missing_ok=True)
+        return None
+
+    return data
+
+
 def fetch_isochrones(lng: float, lat: float, token: str, minutes: list = None) -> dict:
     """Fetches walking isochrone polygons from Mapbox API with local file caching.
 
@@ -309,10 +331,8 @@ def fetch_isochrones(lng: float, lat: float, token: str, minutes: list = None) -
     cache_key = f"{lng:.5f}_{lat:.5f}"
     cache_file = ISOCHRONE_CACHE_DIR / f"{cache_key}.json"
 
-    if cache_file.exists():
-        with open(cache_file) as f:
-            data = json.load(f)
-    else:
+    data = _load_valid_cached_isochrone_payload(cache_file)
+    if data is None:
         contours = ",".join(str(m) for m in minutes)
         url = f"https://api.mapbox.com/isochrone/v1/mapbox/walking/{lng},{lat}"
         params = {
@@ -339,7 +359,11 @@ def fetch_isochrones(lng: float, lat: float, token: str, minutes: list = None) -
             raise ValueError("Empty response from Mapbox API")
 
         data = resp.json()
-        if "features" not in data:
+        features = data.get("features")
+        if not isinstance(features, list):
+            message = data.get("message")
+            if message:
+                raise ValueError(f"Unexpected API response: {message}")
             raise ValueError(f"Unexpected API response: {list(data.keys())}")
 
         with open(cache_file, "w") as f:
