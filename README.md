@@ -83,8 +83,8 @@ JS: deck.gl / maplibre GL JS
 
 Developer notes for Noam/Tuval:
 - update web tool to calculate proportions of land with canopy coverage in area around each building radius
-- visualization improvement: merging nearby points into groups 5
-- add comparison against citywide averages on each of the above scales
+
+
 - click between different modes: house, block, neighborhood, city
 - generates overall statistics, on city some sort of overall summary statistics
 - click on house in house mode, a block in block mode or a neighborhood in neighborhood mode and see number of amenities, trees coverage, etc. as well as comparison with citywide average, maybe highlight percentile

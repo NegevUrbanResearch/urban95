@@ -153,10 +153,7 @@ const showPointsToggle = document.getElementById("show-points-toggle");
 const metricDisplayToggle = document.getElementById("metric-display-toggle");
 
 const AMENITY_POINT_LAYER_IDS = [
-  "tree-heatmap",
-  "amenity-heatmap",
-  "tree-points-highlighted",
-  "tree-points",
+  "tree-icons",
 ];
 
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
@@ -182,12 +179,13 @@ let amenitiesInRadiusIds = new Set();
 let treesInRadiusIds = new Set();
 let iconsLoaded = false;
 let treesLoadStarted = false;
+let isochroneLoadStarted = false;
 let isochronesLoaded = false;
-let isochroneIndex = {}; // { "buildingId_minutes": GeoJSON feature }
+let isochroneIndex = {};
 let visibleAmenityFeatures = [];
 let deckAmenityOverlay = null;
-let deckAmenityIconsCache = new Map();
 let metricDisplayMode = "raw";
+let _deckUpdateTimer = null;
 let latestRadiusCounts = {};
 const percentileSeriesCache = new Map();
 
@@ -313,25 +311,28 @@ function loadTreesIfNeeded() {
   if (treesLoadStarted || allTreesData) return;
   treesLoadStarted = true;
   
-  fetch(TREES_URL).then(r => r.ok ? r.json() : null).then(function(treesData) {
-    if (!treesData) return;
-    allTreesData = treesData;
-    
-    // Rebuild filter items to include trees
-    const types = allAmenityTypes.slice();
-    buildFilterItems(types);
-    updateTreesSource();
-    
-    // Update building colors now that trees are available and filter is rebuilt
-    updateBuildingColors();
-    
-    // Re-select building if one was selected (to update tree counts)
-    if (selectedBuildingCentroid) {
-      selectBuilding(selectedBuildingCentroid, false);
-    }
-  }).catch(function() {
-    console.warn("Failed to load trees");
-  });
+  fetch(TREES_URL)
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (treesData) {
+      if (!treesData) throw new Error("Empty tree data");
+      allTreesData = treesData;
+      
+      const types = allAmenityTypes.slice();
+      buildFilterItems(types);
+      updateTreesSource();
+      updateBuildingColors();
+      
+      if (selectedBuildingCentroid) {
+        selectBuilding(selectedBuildingCentroid, false);
+      }
+    })
+    .catch(function (err) {
+      console.error("Failed to load trees:", err);
+      treesLoadStarted = false;
+    });
 }
 
 // Update amenities source (without trees)
@@ -376,138 +377,48 @@ function updateAmenitiesSource() {
   updateDeckAmenityLayers();
 }
 
-// Update trees source (separate layer)
+// Update trees source — only trees within the selected building's isochrone are shown
 function updateTreesSource() {
   if (!allTreesData) return;
-  
+
   const source = map.getSource("trees");
   if (!source) return;
-  
-  // If nothing selected, show nothing
-  if (selectedAmenityTypes.size === 0) {
+
+  if (selectedAmenityTypes.size === 0 || treesInRadiusIds.size === 0) {
     source.setData({ type: "FeatureCollection", features: [] });
     return;
   }
-  
+
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   const showTrees = useAll || selectedAmenityTypes.has("trees");
-  
+
   if (!showTrees) {
     source.setData({ type: "FeatureCollection", features: [] });
     return;
   }
-  
-  const updatedFeatures = allTreesData.features.map((f, index) => ({
-    ...f,
-    properties: { ...f.properties, _inRadius: treesInRadiusIds.has(index) }
-  }));
-  
-  source.setData({ type: "FeatureCollection", features: updatedFeatures });
+
+  const inRadiusFeatures = allTreesData.features.filter((_, index) => treesInRadiusIds.has(index));
+  source.setData({ type: "FeatureCollection", features: inRadiusFeatures });
 }
 
 
-// Add amenity and tree layers after icons are loaded
+// Add tree icon layer (only trees within selected building's isochrone are shown)
 function addAmenityLayers() {
-  const treesConfig = AMENITY_TYPE_CONFIG.trees;
-  
-  // Tree heatmap (low zoom, weighted less) - rendered first (below)
   map.addLayer({
-    id: "tree-heatmap",
-    type: "heatmap",
+    id: "tree-icons",
+    type: "symbol",
     source: "trees",
-    maxzoom: 15,
+    layout: {
+      "icon-image": "park-alt1",
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 1.2],
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+    },
     paint: {
-      "heatmap-weight": 0.25,
-      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 14, 2],
-      "heatmap-color": [
-        "interpolate",
-        ["linear"],
-        ["heatmap-density"],
-        0,    "rgba(0, 0, 0, 0)",
-        0.05, "rgba(220, 252, 231, 0.08)",
-        0.1,  "rgba(187, 247, 208, 0.15)",
-        0.2,  "rgba(163, 243, 191, 0.2)",
-        0.3,  "rgba(134, 239, 172, 0.25)",
-        0.4,  "rgba(104, 232, 152, 0.3)",
-        0.5,  "rgba(74, 222, 128, 0.35)",
-        0.6,  "rgba(62, 216, 140, 0.38)",
-        0.7,  "rgba(52, 211, 153, 0.42)",
-        0.85, "rgba(42, 204, 124, 0.46)",
-        1,    "rgba(34, 197, 94, 0.5)"
-      ],
-      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 12, 14, 22],
-      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 15, 0],
+      "icon-color": "#2E7D32",
+      "icon-opacity": 0.9,
     },
   });
-
-  // Amenity heatmap (low zoom) - rendered second (above trees)
-  map.addLayer({
-    id: "amenity-heatmap",
-    type: "heatmap",
-    source: "amenities",
-    maxzoom: 15,
-    paint: {
-      "heatmap-weight": 1,
-      "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.6, 14, 2],
-      "heatmap-color": [
-        "interpolate",
-        ["linear"],
-        ["heatmap-density"],
-        0,    "rgba(0, 0, 0, 0)",
-        0.03, "rgba(254, 226, 226, 0.08)",
-        0.05, "rgba(254, 202, 202, 0.15)",
-        0.1,  "rgba(248, 143, 143, 0.2)",
-        0.15, "rgba(239, 68, 68, 0.25)",
-        0.22, "rgba(244, 92, 45, 0.28)",
-        0.3,  "rgba(249, 115, 22, 0.32)",
-        0.38, "rgba(242, 147, 15, 0.35)",
-        0.45, "rgba(234, 179, 8, 0.38)",
-        0.52, "rgba(199, 205, 30, 0.4)",
-        0.6,  "rgba(163, 230, 53, 0.42)",
-        0.7,  "rgba(119, 226, 90, 0.45)",
-        0.8,  "rgba(74, 222, 128, 0.48)",
-        0.9,  "rgba(54, 210, 111, 0.52)",
-        1,    "rgba(34, 197, 94, 0.55)"
-      ],
-      "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 14, 30],
-      "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0.7, 15, 0],
-    },
-  });
-
-  // Tree points (highlighted) - small green dots
-  map.addLayer({
-    id: "tree-points-highlighted",
-    type: "circle",
-    source: "trees",
-    minzoom: 14,
-    filter: ["==", ["get", "_inRadius"], true],
-    paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 3, 18, 6],
-      "circle-color": treesConfig.color,
-      "circle-stroke-width": 1.5,
-      "circle-stroke-color": "#fbbf24",
-      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 0.9],
-      "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 1],
-    },
-  });
-
-  // Tree points (not highlighted) - small green dots
-  map.addLayer({
-    id: "tree-points",
-    type: "circle",
-    source: "trees",
-    minzoom: 14,
-    filter: ["!=", ["get", "_inRadius"], true],
-    paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, 2, 18, 5],
-      "circle-color": treesConfig.color,
-      "circle-stroke-width": 0.5,
-      "circle-stroke-color": "#fff",
-      "circle-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 0.7],
-      "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], 14, 0, 15, 0.7],
-    },
-  });
-
 }
 
 // Compute percentile-based breakpoints (p0, p25, p50, p75, p100) from a values array
@@ -608,47 +519,44 @@ function describeTypeMix(typeCounts) {
     .join("|");
 }
 
-function createAmenityIconDataUrl(typeCounts, inRadius, isCluster) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
-
-  const cx = 32;
-  const cy = 32;
+// Draw a single amenity pie-chart icon at (x,y) on an existing canvas context
+function drawAmenityIcon(ctx, x, y, typeCounts, inRadius, isCluster) {
+  const ICON_SIZE = 64;
+  const cx = x + ICON_SIZE / 2;
+  const cy = y + ICON_SIZE / 2;
   const radius = isCluster ? 23 : 20;
   const ringWidth = isCluster ? 9 : 7;
   const borderColor = inRadius ? "#fbbf24" : "rgba(255, 255, 255, 0.94)";
-  const shadowColor = "rgba(15, 23, 42, 0.3)";
 
   const entries = Object.entries(typeCounts || {}).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((sum, [, count]) => sum + count, 0) || 1;
 
-  ctx.clearRect(0, 0, 64, 64);
-  ctx.shadowColor = shadowColor;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, ICON_SIZE, ICON_SIZE);
+  ctx.clip();
+
+  ctx.shadowColor = "rgba(15, 23, 42, 0.3)";
   ctx.shadowBlur = 6;
   ctx.shadowOffsetY = 2;
 
   if (entries.length <= 1) {
     const type = entries.length === 1 ? entries[0][0] : "other";
-    const color = getAmenityConfig(type).color;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fillStyle = color;
+    ctx.fillStyle = getAmenityConfig(type).color;
     ctx.fill();
   } else {
     let startAngle = -Math.PI / 2;
     entries.forEach(([type, count]) => {
       const angle = (count / total) * Math.PI * 2;
-      const endAngle = startAngle + angle;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, radius, startAngle, endAngle);
+      ctx.arc(cx, cy, radius, startAngle, startAngle + angle);
       ctx.closePath();
       ctx.fillStyle = getAmenityConfig(type).color;
       ctx.fill();
-      startAngle = endAngle;
+      startAngle += angle;
     });
   }
 
@@ -664,23 +572,56 @@ function createAmenityIconDataUrl(typeCounts, inRadius, isCluster) {
   ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
   ctx.fill();
 
-  return canvas.toDataURL("image/png");
+  ctx.restore();
 }
 
-function getAmenityDeckIcon(item) {
+function getAmenityIconKey(item) {
   const cappedCount = Math.min(item.count, AMENITY_CLUSTER_MAX_COUNT);
   const mixSignature = describeTypeMix(item.typeCounts);
-  const key = `${mixSignature}|${item.inRadius ? 1 : 0}|${item.isCluster ? 1 : 0}|${cappedCount}`;
-  if (!deckAmenityIconsCache.has(key)) {
-    deckAmenityIconsCache.set(key, {
-      url: createAmenityIconDataUrl(item.typeCounts, item.inRadius, item.isCluster),
-      width: 64,
-      height: 64,
-      anchorX: 32,
-      anchorY: 32
-    });
+  return `${mixSignature}|${item.inRadius ? 1 : 0}|${item.isCluster ? 1 : 0}|${cappedCount}`;
+}
+
+// Build a single texture atlas with all unique amenity icons for the current view.
+// Returns { atlas: HTMLCanvasElement, mapping: Object } synchronously — no async
+// image loading, so deck.gl can render immediately without race conditions.
+function buildAmenityIconAtlas(clusteredAmenities) {
+  const ICON_SIZE = 64;
+  const uniqueIcons = new Map();
+
+  for (const item of clusteredAmenities) {
+    const key = getAmenityIconKey(item);
+    item._iconKey = key;
+    if (!uniqueIcons.has(key)) {
+      uniqueIcons.set(key, { typeCounts: item.typeCounts, inRadius: item.inRadius, isCluster: item.isCluster });
+    }
   }
-  return deckAmenityIconsCache.get(key);
+
+  const iconCount = uniqueIcons.size;
+  if (iconCount === 0) return { atlas: null, mapping: {} };
+
+  const cols = Math.ceil(Math.sqrt(iconCount));
+  const rows = Math.ceil(iconCount / cols);
+
+  const atlas = document.createElement("canvas");
+  atlas.width = cols * ICON_SIZE;
+  atlas.height = rows * ICON_SIZE;
+  const ctx = atlas.getContext("2d");
+  if (!ctx) return { atlas: null, mapping: {} };
+
+  const mapping = {};
+  let i = 0;
+  for (const [key, info] of uniqueIcons) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const px = col * ICON_SIZE;
+    const py = row * ICON_SIZE;
+
+    drawAmenityIcon(ctx, px, py, info.typeCounts, info.inRadius, info.isCluster);
+    mapping[key] = { x: px, y: py, width: ICON_SIZE, height: ICON_SIZE, anchorX: ICON_SIZE / 2, anchorY: ICON_SIZE / 2 };
+    i++;
+  }
+
+  return { atlas, mapping };
 }
 
 function clusterVisibleAmenities(features) {
@@ -799,21 +740,27 @@ function updateDeckAmenityLayers() {
   }
 
   const clusteredAmenities = clusterVisibleAmenities(visibleAmenityFeatures);
+  const { atlas, mapping } = buildAmenityIconAtlas(clusteredAmenities);
+
+  if (!atlas || Object.keys(mapping).length === 0) {
+    deckAmenityOverlay.setProps({ layers: [] });
+    return;
+  }
+
   const iconLayer = new deck.IconLayer({
     id: "amenity-cluster-icons",
     data: clusteredAmenities,
     pickable: true,
     sizeUnits: "pixels",
     sizeScale: 1,
+    iconAtlas: atlas,
+    iconMapping: mapping,
     getPosition: d => d.position,
-    getIcon: getAmenityDeckIcon,
+    getIcon: d => d._iconKey,
     getSize: d => {
       if (!d.isCluster) return d.inRadius ? 24 : 20;
       const size = 20 + Math.sqrt(Math.min(d.count, AMENITY_CLUSTER_MAX_COUNT)) * 4;
       return d.inRadius ? size + 3 : size;
-    },
-    updateTriggers: {
-      getIcon: [visibleAmenityFeatures.length]
     },
     onHover: ({ object, x, y }) => {
       if (!object) {
@@ -909,13 +856,19 @@ function updateDeckAmenityLayers() {
   deckAmenityOverlay.setProps({ layers: [iconLayer, textLayer] });
 }
 
+// Debounced version for map movement events to prevent rapid layer recreation
+function scheduleDeckUpdate() {
+  clearTimeout(_deckUpdateTimer);
+  _deckUpdateTimer = setTimeout(updateDeckAmenityLayers, 80);
+}
+
 function initDeckAmenityOverlay() {
   if (deckAmenityOverlay || typeof deck === "undefined" || !deck.MapboxOverlay) return;
   deckAmenityOverlay = new deck.MapboxOverlay({ interleaved: true, layers: [] });
   map.addControl(deckAmenityOverlay);
 
-  map.on("moveend", updateDeckAmenityLayers);
-  map.on("zoomend", updateDeckAmenityLayers);
+  map.on("moveend", scheduleDeckUpdate);
+  map.on("zoomend", scheduleDeckUpdate);
   map.on("resize", updateDeckAmenityLayers);
 }
 
@@ -1355,24 +1308,49 @@ function findClosestBuilding(lngLat) {
   return closest;
 }
 
-// Load isochrone polygons from precomputed file
+// Load isochrone polygons from precomputed file with retry support
 function loadIsochrones() {
-  if (isochronesLoaded) return;
-  isochronesLoaded = true;
-  fetch(ISOCHRONES_URL).then(r => r.ok ? r.json() : null).then(function(data) {
-    if (!data || !data.features) return;
-    data.features.forEach(function(f) {
-      const bid = f.properties.building_id;
-      const mins = f.properties.minutes;
-      isochroneIndex[bid + "_" + mins] = f;
+  if (isochronesLoaded || isochroneLoadStarted) return;
+  isochroneLoadStarted = true;
+
+  const radiusInfo = document.getElementById("radius-info");
+  if (radiusInfo && selectedBuildingCentroid) {
+    radiusInfo.innerHTML = '<div class="radius-count">Loading walking areas\u2026</div>';
+    radiusInfo.style.display = "block";
+  }
+
+  fetch(ISOCHRONES_URL)
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      if (!data || !data.features) throw new Error("Invalid isochrone data");
+      data.features.forEach(function (f) {
+        const bid = f.properties.building_id;
+        const mins = f.properties.minutes;
+        isochroneIndex[bid + "_" + mins] = f;
+      });
+      isochronesLoaded = true;
+      if (selectedBuildingCentroid) {
+        selectBuilding(selectedBuildingCentroid, false);
+      }
+    })
+    .catch(function (err) {
+      console.error("Failed to load isochrones:", err);
+      isochroneLoadStarted = false;
+      if (radiusInfo && selectedBuildingCentroid) {
+        radiusInfo.innerHTML = '<div class="radius-count">Failed to load walking areas. <a href="#" id="retry-isochrones-link">Retry</a></div>';
+        radiusInfo.style.display = "block";
+        var retryLink = document.getElementById("retry-isochrones-link");
+        if (retryLink) {
+          retryLink.addEventListener("click", function (e) {
+            e.preventDefault();
+            loadIsochrones();
+          });
+        }
+      }
     });
-    // Re-select building if one was selected (to show isochrone now that data is loaded)
-    if (selectedBuildingCentroid) {
-      selectBuilding(selectedBuildingCentroid, false);
-    }
-  }).catch(function() {
-    console.warn("Failed to load isochrones file");
-  });
 }
 
 // Look up the precomputed isochrone polygon for a building
@@ -1450,15 +1428,23 @@ function selectBuilding(building, flyTo = true) {
     latestRadiusCounts = {};
     updateAmenitiesSource();
     updateTreesSource();
+
     const infoPanel = document.getElementById("radius-info");
-    if (infoPanel) infoPanel.style.display = "none";
+    if (infoPanel) {
+      if (isochroneLoadStarted && !isochronesLoaded) {
+        infoPanel.innerHTML = '<div class="radius-count">Loading walking areas\u2026</div>';
+        infoPanel.style.display = "block";
+      } else {
+        infoPanel.style.display = "none";
+      }
+    }
 
     if (flyTo) {
       map.flyTo({
         center: [building.lng, building.lat],
         zoom: Math.max(map.getZoom(), 16),
-        speed: 1.2,
-        curve: 1.42,
+        speed: 0.6,
+        curve: 1.8,
         essential: true
       });
     }
@@ -1480,8 +1466,8 @@ function selectBuilding(building, flyTo = true) {
     map.flyTo({
       center: [building.lng, building.lat],
       zoom: zoom,
-      speed: 1.2,
-      curve: 1.42,
+      speed: 0.6,
+      curve: 1.8,
       essential: true
     });
   }
@@ -1681,35 +1667,18 @@ map.on("click", function (e) {
   }
 });
 
-// Hover effect for tree points
-map.on("mouseenter", "tree-points", () => map.getCanvas().style.cursor = "pointer");
-map.on("mouseenter", "tree-points-highlighted", () => map.getCanvas().style.cursor = "pointer");
-map.on("mouseleave", "tree-points", () => map.getCanvas().style.cursor = "");
-map.on("mouseleave", "tree-points-highlighted", () => map.getCanvas().style.cursor = "");
-
-// Show tooltip on tree hover
-map.on("mousemove", "tree-points", (e) => {
+// Hover effect for tree icons
+map.on("mouseenter", "tree-icons", () => map.getCanvas().style.cursor = "pointer");
+map.on("mouseleave", "tree-icons", () => {
+  map.getCanvas().style.cursor = "";
+  tooltip.style.display = "none";
+});
+map.on("mousemove", "tree-icons", (e) => {
   if (e.features.length === 0) return;
   tooltip.textContent = "Tree";
   tooltip.style.display = "block";
   tooltip.style.left = (e.point.x + 12) + "px";
   tooltip.style.top = (e.point.y + 12) + "px";
-});
-
-map.on("mousemove", "tree-points-highlighted", (e) => {
-  if (e.features.length === 0) return;
-  tooltip.textContent = "Tree";
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.point.x + 12) + "px";
-  tooltip.style.top = (e.point.y + 12) + "px";
-});
-
-map.on("mouseleave", "tree-points", () => {
-  tooltip.style.display = "none";
-});
-
-map.on("mouseleave", "tree-points-highlighted", () => {
-  tooltip.style.display = "none";
 });
 
 map.on("load", async function () {
@@ -1751,7 +1720,8 @@ map.on("load", async function () {
       loadingState.buildings = true;
       updateLoadingProgress();
     })
-    .catch(function () {
+    .catch(function (err) {
+      console.error("Failed to load buildings:", err);
       loadingState.buildings = true;
       updateLoadingProgress();
     });
@@ -1761,7 +1731,8 @@ map.on("load", async function () {
     if (fc && map.getSource("parks")) map.getSource("parks").setData(fc);
     loadingState.parks = true;
     updateLoadingProgress();
-  }).catch(function () {
+  }).catch(function (err) {
+    console.error("Failed to load parks:", err);
     loadingState.parks = true;
     updateLoadingProgress();
   });
@@ -1803,7 +1774,8 @@ map.on("load", async function () {
     if (map.getZoom() >= 13) {
       loadTreesIfNeeded();
     }
-  }).catch(function () {
+  }).catch(function (err) {
+    console.error("Failed to load amenities:", err);
     loadingState.amenities = true;
     updateLoadingProgress();
   });
@@ -1906,19 +1878,36 @@ const modeHint = document.getElementById("mode-hint");
 
 function loadNeighborhoods() {
   if (neighborhoodsData) return Promise.resolve(neighborhoodsData);
-  return fetch(NEIGHBORHOODS_URL).then(r => r.json()).then(data => {
-    neighborhoodsData = data;
-    console.log("[Neighborhood] Loaded", data.features.length, "neighborhoods");
-    return data;
-  });
+  return fetch(NEIGHBORHOODS_URL)
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      neighborhoodsData = data;
+      return data;
+    })
+    .catch(function (err) {
+      console.error("Failed to load neighborhoods:", err);
+      return { type: "FeatureCollection", features: [] };
+    });
 }
 
 function loadCitywideStats() {
   if (citywideStats) return Promise.resolve(citywideStats);
-  return fetch(CITYWIDE_STATS_URL).then(r => r.json()).then(data => {
-    citywideStats = data;
-    return data;
-  });
+  return fetch(CITYWIDE_STATS_URL)
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      citywideStats = data;
+      return data;
+    })
+    .catch(function (err) {
+      console.error("Failed to load citywide stats:", err);
+      return null;
+    });
 }
 
 function addNeighborhoodLayers() {
@@ -2106,7 +2095,11 @@ function enterCitywideMode() {
   setAmenityPointsVisibility(false);
 
   // Show citywide modal
-  loadCitywideStats().then(() => {
+  loadCitywideStats().then(function (data) {
+    if (!data) {
+      const body = document.getElementById("citywide-body");
+      if (body) body.innerHTML = '<div class="cw-section" style="text-align:center;padding:2em">Failed to load citywide data. Please reload the page.</div>';
+    }
     renderCitywideModal();
     showCitywideModal();
   });

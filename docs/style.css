@@ -513,6 +513,12 @@ body {
   margin-bottom: 6px;
 }
 
+.radius-count a {
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .radius-breakdown {
   display: flex;
   flex-wrap: wrap;
