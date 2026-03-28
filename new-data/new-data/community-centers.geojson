@@ -1,0 +1,22 @@
+{
+"type": "FeatureCollection",
+"name": "community-centers",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "ID": 1, "Name": "××ª× \"×¡ ×××", "Address": "××××× ×× ", "neighborho": "×" }, "geometry": { "type": "Point", "coordinates": [ 34.79160084681817, 31.26478369765686 ] } },
+{ "type": "Feature", "properties": { "ID": 2, "Name": "××ª× \"×¡ × ××¨", "Address": "×¨×©\"×", "neighborho": "×" }, "geometry": { "type": "Point", "coordinates": [ 34.790476965973269, 31.268776204562105 ] } },
+{ "type": "Feature", "properties": { "ID": 3, "Name": "××ª× \"×¡ × ×¢×", "Address": "××××¡× ××¨", "neighborho": "×" }, "geometry": { "type": "Point", "coordinates": [ 34.796846408708568, 31.264206419739175 ] } },
+{ "type": "Feature", "properties": { "ID": 4, "Name": "××ª× \"×¡ ×¤×× ", "Address": "× ×¨××× ×-×§", "neighborho": "×" }, "geometry": { "type": "Point", "coordinates": [ 34.798715878157964, 31.2680680542042 ] } },
+{ "type": "Feature", "properties": { "ID": 5, "Name": "××ª× \"×¡ ×××", "Address": "××¨×××××¨×", "neighborho": "×" }, "geometry": { "type": "Point", "coordinates": [ 34.806129060002867, 31.257721998223751 ] } },
+{ "type": "Feature", "properties": { "ID": 6, "Name": "××ª× \"×¡ - ×'", "Address": "××¨××× × ×", "neighborho": "×'×" }, "geometry": { "type": "Point", "coordinates": [ 34.766164161558308, 31.260666961478602 ] } },
+{ "type": "Feature", "properties": { "ID": 7, "Name": "××¨×× ××¦×¢", "Address": "××¨×¦×", "neighborho": "×¢××¨ ×¢×ª××§" }, "geometry": { "type": "Point", "coordinates": [ 34.787332848246137, 31.238623387730978 ] } },
+{ "type": "Feature", "properties": { "ID": 8, "Name": "××ª× \"×¡ ×¨××", "Address": "××¢×¨×× ××ª", "neighborho": "×¨×××ª" }, "geometry": { "type": "Point", "coordinates": [ 34.799873883057813, 31.280602641785194 ] } },
+{ "type": "Feature", "properties": { "ID": 9, "Name": "××ª× \"×¡ × ××", "Address": "×©×××× ××", "neighborho": "× ××× ×××" }, "geometry": { "type": "Point", "coordinates": [ 34.770935387337865, 31.240760707347391 ] } },
+{ "type": "Feature", "properties": { "ID": 10, "Name": "××ª× \"×¡ × ××", "Address": "×¤××¤×××", "neighborho": "× ××× × ××" }, "geometry": { "type": "Point", "coordinates": [ 34.783178485340855, 31.229046777506444 ] } },
+{ "type": "Feature", "properties": { "ID": 11, "Name": "××ª× \"×¡ ×¤××", "Address": "×¤×× ×¡×§×¨", "neighborho": "× ××× ×××" }, "geometry": { "type": "Point", "coordinates": [ 34.769864374440893, 31.235022390527753 ] } },
+{ "type": "Feature", "properties": { "ID": 0, "Name": "××ª× \"×¡ ××¨×", "Address": "×××××¦××¨×", "neighborho": "×" }, "geometry": { "type": "Point", "coordinates": [ 34.779192904436563, 31.269074983129869 ] } },
+{ "type": "Feature", "properties": { "ID": 0, "Name": "××ª× \"×¡ ××× ", "Address": "×××¨× ×§××¨", "neighborho": "××× ×××ª" }, "geometry": { "type": "Point", "coordinates": [ 34.754199856937291, 31.271198896570496 ] } },
+{ "type": "Feature", "properties": { "ID": 0, "Name": "××ª× \"×¡ ××¤×", "Address": "× ×× ×××", "neighborho": "××¤××¨×§" }, "geometry": { "type": "Point", "coordinates": [ 34.821085838601569, 31.232869652201096 ] } },
+{ "type": "Feature", "properties": { "ID": 0, "Name": "××ª× \"×¡ × ××", "Address": "×¢×× ×¤×¨××", "neighborho": "× ×× ××§×¢" }, "geometry": { "type": "Point", "coordinates": [ 34.774471889319344, 31.222348500701266 ] } }
+]
+}

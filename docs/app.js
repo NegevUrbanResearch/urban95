@@ -5,7 +5,7 @@ const ICONS_BASE = "./icons";
 const BUILDINGS_URL = BASE + "/buildings_accessibility.geojson";
 const PARKS_URL = BASE + "/parks.geojson";
 const TREES_URL = BASE + "/trees.geojson";
-const AMENITIES_ALL_URL = BASE + "/amenities_all.geojson";
+const AMENITIES_ALL_URL = BASE + "/amenities_new.geojson";
 const ISOCHRONES_URL = BASE + "/isochrones.geojson";
 const NEIGHBORHOODS_URL = BASE + "/neighborhoods.geojson";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
@@ -24,6 +24,15 @@ const AMENITY_TYPE_CONFIG = {
   financial_services: { color: "#3949AB", icon: "bank", label: "Financial" },
   tourism: { color: "#00ACC1", icon: "lodging", label: "Tourism" },
   senior_services_and_living: { color: "#FF7043", icon: "home", label: "Senior" },
+  // New Categories
+  bicycle_track: { color: "#0369a1", icon: "bicycle", label: "Bicycle Tracks" },
+  businesscenters: { color: "#1d4ed8", icon: "building", label: "Business Centers" },
+  "community-centers": { color: "#7e22ce", icon: "town-hall", label: "Community Centers" },
+  health: { color: "#C62828", icon: "hospital", label: "Healthcare Facilities" },
+  playgrounds: { color: "#ea580c", icon: "park-alt1", label: "Playgrounds" },
+  roads: { color: "#475569", icon: "car", label: "Roads" },
+  shelters: { color: "#0f766e", icon: "building", label: "Shelters" },
+  "street-light": { color: "#ca8a04", icon: "marker", label: "Street Lights" }
 };
 
 const DEFAULT_CONFIG = { color: "#6b7280", icon: "marker", label: "Other" };
@@ -154,9 +163,10 @@ const metricDisplayToggle = document.getElementById("metric-display-toggle");
 
 const AMENITY_POINT_LAYER_IDS = [
   "tree-icons",
+  "amenity-icons",
 ];
 
-const AMENITY_CLUSTER_MIN_ZOOM = 13;
+const AMENITY_CLUSTER_MIN_ZOOM = 20; // Disabled clustering to show actual points
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
 const AMENITY_CLUSTER_MAX_COUNT = 50;
@@ -419,6 +429,33 @@ function addAmenityLayers() {
     },
     paint: {
       "icon-color": "#2E7D32",
+      "icon-opacity": 0.9,
+    },
+  });
+
+  const iconMatch = ["match", ["get", "amenity_type"]];
+  const colorMatch = ["match", ["get", "amenity_type"]];
+
+  Object.entries(AMENITY_TYPE_CONFIG).forEach(([type, config]) => {
+    iconMatch.push(type, config.icon);
+    colorMatch.push(type, config.color);
+  });
+  
+  iconMatch.push(DEFAULT_CONFIG.icon);
+  colorMatch.push(DEFAULT_CONFIG.color);
+
+  map.addLayer({
+    id: "amenity-icons",
+    type: "symbol",
+    source: "amenities",
+    layout: {
+      "icon-image": iconMatch,
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 1.0],
+      "icon-allow-overlap": false,
+      "icon-ignore-placement": false,
+    },
+    paint: {
+      "icon-color": colorMatch,
       "icon-opacity": 0.9,
     },
   });
@@ -1665,15 +1702,35 @@ map.on("click", function (e) {
   }
 });
 
-// Hover effect for tree icons
-map.on("mouseenter", "tree-icons", () => map.getCanvas().style.cursor = "pointer");
+map.on("mouseenter", "tree-icons", () => {
+  if (!_deckHovering) map.getCanvas().style.cursor = "pointer";
+});
 map.on("mouseleave", "tree-icons", () => {
-  map.getCanvas().style.cursor = "";
+  if (!_deckHovering) map.getCanvas().style.cursor = "";
   tooltip.style.display = "none";
 });
 map.on("mousemove", "tree-icons", (e) => {
-  if (e.features.length === 0) return;
+  if (_deckHovering || e.features.length === 0) return;
   tooltip.textContent = "Tree";
+  tooltip.style.display = "block";
+  tooltip.style.left = (e.point.x + 12) + "px";
+  tooltip.style.top = (e.point.y + 12) + "px";
+});
+
+map.on("mouseenter", "amenity-icons", () => {
+  if (!_deckHovering) map.getCanvas().style.cursor = "pointer";
+});
+map.on("mouseleave", "amenity-icons", () => {
+  if (!_deckHovering) map.getCanvas().style.cursor = "";
+  tooltip.style.display = "none";
+});
+map.on("mousemove", "amenity-icons", (e) => {
+  if (_deckHovering || e.features.length === 0) return;
+  const props = e.features[0].properties;
+  const config = getAmenityConfig(props.amenity_type);
+  const typeName = config.label || props.amenity_type;
+  const name = props.name || props.hebrew_nam || typeName;
+  tooltip.textContent = name === typeName ? name : `${name} (${typeName})`;
   tooltip.style.display = "block";
   tooltip.style.left = (e.point.x + 12) + "px";
   tooltip.style.top = (e.point.y + 12) + "px";
