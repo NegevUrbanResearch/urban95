@@ -77,7 +77,6 @@ CLEAN_WEIGHTS = {
     "parks": 15.0,
     "playgrounds": 15.0,
     "street-lights": 3.75,
-    "bicycle_track": 3.75,
     "bus_stops": 7.5,
     "shelters": 10.0,
     "education": 7.5,

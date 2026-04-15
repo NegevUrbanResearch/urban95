@@ -579,6 +579,35 @@ body {
   color: #374151;
 }
 
+.percentile-meter {
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.percentile-meter-fill {
+  height: 100%;
+  max-width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ef4444 0%, #eab308 50%, #22c55e 100%);
+  transition: width 0.35s ease;
+}
+
+.percentile-footnote {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.percentile-item-index {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
 .percentile-breakdown {
   display: flex;
   flex-wrap: wrap;
@@ -784,6 +813,17 @@ body {
   margin-top: 4px;
 }
 
+.cw-stat-footnote-card {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.cw-stat-footnote {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+
 .cw-section {
   margin-bottom: 24px;
 }
@@ -874,9 +914,26 @@ body {
   font-size: 11px;
   font-weight: 600;
   color: #6b7280;
-  width: 40px;
+  min-width: 72px;
   text-align: right;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.cw-rank-score strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.cw-rank-sub {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1.2;
 }
 
 /* Controls row - wraps filter and radius */

@@ -13,6 +13,19 @@ const NEIGHBORHOODS_URL = BASE + "/neighborhoods.geojson";
 const NEIGHBORHOOD_CHARTS_URL = BASE + "/neighborhood_charts.json";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
 
+const EXCLUDED_CLEAN_POINT_AMENITY_TYPES = new Set(["bicycle_track"]);
+
+function filterCleanManifestPointFeatures(fc) {
+  if (!fc || !Array.isArray(fc.features)) return fc;
+  return {
+    type: "FeatureCollection",
+    features: fc.features.filter(function (f) {
+      const t = (f.properties && f.properties.amenity_type) || "";
+      return !EXCLUDED_CLEAN_POINT_AMENITY_TYPES.has(t);
+    }),
+  };
+}
+
 const AMENITY_TYPE_CONFIG = {
   trees: { color: "#2E7D32", icon: "park-alt1", label: "Trees" },
   healthcare: { color: "#C62828", icon: "hospital", label: "Healthcare" },
@@ -28,7 +41,6 @@ const AMENITY_TYPE_CONFIG = {
   tourism: { color: "#00ACC1", icon: "lodging", label: "Tourism" },
   senior_services_and_living: { color: "#FF7043", icon: "home", label: "Senior" },
   health: { color: "#C62828", icon: "marker", label: "Healthcare" },
-  bicycle_track: { color: "#0369a1", icon: "marker", label: "Bicycle Tracks" },
   businesscenters: { color: "#1d4ed8", icon: "marker", label: "Business Centers" },
   "community-centers": { color: "#7e22ce", icon: "marker", label: "Community Centers" },
   playgrounds: { color: "#ea580c", icon: "marker", label: "Playgrounds" },
@@ -166,10 +178,11 @@ const filterItems = document.getElementById("filter-items");
 const selectAllBtn = document.getElementById("select-all-btn");
 const filterBackdrop = document.getElementById("filter-backdrop");
 const legendLabels = document.getElementById("legend-labels");
+
+const SYM_PCT_KEY = "_u95_symb_pct";
 const tooltip = document.getElementById("tooltip");
 const radiusToggle = document.getElementById("radius-toggle");
 const showPointsToggle = document.getElementById("show-points-toggle");
-const metricDisplayToggle = document.getElementById("metric-display-toggle");
 
 const AMENITY_POINT_LAYER_IDS = [
   "tree-icons",
@@ -213,7 +226,6 @@ let isochronesLoaded = false;
 let isochroneIndex = {};
 let visibleAmenityFeatures = [];
 let deckAmenityOverlay = null;
-let metricDisplayMode = "raw";
 let scoreMode = "clean";
 let _deckUpdateTimer = null;
 let _deckHovering = false;
@@ -603,50 +615,12 @@ function percentileBreakpoints(values) {
   return bp;
 }
 
-// Collect building scores: clean = weighted manifest score; expanded = legacy counts (main-branch logic)
 function collectBuildingScores() {
   if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return [];
-
-  const suffix = "_" + walkMinutes + "min";
-
-  if (scoreMode === "clean") {
-    return buildingsData.features.map(f => {
-      const p = f.properties || {};
-      return Number(p["score_clean" + suffix]) || 0;
-    });
+  if (scoreMode === "expanded" && (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0)) {
+    return [];
   }
-
-  if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) return [];
-
-  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
-
-  return buildingsData.features.map(f => {
-    const props = f.properties || {};
-    let val = 0;
-    if (useAll) {
-      const se = props["score_expanded" + suffix];
-      if (se !== undefined && se !== null && se !== "") {
-        val = Number(se);
-      } else {
-        const nsl = Number(props["num_street_lights" + suffix]) || 0;
-        val = (Number(props["num_amenities" + suffix]) || 0)
-          + (Number(props["num_trees" + suffix]) || 0) * 0.25
-          + nsl * 0.25;
-      }
-    } else {
-      selectedAmenityTypes.forEach(type => {
-        if (type === "trees") {
-          val += (Number(props["num_trees" + suffix]) || 0) * 0.25;
-        } else if (type === "street-lights") {
-          val += (Number(props["num_street_lights" + suffix]) || 0) * 0.25;
-        } else {
-          const statKey = amenityTypeToBuildingStatKey(type);
-          val += Number(props["amen_" + statKey + suffix]) || 0;
-        }
-      });
-    }
-    return val;
-  });
+  return buildingsData.features.map((f) => getBuildingOverallScore(f.properties || {}, walkMinutes));
 }
 
 // Interpolate the same red→green gradient used on the basemap
@@ -674,17 +648,10 @@ function getColorForValue(value, breakpoints) {
   return `rgb(${stops[stops.length - 1].join(",")})`;
 }
 
-// Update the legend labels
-function updateLegendLabels(breakpoints) {
+function updateAccessibilityLegendLabels() {
   if (!legendLabels) return;
-
-  const labels = breakpoints.map((val, i) => {
-    const rounded = Math.round(val);
-    if (i === breakpoints.length - 1) return rounded + "+";
-    return rounded;
-  });
-
-  legendLabels.innerHTML = labels.map(l => `<span>${l}</span>`).join("");
+  const labels = [0, 25, 50, 75, 100];
+  legendLabels.innerHTML = labels.map((l) => `<span>${l}</span>`).join("");
 }
 
 function setAmenityPointsVisibility(visible) {
@@ -1065,117 +1032,75 @@ function initDeckAmenityOverlay() {
 
 function updateBuildingColors() {
   if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return;
-  
-  // Wait for filter types to be initialized
   if (allFilterTypes.length === 0) return;
 
-  const sfx = "_" + walkMinutes + "min";
-
-  if (scoreMode === "clean") {
-    const scores = collectBuildingScores();
-    const breakpoints = percentileBreakpoints(scores);
-    updateLegendLabels(breakpoints);
-    const sumExpr = ["coalesce", ["to-number", ["get", "score_clean" + sfx]], 0];
-    const expression = [
-      "interpolate",
-      ["linear"],
-      sumExpr,
-      breakpoints[0], "#ef4444",
-      breakpoints[1], "#f97316",
-      breakpoints[2], "#eab308",
-      breakpoints[3], "#84cc16",
-      breakpoints[4], "#22c55e",
-    ];
-    if (map.getLayer("buildings-fill")) {
-      map.setPaintProperty("buildings-fill", "fill-color", expression);
-    }
-    return;
-  }
-
-  // Expanded: if nothing selected, all buildings show as lowest accessibility (red)
-  if (selectedAmenityTypes.size === 0) {
-    if (map.getLayer("buildings-fill")) {
-      map.setPaintProperty("buildings-fill", "fill-color", "#ef4444");
-    }
-    updateLegendLabels([0, 0, 0, 0, 0]);
-    return;
-  }
-  
-  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
-
-  const scores = collectBuildingScores();
-  const breakpoints = percentileBreakpoints(scores);
-
-  updateLegendLabels(breakpoints);
-  
-  let sumExpr;
-  if (useAll) {
-    sumExpr = ["+",
-      ["coalesce", ["to-number", ["get", "num_amenities" + sfx]], 0],
-      ["*", ["coalesce", ["to-number", ["get", "num_trees" + sfx]], 0], 0.25],
-      ["*", ["coalesce", ["to-number", ["get", "num_street_lights" + sfx]], 0], 0.25]
-    ];
-  } else {
-    const types = Array.from(selectedAmenityTypes);
-    const sumParts = types.map(type => {
-      if (type === "trees") {
-        return ["*", ["coalesce", ["to-number", ["get", "num_trees" + sfx]], 0], 0.25];
-      }
-      if (type === "street-lights") {
-        return ["*", ["coalesce", ["to-number", ["get", "num_street_lights" + sfx]], 0], 0.25];
-      }
-      const amenKey = "amen_" + amenityTypeToBuildingStatKey(type) + sfx;
-      return ["coalesce", ["to-number", ["get", amenKey]], 0];
-    });
-    if (sumParts.length === 1) {
-      sumExpr = sumParts[0];
-    } else {
-      sumExpr = ["+", ...sumParts];
-    }
-  }
-  
-  // Red-green gradient with dynamic breakpoints
-  const expression = [
+  const feats = buildingsData.features;
+  const colorExpr = [
     "interpolate",
     ["linear"],
-    sumExpr,
-    breakpoints[0], "#ef4444",   // red-500
-    breakpoints[1], "#f97316",   // orange-500
-    breakpoints[2], "#eab308",   // yellow-500
-    breakpoints[3], "#84cc16",   // lime-500
-    breakpoints[4], "#22c55e",   // green-500
+    ["to-number", ["get", SYM_PCT_KEY]],
+    0, "#ef4444",
+    25, "#f97316",
+    50, "#eab308",
+    75, "#84cc16",
+    100, "#22c55e",
   ];
-  
-  if (map.getLayer("buildings-fill")) {
-    map.setPaintProperty("buildings-fill", "fill-color", expression);
+
+  if (scoreMode === "expanded" && selectedAmenityTypes.size === 0) {
+    feats.forEach((f) => {
+      const p = f.properties || {};
+      p[SYM_PCT_KEY] = 0;
+    });
+  } else {
+    const scores = collectBuildingScores();
+    const ranks = bulkPercentileRanks(scores);
+    feats.forEach((f, i) => {
+      const p = f.properties || {};
+      p[SYM_PCT_KEY] = ranks[i] != null ? ranks[i] : 0;
+    });
   }
+
+  const buildingSrc = map.getSource("buildings");
+  if (buildingSrc) buildingSrc.setData(buildingsData);
+
+  if (map.getLayer("buildings-fill")) {
+    map.setPaintProperty("buildings-fill", "fill-color", colorExpr);
+  }
+  updateAccessibilityLegendLabels();
 }
 
 function getBuildingOverallScore(props, minutes) {
   const suffix = "_" + minutes + "min";
+  const p = props || {};
   if (scoreMode === "clean") {
-    return Number(props["score_clean" + suffix]) || 0;
+    return Number(p["score_clean" + suffix]) || 0;
   }
-  const exp = props["score_expanded" + suffix];
-  if (exp !== undefined && exp !== null && exp !== "") {
-    return Number(exp);
+  if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) {
+    return 0;
   }
-  const amenities = Number(props["num_amenities" + suffix]) || 0;
-  const trees = Number(props["num_trees" + suffix]) || 0;
-  const streetLights = Number(props["num_street_lights" + suffix]) || 0;
-  return amenities + trees * 0.25 + streetLights * 0.25;
-}
-
-function getBuildingTypeScore(props, type, minutes) {
-  const suffix = "_" + minutes + "min";
-  if (type === "trees") {
-    return (Number(props["num_trees" + suffix]) || 0) * 0.25;
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
+  if (useAll) {
+    const exp = p["score_expanded" + suffix];
+    if (exp !== undefined && exp !== null && exp !== "") {
+      return Number(exp);
+    }
+    const amenities = Number(p["num_amenities" + suffix]) || 0;
+    const trees = Number(p["num_trees" + suffix]) || 0;
+    const streetLights = Number(p["num_street_lights" + suffix]) || 0;
+    return amenities + trees * 0.25 + streetLights * 0.25;
   }
-  if (type === "street-lights") {
-    return (Number(props["num_street_lights" + suffix]) || 0) * 0.25;
-  }
-  const statKey = amenityTypeToBuildingStatKey(type);
-  return Number(props["amen_" + statKey + suffix]) || 0;
+  let val = 0;
+  selectedAmenityTypes.forEach((type) => {
+    if (type === "trees") {
+      val += (Number(p["num_trees" + suffix]) || 0) * 0.25;
+    } else if (type === "street-lights") {
+      val += (Number(p["num_street_lights" + suffix]) || 0) * 0.25;
+    } else {
+      const statKey = amenityTypeToBuildingStatKey(type);
+      val += Number(p["amen_" + statKey + suffix]) || 0;
+    }
+  });
+  return val;
 }
 
 function computePercentileRank(values, targetValue) {
@@ -1187,10 +1112,20 @@ function computePercentileRank(values, targetValue) {
   return Math.round((atOrBelow / values.length) * 100);
 }
 
-function computeAverage(values) {
-  if (!values || values.length === 0) return 0;
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return total / values.length;
+function bulkPercentileRanks(scores) {
+  const n = scores.length;
+  if (n === 0) return [];
+  const sorted = scores.slice().sort((a, b) => a - b);
+  return scores.map((target) => {
+    let lo = 0;
+    let hi = n;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid] <= target) lo = mid + 1;
+      else hi = mid;
+    }
+    return Math.round((lo / n) * 100);
+  });
 }
 
 function getOrdinalSuffix(value) {
@@ -1212,8 +1147,18 @@ function formatMetricNumber(value) {
   return value.toFixed(1);
 }
 
+function getPercentileSeriesCacheKey(minutes) {
+  const m = String(minutes);
+  if (scoreMode !== "clean") {
+    if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) return scoreMode + ":" + m + ":none";
+    if (selectedAmenityTypes.size === allFilterTypes.length) return scoreMode + ":" + m + ":all";
+    return scoreMode + ":" + m + ":f:" + Array.from(selectedAmenityTypes).sort().join("|");
+  }
+  return scoreMode + ":" + m;
+}
+
 function getPercentileSeriesForMinutes(minutes) {
-  const cacheKey = scoreMode + ":" + String(minutes);
+  const cacheKey = getPercentileSeriesCacheKey(minutes);
   if (percentileSeriesCache.has(cacheKey)) {
     return percentileSeriesCache.get(cacheKey);
   }
@@ -1222,67 +1167,25 @@ function getPercentileSeriesForMinutes(minutes) {
     return null;
   }
 
-  const byType = {};
-  allFilterTypes.forEach((type) => {
-    byType[type] = [];
-  });
-
   const overall = [];
   buildingsData.features.forEach((feature) => {
-    const props = feature.properties || {};
-    overall.push(getBuildingOverallScore(props, minutes));
-    if (scoreMode !== "clean") {
-      allFilterTypes.forEach((type) => {
-        byType[type].push(getBuildingTypeScore(props, type, minutes));
-      });
-    }
+    overall.push(getBuildingOverallScore(feature.properties || {}, minutes));
   });
 
-  const series = { overall, byType };
+  const series = { overall };
   percentileSeriesCache.set(cacheKey, series);
   return series;
 }
 
 function buildPercentileMetrics(buildingProps) {
   if (!buildingProps) return null;
+  if (scoreMode === "expanded" && selectedAmenityTypes.size === 0) return null;
   const series = getPercentileSeriesForMinutes(walkMinutes);
   if (!series || series.overall.length === 0) return null;
 
   const overallScore = getBuildingOverallScore(buildingProps, walkMinutes);
   const overallPercentile = computePercentileRank(series.overall, overallScore);
-  const overallAverage = computeAverage(series.overall);
-
-  if (scoreMode === "clean") {
-    return {
-      overallScore,
-      overallAverage,
-      overallPercentile,
-      perAmenity: []
-    };
-  }
-
-  const perAmenity = allFilterTypes.map((type) => {
-    const config = getAmenityConfig(type);
-    const score = getBuildingTypeScore(buildingProps, type, walkMinutes);
-    const values = series.byType[type] || [];
-    const percentile = computePercentileRank(values, score);
-    const average = computeAverage(values);
-    return {
-      type,
-      label: config.label,
-      color: config.color || DEFAULT_CONFIG.color,
-      score,
-      average,
-      percentile
-    };
-  });
-
-  return {
-    overallScore,
-    overallAverage,
-    overallPercentile,
-    perAmenity
-  };
+  return { overallPercentile };
 }
 
 function updateFilterLabel() {
@@ -1319,6 +1222,7 @@ function handleFilterChange(e) {
   updateAmenitiesSource();
   updateTreesSource();
   updateStreetLightsSource();
+  percentileSeriesCache.clear();
   updateBuildingColors();
   
   if (selectedBuildingCentroid) {
@@ -1344,6 +1248,7 @@ function toggleSelectAll() {
   updateAmenitiesSource();
   updateTreesSource();
   updateStreetLightsSource();
+  percentileSeriesCache.clear();
   updateBuildingColors();
   
   if (selectedBuildingCentroid) {
@@ -1711,7 +1616,7 @@ function selectBuilding(building, doFly = true) {
     updateAmenitiesSource();
     updateTreesSource();
     updateStreetLightsSource();
-    updateRadiusInfo(result.counts);
+    updateRadiusInfo();
   };
 
   if (doFly) {
@@ -1729,141 +1634,38 @@ function selectBuilding(building, doFly = true) {
   }
 }
 
-// Pluralize a label based on count
-function pluralize(label, count) {
-  if (count === 1) {
-    if (label === "Trees") return "tree";
-    if (label === "Healthcare") return "healthcare facility";
-    if (label === "Education") return "education facility";
-    if (label === "Commercial") return "commercial establishment";
-    if (label === "Services") return "service";
-    if (label === "Religious") return "religious institution";
-    if (label === "Recreation") return "recreation facility";
-    if (label === "Public") return "public institution";
-    if (label === "Fitness") return "fitness facility";
-    if (label === "Transport") return "transport stop";
-    if (label === "Financial") return "financial service";
-    if (label === "Tourism") return "tourism facility";
-    if (label === "Senior") return "senior facility";
-    if (label === "Street Lights") return "street light";
-    return label.toLowerCase();
-  } else {
-    if (label === "Trees") return "trees";
-    if (label === "Healthcare") return "healthcare facilities";
-    if (label === "Education") return "education facilities";
-    if (label === "Commercial") return "commercial establishments";
-    if (label === "Services") return "services";
-    if (label === "Religious") return "religious institutions";
-    if (label === "Recreation") return "recreation facilities";
-    if (label === "Public") return "public institutions";
-    if (label === "Fitness") return "fitness facilities";
-    if (label === "Transport") return "transport stops";
-    if (label === "Financial") return "financial services";
-    if (label === "Tourism") return "tourism facilities";
-    if (label === "Senior") return "senior facilities";
-    if (label === "Street Lights") return "street lights";
-    return label.toLowerCase() + "s";
-  }
-}
-
 // Update displayed radius info
-function updateRadiusInfo(counts) {
+function updateRadiusInfo() {
   const infoPanel = document.getElementById("radius-info");
   if (!infoPanel) return;
 
-  if (metricDisplayMode === "percentile") {
-    infoPanel.classList.add("percentile-mode");
-    if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) {
-      infoPanel.style.display = "none";
-      return;
-    }
+  infoPanel.classList.add("percentile-mode");
 
-    const metrics = buildPercentileMetrics(selectedBuildingCentroid.feature.properties || {});
-    if (!metrics || metrics.overallPercentile == null) {
-      infoPanel.innerHTML = '<div class="radius-count">Percentile data unavailable</div>';
-      infoPanel.style.display = "block";
-      return;
-    }
+  if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) {
+    infoPanel.style.display = "none";
+    return;
+  }
 
-    const scoreLabel = scoreMode === "clean" ? "Filtered score" : "Expanded score";
-    let html = '<div class="percentile-summary">';
-    html += `<div class="percentile-label">${scoreLabel}</div>`;
-    html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
-    html += `<div class="percentile-context">Your score ${formatMetricNumber(metrics.overallScore)} vs citywide average ${formatMetricNumber(metrics.overallAverage)}</div>`;
-    html += "</div>";
-
-    if (metrics.perAmenity && metrics.perAmenity.length > 0) {
-      html += '<div class="percentile-breakdown">';
-      metrics.perAmenity.forEach((metric) => {
-        html += `<span class="percentile-item"><span class="percentile-dot" style="background:${metric.color}"></span>${metric.label}: <strong>${metric.percentile}%</strong></span>`;
-      });
-      html += "</div>";
-    }
-
-    infoPanel.innerHTML = html;
+  if (scoreMode === "expanded" && selectedAmenityTypes.size === 0) {
+    infoPanel.innerHTML = '<div class="radius-count">Select amenity types in the filter</div>';
     infoPanel.style.display = "block";
     return;
   }
 
-  infoPanel.classList.remove("percentile-mode");
-  
-  // If nothing selected, show message
-  if (selectedAmenityTypes.size === 0) {
-    infoPanel.innerHTML = '<div class="radius-count">No types selected</div>';
+  const metrics = buildPercentileMetrics(selectedBuildingCentroid.feature.properties || {});
+  if (!metrics || metrics.overallPercentile == null) {
+    infoPanel.innerHTML = '<div class="radius-count">Percentile data unavailable</div>';
     infoPanel.style.display = "block";
     return;
   }
-  
-  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
-  
-  let html = '<div class="radius-count">';
-  let total = 0;
-  
-  // Counts are already filtered by getItemsInPolygon
-  Object.values(counts).forEach(count => {
-    total += count;
-  });
-  
-  // Check which types actually have items
-  const typesWithItems = Object.entries(counts).filter(([, count]) => count > 0);
-  
-  if (typesWithItems.length === 1) {
-    // Only one type has items - use specific name
-    const [type] = typesWithItems[0];
-    const config = AMENITY_TYPE_CONFIG[type];
-    const label = config ? config.label : type.replace(/_/g, " ");
-    html += `${total} ${pluralize(label, total)} within ${walkMinutes} min walk`;
-  } else if (useAll) {
-    html += `${total} items within ${walkMinutes} min walk`;
-  } else if (selectedAmenityTypes.size === 1) {
-    const type = Array.from(selectedAmenityTypes)[0];
-    const config = AMENITY_TYPE_CONFIG[type];
-    const label = config ? config.label : type.replace(/_/g, " ");
-    html += `${total} ${pluralize(label, total)} within ${walkMinutes} min walk`;
-  } else {
-    html += `${total} of selected types within ${walkMinutes} min walk`;
-  }
-  
-  html += '</div>';
-  
-  // Show breakdown by type (limit to top 8 if many types)
-  const sortedCounts = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  if (sortedCounts.length > 1) {
-    const maxToShow = 8;
-    const toShow = sortedCounts.slice(0, maxToShow);
-    const remaining = sortedCounts.length - maxToShow;
-    
-    html += '<div class="radius-breakdown">';
-    toShow.forEach(([type, count]) => {
-      const config = getAmenityConfig(type);
-      html += `<span class="radius-type"><span style="color:${config.color}">●</span> ${config.label}: ${count}</span>`;
-    });
-    if (remaining > 0) {
-      html += `<span class="radius-type">+${remaining} more</span>`;
-    }
-    html += '</div>';
-  }
-  
+
+  const scoreKind = scoreMode === "clean" ? "Filtered" : "Expanded";
+  let html = '<div class="percentile-summary">';
+  html += `<div class="percentile-label">${scoreKind} accessibility — citywide percentile</div>`;
+  html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
+  html += `<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="width:${metrics.overallPercentile}%"></div></div>`;
+  html += "</div>";
+
   infoPanel.innerHTML = html;
   infoPanel.style.display = "block";
 }
@@ -1899,7 +1701,7 @@ if (scoreModelToggle) {
     percentileSeriesCache.clear();
     applyScoreModeAmenities();
     if (selectedBuildingCentroid) {
-      updateRadiusInfo(latestRadiusCounts);
+      updateRadiusInfo();
     }
     const cwModal = document.getElementById("citywide-modal");
     if (currentMode === "citywide" && cwModal && cwModal.classList.contains("show")) {
@@ -1911,17 +1713,6 @@ if (scoreModelToggle) {
       if (nhModal && nhModal.classList.contains("show") && selectedNeighborhood) {
         showNeighborhoodModal(selectedNeighborhood);
       }
-    }
-  });
-}
-
-if (metricDisplayToggle) {
-  metricDisplayToggle.addEventListener("change", function (e) {
-    const input = e.target;
-    if (!input || input.name !== "metric-display") return;
-    metricDisplayMode = input.value === "percentile" ? "percentile" : "raw";
-    if (selectedBuildingCentroid) {
-      updateRadiusInfo(latestRadiusCounts);
     }
   });
 }
@@ -2060,7 +1851,7 @@ map.on("load", async function () {
     })
   ])
     .then(function (results) {
-      const cleanFc = results[0];
+      const cleanFc = filterCleanManifestPointFeatures(results[0]);
       const legacyFc = results[1];
 
       allAmenitiesDataClean = cleanFc;
@@ -2298,23 +2089,30 @@ function updateNeighborhoodColors() {
   const sfx = "_" + walkMinutes + "min";
   const avgKey = scoreMode === "clean" ? "avg_score_clean" + sfx : "avg_overall" + sfx;
 
-  // Percentile-based breakpoints from neighborhood average scores
-  const values = neighborhoodsData.features.map(f => (f.properties || {})[avgKey] || 0);
-  const breakpoints = percentileBreakpoints(values);
+  const feats = neighborhoodsData.features;
+  const values = feats.map((f) => (f.properties || {})[avgKey] || 0);
+  const ranks = bulkPercentileRanks(values);
+  feats.forEach((f, i) => {
+    const p = f.properties || {};
+    p[SYM_PCT_KEY] = ranks[i] != null ? ranks[i] : 0;
+  });
+
+  const nhSrc = map.getSource("neighborhoods");
+  if (nhSrc) nhSrc.setData(neighborhoodsData);
 
   const colorExpr = [
     "interpolate",
     ["linear"],
-    ["coalesce", ["get", avgKey], 0],
-    breakpoints[0], "#ef4444",
-    breakpoints[1], "#f97316",
-    breakpoints[2], "#eab308",
-    breakpoints[3], "#84cc16",
-    breakpoints[4], "#22c55e",
+    ["to-number", ["get", SYM_PCT_KEY]],
+    0, "#ef4444",
+    25, "#f97316",
+    50, "#eab308",
+    75, "#84cc16",
+    100, "#22c55e",
   ];
 
   map.setPaintProperty("neighborhoods-fill", "fill-color", colorExpr);
-  updateLegendLabels(breakpoints);
+  updateAccessibilityLegendLabels();
 }
 
 function switchMode(mode) {
@@ -2351,22 +2149,18 @@ function switchMode(mode) {
 
 function setControlsForMode(mode) {
   const showPointsSection = showPointsToggle ? showPointsToggle.closest(".section") : null;
-  const metricSection = metricDisplayToggle ? metricDisplayToggle.closest(".section") : null;
   const legendSection = document.querySelector(".legend-section");
 
   if (mode === "house") {
     if (showPointsSection) showPointsSection.style.display = "";
-    if (metricSection) metricSection.style.display = "";
     if (legendSection) legendSection.style.display = "";
     if (modeHint) modeHint.textContent = "Click map to analyze nearest building";
   } else if (mode === "neighborhood") {
     if (showPointsSection) showPointsSection.style.display = "none";
-    if (metricSection) metricSection.style.display = "none";
     if (legendSection) legendSection.style.display = "";
     if (modeHint) modeHint.textContent = "Click a neighborhood for details";
   } else {
     if (showPointsSection) showPointsSection.style.display = "none";
-    if (metricSection) metricSection.style.display = "none";
     if (legendSection) legendSection.style.display = "none";
     if (modeHint) modeHint.textContent = "";
   }
@@ -2496,16 +2290,18 @@ function showNeighborhoodModal(feature) {
 
     let html = "";
 
+    const avgWeighted = isClean
+      ? formatMetricNumber(props["avg_score_clean" + sfx] || 0)
+      : formatMetricNumber(props["avg_overall" + sfx] || props["avg_amenities" + sfx] || 0);
     html += '<div class="cw-summary">';
     html += `<div class="cw-stat-card"><div class="cw-stat-value">${props.building_count || 0}</div><div class="cw-stat-label">Buildings</div></div>`;
+    html += `<div class="cw-stat-card"><div class="cw-stat-value">${pct}%</div><div class="cw-stat-label">Citywide percentile</div></div>`;
     if (isClean) {
-      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(props["avg_score_clean" + sfx] || 0)}</div><div class="cw-stat-label">Avg clean score</div></div>`;
       html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage_clean" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
     } else {
-      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(props["avg_amenities" + sfx] || 0)}</div><div class="cw-stat-label">Avg amenities</div></div>`;
       html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
     }
-    html += `<div class="cw-stat-card"><div class="cw-stat-value">${pct}%</div><div class="cw-stat-label">Percentile</div></div>`;
+    html += `<div class="cw-stat-card cw-stat-footnote-card"><div class="cw-stat-value cw-stat-footnote">Weighted avg: ${avgWeighted}</div><div class="cw-stat-label">Index (same walk time)</div></div>`;
     html += "</div>";
 
     html += '<div class="cw-section">';
@@ -2651,8 +2447,12 @@ map.on("mousemove", "neighborhoods-fill", function(e) {
   const sfx = "_" + walkMinutes + "min";
   const avgKey = scoreMode === "clean" ? "avg_score_clean" + sfx : "avg_overall" + sfx;
   const avg = props[avgKey] || 0;
-  const label = scoreMode === "clean" ? "Avg clean score" : "Avg score";
-  tooltip.textContent = `${props.Name || "?"}\n${label}: ${formatMetricNumber(avg)}`;
+  const pctVal = props[SYM_PCT_KEY];
+  const pctOverall = scoreMode === "clean"
+    ? (props["pct_clean_overall" + sfx] || 0)
+    : (props["pct_overall" + sfx] || 0);
+  const pctDisplay = pctVal != null && pctVal !== "" ? Number(pctVal) : Number(pctOverall) || 0;
+  tooltip.textContent = `${props.Name || "?"}\n${pctDisplay}${getOrdinalSuffix(pctDisplay)} percentile\nIndex ${formatMetricNumber(avg)}`;
   tooltip.style.display = "block";
   tooltip.style.left = (e.point.x + 12) + "px";
   tooltip.style.top = (e.point.y + 12) + "px";
@@ -2739,20 +2539,21 @@ function renderCitywideModal() {
   const ranking = (isClean ? (stats.neighborhood_ranking_clean || []) : (stats.neighborhood_ranking || []))
     .slice()
     .sort(function (a, b) {
+      const pk = isClean ? ("pct_clean_overall" + sfx) : ("pct_overall" + sfx);
+      const dp = (Number(b[pk]) || 0) - (Number(a[pk]) || 0);
+      if (dp !== 0) return dp;
       const rk = isClean ? ("avg_score_clean" + sfx) : ("avg_overall" + sfx);
-      return (b[rk] || 0) - (a[rk] || 0);
+      return (Number(b[rk]) || 0) - (Number(a[rk]) || 0);
     });
 
   html += '<div class="cw-section">';
   html += '<div class="cw-section-title">Neighborhood ranking</div>';
   const scoreKey = isClean ? ("avg_score_clean" + sfx) : ("avg_overall" + sfx);
   const pctKey = isClean ? ("pct_clean_overall" + sfx) : ("pct_overall" + sfx);
-  const maxScore = ranking.length > 0 ? (ranking[0][scoreKey] || 0) : 1;
   html += '<ul class="cw-ranking-list">';
   ranking.forEach((r, i) => {
     const score = r[scoreKey] || 0;
-    const pct = r[pctKey] || 0;
-    const barPct = maxScore > 0 ? (score / maxScore * 100) : 0;
+    const pct = Math.min(100, Math.max(0, Number(r[pctKey]) || 0));
     let barColor;
     if (pct >= 70) barColor = "#22c55e";
     else if (pct >= 40) barColor = "#eab308";
@@ -2761,8 +2562,8 @@ function renderCitywideModal() {
     html += `<div class="cw-ranking-item">`;
     html += `<div class="cw-rank-num">${i + 1}</div>`;
     html += `<div class="cw-rank-name">${r.name}</div>`;
-    html += `<div class="cw-rank-bar-wrap"><div class="cw-rank-bar" style="width:${barPct}%;background:${barColor}"></div></div>`;
-    html += `<div class="cw-rank-score">${formatMetricNumber(score)}</div>`;
+    html += `<div class="cw-rank-bar-wrap"><div class="cw-rank-bar" style="width:${pct}%;background:${barColor}"></div></div>`;
+    html += `<div class="cw-rank-score"><strong>${pct}%</strong><span class="cw-rank-sub">${formatMetricNumber(score)} index</span></div>`;
     html += `</div>`;
   });
   html += '</ul></div>';

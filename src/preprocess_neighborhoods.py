@@ -33,6 +33,8 @@ TREES_PATH = DOCS_DATA_DIR / "trees.geojson"
 
 WALK_MINUTES = [5, 10, 15]
 
+EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES = frozenset({"bicycle_track"})
+
 
 def amenity_stat_keys_from_buildings(buildings: gpd.GeoDataFrame) -> list:
     """Reads amen_<key>_<5|10|15>min columns from buildings_accessibility (any taxonomy)."""
@@ -44,16 +46,23 @@ def amenity_stat_keys_from_buildings(buildings: gpd.GeoDataFrame) -> list:
     return sorted(keys)
 
 
-def amenity_type_counts_from_geojson(path: Path) -> dict:
+def amenity_type_counts_from_geojson(path: Path, exclude_types: frozenset | None = None) -> dict:
+    exclude_types = exclude_types or frozenset()
     data = load_geojson(path)
     type_counts: dict = {}
     for feat in data.get("features") or []:
         t = (feat.get("properties") or {}).get("amenity_type", "other")
+        if t in exclude_types:
+            continue
         type_counts[t] = type_counts.get(t, 0) + 1
     return type_counts
 
 
-def inventory_counts_per_neighborhood(hoods_wgs84: gpd.GeoDataFrame, points_path: Path):
+def inventory_counts_per_neighborhood(
+    hoods_wgs84: gpd.GeoDataFrame,
+    points_path: Path,
+    exclude_amenity_types: frozenset | None = None,
+):
     """Point-in-polygon counts by amenity_type for each neighborhood Name."""
     if not points_path.is_file():
         return {}
@@ -64,6 +73,10 @@ def inventory_counts_per_neighborhood(hoods_wgs84: gpd.GeoDataFrame, points_path
         pts = pts.to_crs(hoods_wgs84.crs)
     if "amenity_type" not in pts.columns:
         return {}
+    if exclude_amenity_types:
+        pts = pts[~pts["amenity_type"].isin(exclude_amenity_types)]
+        if len(pts) == 0:
+            return {}
     h = hoods_wgs84[["Name", "geometry"]].copy().rename(columns={"Name": "hood_name"})
     j = gpd.sjoin(pts, h, predicate="within", how="inner")
     if len(j) == 0:
@@ -209,7 +222,9 @@ def main():
 
     # Point-in-polygon inventory (clean vs legacy taxonomy) for neighborhood/city pies
     logging.info("Computing per-neighborhood POI inventory (clean vs legacy)...")
-    inv_clean = inventory_counts_per_neighborhood(neighborhoods, AMENITIES_NEW_PATH)
+    inv_clean = inventory_counts_per_neighborhood(
+        neighborhoods, AMENITIES_NEW_PATH, exclude_amenity_types=EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES
+    )
     inv_legacy = inventory_counts_per_neighborhood(neighborhoods, AMENITIES_LEGACY_PATH)
 
     clean_types = set()
@@ -284,14 +299,18 @@ def main():
         citywide["amenity_counts"] = legacy_counts
         logging.info("  citywide amenity_counts: legacy file %s (%d types)", AMENITIES_LEGACY_PATH.name, len(legacy_counts))
     elif AMENITIES_NEW_PATH.is_file():
-        fallback = amenity_type_counts_from_geojson(AMENITIES_NEW_PATH)
+        fallback = amenity_type_counts_from_geojson(
+            AMENITIES_NEW_PATH, exclude_types=EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES
+        )
         citywide["amenity_counts"] = fallback
         logging.info("  citywide amenity_counts: manifest only %s (no amenities_all)", AMENITIES_NEW_PATH.name)
     else:
         citywide["amenity_counts"] = {}
 
     if AMENITIES_NEW_PATH.is_file():
-        citywide["amenity_counts_clean"] = amenity_type_counts_from_geojson(AMENITIES_NEW_PATH)
+        citywide["amenity_counts_clean"] = amenity_type_counts_from_geojson(
+            AMENITIES_NEW_PATH, exclude_types=EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES
+        )
 
     citywide["total_amenities"] = sum((citywide.get("amenity_counts") or {}).values())
     citywide["total_amenities_clean"] = sum((citywide.get("amenity_counts_clean") or {}).values())
