@@ -8,6 +8,7 @@ Outputs:
 import json
 import logging
 import os
+import re
 import warnings
 from pathlib import Path
 
@@ -25,17 +26,27 @@ DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"
 
 BUILDINGS_PATH = DOCS_DATA_DIR / "buildings_accessibility.geojson"
 NEIGHBORHOODS_PATH = DOCS_DATA_DIR / "neighborhoods.geojson"
-AMENITIES_PATH = DOCS_DATA_DIR / "amenities_all.geojson"
+AMENITIES_NEW_PATH = DOCS_DATA_DIR / "amenities_new.geojson"
+AMENITIES_LEGACY_PATH = DOCS_DATA_DIR / "amenities_all.geojson"
 TREES_PATH = DOCS_DATA_DIR / "trees.geojson"
 
 WALK_MINUTES = [5, 10, 15]
 
-AMENITY_TYPES = [
-    "healthcare", "education", "commercial", "services",
-    "religious_institutions", "parks_and_recreation", "public_institutions",
-    "fitness", "transportation", "financial_services", "tourism",
-    "senior_services_and_living",
-]
+
+def amenity_stat_keys_from_buildings(buildings: gpd.GeoDataFrame) -> list:
+    """Reads amen_<key>_<5|10|15>min columns from buildings_accessibility (any taxonomy)."""
+    keys = set()
+    for col in buildings.columns:
+        m = re.match(r"^amen_(.+)_(?:5|10|15)min$", str(col))
+        if m:
+            keys.add(m.group(1))
+    return sorted(keys)
+
+
+def amenities_points_path_for_citywide() -> Path:
+    if AMENITIES_NEW_PATH.is_file():
+        return AMENITIES_NEW_PATH
+    return AMENITIES_LEGACY_PATH
 
 
 def load_geojson(path):
@@ -74,13 +85,8 @@ def main():
     unassigned = buildings["neighborhood"].isna().sum()
     logging.info("  %d buildings unassigned (outside all neighborhoods)", unassigned)
 
-    # Determine which amenity columns actually exist in buildings
-    existing_types = []
-    for t in AMENITY_TYPES:
-        col5 = f"amen_{t}_5min"
-        if col5 in buildings.columns:
-            existing_types.append(t)
-    logging.info("  %d amenity types found in data", len(existing_types))
+    existing_types = amenity_stat_keys_from_buildings(buildings)
+    logging.info("  %d amenity stat keys in buildings: %s", len(existing_types), existing_types[:12])
 
     # Build neighborhood stats
     neighborhood_stats = {}
@@ -185,8 +191,9 @@ def main():
     logging.info("Computing citywide statistics...")
     citywide = {"total_buildings": len(buildings)}
 
-    # Amenity counts from amenities file
-    amenities_data = load_geojson(AMENITIES_PATH)
+    amenities_path = amenities_points_path_for_citywide()
+    logging.info("  amenity points file: %s", amenities_path.name)
+    amenities_data = load_geojson(amenities_path)
     type_counts = {}
     for feat in amenities_data["features"]:
         t = feat["properties"].get("amenity_type", "other")
