@@ -61,6 +61,55 @@ function amenityTypeToBuildingStatKey(type) {
   return type;
 }
 
+const CLEAN_WEIGHTS = {
+  trees: 4.0,
+  parks: 15.0,
+  playgrounds: 15.0,
+  "street-lights": 3.75,
+  bus_stops: 7.5,
+  shelters: 10.0,
+  education: 7.5,
+  "community-centers": 5.0,
+  businesscenters: 5.0,
+  health: 7.5,
+};
+
+function filterTypeToCleanCountStem(filterType) {
+  if (filterType === "trees") return "trees";
+  if (filterType === "street-lights") return "street_lights";
+  let s = String(filterType || "").toLowerCase().trim().replace(/\s+/g, "_").replace(/-/g, "_");
+  if (s === "healthcare") s = "health";
+  return s;
+}
+
+function cleanCountStemToWeightKey(stem) {
+  if (stem === "street_lights") return "street-lights";
+  if (stem === "community_centers") return "community-centers";
+  if (stem === "bus_stops") return "bus_stops";
+  if (CLEAN_WEIGHTS[stem] !== undefined) return stem;
+  return null;
+}
+
+function getBuildingCleanFilteredScore(props, minutes) {
+  const p = props || {};
+  const sfx = "_" + minutes + "min";
+  if (allFilterTypes.length === 0 || selectedAmenityTypes.size === 0) return 0;
+  if (selectedAmenityTypes.size === allFilterTypes.length) {
+    return Number(p["score_clean" + sfx]) || 0;
+  }
+  let total = 0;
+  selectedAmenityTypes.forEach((type) => {
+    const stem = filterTypeToCleanCountStem(type);
+    const col = "clean_" + stem + "_" + minutes + "min";
+    const cnt = Number(p[col]);
+    if (!Number.isFinite(cnt)) return;
+    const wk = cleanCountStemToWeightKey(stem);
+    const w = wk != null ? CLEAN_WEIGHTS[wk] : 0;
+    total += w * cnt;
+  });
+  return total;
+}
+
 // Calculate appropriate zoom level to fit a GeoJSON polygon in the viewport
 function getZoomForPolygon(polygon) {
   const bbox = turf.bbox(polygon);
@@ -617,9 +666,7 @@ function percentileBreakpoints(values) {
 
 function collectBuildingScores() {
   if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return [];
-  if (scoreMode === "expanded" && (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0)) {
-    return [];
-  }
+  if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) return [];
   return buildingsData.features.map((f) => getBuildingOverallScore(f.properties || {}, walkMinutes));
 }
 
@@ -1046,7 +1093,7 @@ function updateBuildingColors() {
     100, "#22c55e",
   ];
 
-  if (scoreMode === "expanded" && selectedAmenityTypes.size === 0) {
+  if (selectedAmenityTypes.size === 0) {
     feats.forEach((f) => {
       const p = f.properties || {};
       p[SYM_PCT_KEY] = 0;
@@ -1073,7 +1120,7 @@ function getBuildingOverallScore(props, minutes) {
   const suffix = "_" + minutes + "min";
   const p = props || {};
   if (scoreMode === "clean") {
-    return Number(p["score_clean" + suffix]) || 0;
+    return getBuildingCleanFilteredScore(p, minutes);
   }
   if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) {
     return 0;
@@ -1149,12 +1196,13 @@ function formatMetricNumber(value) {
 
 function getPercentileSeriesCacheKey(minutes) {
   const m = String(minutes);
-  if (scoreMode !== "clean") {
-    if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) return scoreMode + ":" + m + ":none";
-    if (selectedAmenityTypes.size === allFilterTypes.length) return scoreMode + ":" + m + ":all";
-    return scoreMode + ":" + m + ":f:" + Array.from(selectedAmenityTypes).sort().join("|");
+  if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) {
+    return scoreMode + ":" + m + ":none";
   }
-  return scoreMode + ":" + m;
+  if (selectedAmenityTypes.size === allFilterTypes.length) {
+    return scoreMode + ":" + m + ":all";
+  }
+  return scoreMode + ":" + m + ":f:" + Array.from(selectedAmenityTypes).sort().join("|");
 }
 
 function getPercentileSeriesForMinutes(minutes) {
@@ -1179,7 +1227,7 @@ function getPercentileSeriesForMinutes(minutes) {
 
 function buildPercentileMetrics(buildingProps) {
   if (!buildingProps) return null;
-  if (scoreMode === "expanded" && selectedAmenityTypes.size === 0) return null;
+  if (selectedAmenityTypes.size === 0) return null;
   const series = getPercentileSeriesForMinutes(walkMinutes);
   if (!series || series.overall.length === 0) return null;
 
@@ -1646,7 +1694,7 @@ function updateRadiusInfo() {
     return;
   }
 
-  if (scoreMode === "expanded" && selectedAmenityTypes.size === 0) {
+  if (selectedAmenityTypes.size === 0) {
     infoPanel.innerHTML = '<div class="radius-count">Select amenity types in the filter</div>';
     infoPanel.style.display = "block";
     return;
