@@ -199,7 +199,7 @@ def main():
             rank = sum(1 for v in sorted_vals if v <= val)
             neighborhood_stats[name][f"pct_trees{sfx}"] = round(rank / n_total * 100)
 
-        # Clean weighted score: overall percentile across neighborhoods
+        # Filtered score: overall percentile across neighborhoods
         vals = {n: s.get(f"avg_score_clean{sfx}", 0) for n, s in neighborhood_stats.items()}
         sorted_vals = sorted(vals.values())
         n_total = len(sorted_vals)

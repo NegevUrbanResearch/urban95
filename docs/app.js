@@ -407,7 +407,7 @@ function warnIfBuildingScoresIncomplete(fc) {
   const hasExpanded = keys.some(k => k.indexOf("score_expanded_") === 0);
   if (!hasClean) {
     console.warn(
-      "[urban95] buildings_accessibility.geojson has no score_clean_* properties. Clean (weighted) choropleth will be 0 until you regenerate outputs with src/preprocess_accessibility.py."
+      "[urban95] buildings_accessibility.geojson has no score_clean_* properties. Filtered choropleth will be 0 until you regenerate outputs with src/preprocess_accessibility.py."
     );
   }
   if (!hasStreet || !hasExpanded) {
@@ -1092,7 +1092,7 @@ function updateBuildingColors() {
     return;
   }
 
-  // Expanded (legacy): if nothing selected, all buildings show as lowest accessibility (red)
+  // Expanded: if nothing selected, all buildings show as lowest accessibility (red)
   if (selectedAmenityTypes.size === 0) {
     if (map.getLayer("buildings-fill")) {
       map.setPaintProperty("buildings-fill", "fill-color", "#ef4444");
@@ -1785,7 +1785,7 @@ function updateRadiusInfo(counts) {
       return;
     }
 
-    const scoreLabel = scoreMode === "clean" ? "Clean weighted score" : "All amenities (legacy)";
+    const scoreLabel = scoreMode === "clean" ? "Filtered score" : "Expanded score";
     let html = '<div class="percentile-summary">';
     html += `<div class="percentile-label">${scoreLabel}</div>`;
     html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
@@ -2488,7 +2488,7 @@ function showNeighborhoodModal(feature) {
 
     document.getElementById("neighborhood-modal-title").textContent = props.Name || "Unknown";
     document.getElementById("neighborhood-modal-subtitle").textContent =
-      `${pct}${getOrdinalSuffix(pct)} percentile • ${walkMinutes}-min walk • ${isClean ? "Clean (weighted)" : "Expanded (legacy)"}`;
+      `${pct}${getOrdinalSuffix(pct)} percentile • ${walkMinutes}-min walk • ${isClean ? "Filtered" : "Expanded"}`;
 
     const body = document.getElementById("neighborhood-modal-body");
     neighborhoodCharts.forEach(c => c.destroy());
@@ -2726,13 +2726,13 @@ function renderCitywideModal() {
 
   const histDist =
     scoreMode === "clean" && stats["distribution_clean" + sfx]
-      ? "clean weighted"
+      ? "filtered"
       : scoreMode === "expanded" && stats["distribution_expanded" + sfx]
-        ? "expanded (legacy)"
+        ? "expanded"
         : "reachability index";
   html += '<div class="cw-section">';
   html += `<div class="cw-section-title">Building score distribution — ${histDist}</div>`;
-  html += `<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">${walkMinutes}-min walk • Matches ${scoreMode === "clean" ? "Clean (weighted)" : "Expanded (legacy)"} in Building mode</p>`;
+  html += `<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">${walkMinutes}-min walk • Matches ${scoreMode === "clean" ? "Filtered" : "Expanded"} in Building mode</p>`;
   html += '<div class="cw-chart-container"><canvas id="cw-score-hist"></canvas></div>';
   html += '</div>';
 
