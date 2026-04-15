@@ -818,6 +818,15 @@ def compute_building_accessibility(
     
     # Write minimal GeoJSON (no CRS metadata, compact format)
     logging.info("Writing optimized GeoJSON files...")
+    _sc = [c for c in buildings_web.columns if c.startswith("score_clean")]
+    _se = [c for c in buildings_web.columns if c.startswith("score_expanded")]
+    _sl = [c for c in buildings_web.columns if c.startswith("num_street_lights")]
+    logging.info(
+        "Building score columns for web: score_clean=%s, score_expanded=%s, num_street_lights=%s",
+        bool(_sc),
+        bool(_se),
+        bool(_sl),
+    )
     write_minimal_geojson(buildings_web, DOCS_DATA_DIR / "buildings_accessibility.geojson", precision=5)
     buildings_file_size = (DOCS_DATA_DIR / "buildings_accessibility.geojson").stat().st_size
     logging.info("Buildings: %.1fMB (%d features)", buildings_file_size / 1e6, len(buildings_web))
