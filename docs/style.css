@@ -191,7 +191,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   transition: all 0.2s;
+}
+
+.filter-btn-label-wrap {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35em;
+  min-width: 0;
+  text-align: left;
+}
+
+.filter-label-prefix {
+  color: #6b7280;
+  flex-shrink: 0;
 }
 
 .filter-btn:hover {
@@ -281,23 +296,6 @@ body {
   height: 1px;
   background: #e5e7eb;
   margin: 4px 0;
-}
-
-.select-all-btn {
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  background: #f3f4f6;
-  color: #374151;
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.select-all-btn:hover {
-  background: #e5e7eb;
 }
 
 .radius-toggle {
@@ -1714,14 +1712,6 @@ body {
     min-width: 22px;
   }
 
-  .select-all-btn {
-    padding: 14px;
-    font-size: 14px;
-    min-height: 48px;
-    border-radius: 8px;
-    margin-bottom: 8px;
-  }
-
   /* Radius info - floating card above bottom bar */
   #radius-info {
     position: fixed;
@@ -1909,7 +1899,6 @@ body {
   /* Prevent text selection on interactive elements */
   .filter-btn,
   .filter-item,
-  .select-all-btn,
   .modal-tab,
   .info-btn,
   .radius-opt {

@@ -61,15 +61,16 @@
 
       <div class="controls-row">
         <div class="section" id="amenity-filter-section">
-          <div class="section-title">Filter</div>
+          <div class="section-title">Filter only</div>
           <div class="filter-dropdown">
             <button id="filter-btn" class="filter-btn">
-              <span id="filter-label">All Types</span>
+              <span class="filter-btn-label-wrap">
+                <span class="filter-label-prefix">Filter Only:</span>
+                <span id="filter-label">All types</span>
+              </span>
               <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
             </button>
             <div id="filter-popup" class="filter-popup">
-              <button id="select-all-btn" class="select-all-btn">Select All</button>
-              <div class="filter-divider"></div>
               <div id="filter-items"></div>
             </div>
           </div>

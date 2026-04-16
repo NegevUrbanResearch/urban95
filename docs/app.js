@@ -407,7 +407,6 @@ const filterBtn = document.getElementById("filter-btn");
 const filterPopup = document.getElementById("filter-popup");
 const filterLabel = document.getElementById("filter-label");
 const filterItems = document.getElementById("filter-items");
-const selectAllBtn = document.getElementById("select-all-btn");
 const filterBackdrop = document.getElementById("filter-backdrop");
 const legendLabels = document.getElementById("legend-labels");
 
@@ -445,6 +444,7 @@ let allStreetLightsData = null;
 let buildingsData = null;
 let buildingCentroids = [];
 let selectedAmenityTypes = new Set();
+let lastFilterRadioSelection = "all";
 let allFilterTypes = [];
 let selectedBuildingCentroid = null;
 let amenitiesInRadiusIds = new Set();
@@ -600,9 +600,11 @@ function loadTreesIfNeeded() {
       
       const types = allAmenityTypes.slice();
       buildFilterItems(types);
+      updateAmenitiesSource();
       updateTreesSource();
+      updateStreetLightsSource();
       updateBuildingColors();
-      
+
       if (selectedBuildingCentroid) {
         selectBuilding(selectedBuildingCentroid, false);
       }
@@ -629,6 +631,8 @@ function loadStreetLightsIfNeeded() {
 
       const types = allAmenityTypes.slice();
       buildFilterItems(types);
+      updateAmenitiesSource();
+      updateTreesSource();
       updateStreetLightsSource();
       updateBuildingColors();
 
@@ -745,14 +749,30 @@ function updateAmenitiesSource() {
   updateDeckAmenityLayers();
 }
 
-// Update trees source — only trees within the selected building's isochrone are shown
+function isFilterOnlyTrees() {
+  return (
+    allFilterTypes.length > 0 &&
+    selectedAmenityTypes.size === 1 &&
+    selectedAmenityTypes.has("trees")
+  );
+}
+
+function isFilterOnlyStreetLights() {
+  return (
+    allFilterTypes.length > 0 &&
+    selectedAmenityTypes.size === 1 &&
+    selectedAmenityTypes.has("street-lights")
+  );
+}
+
+// Update trees source — by default only trees within the selected building's isochrone; filter-only Trees shows all
 function updateTreesSource() {
   if (!allTreesData) return;
 
   const source = map.getSource("trees");
   if (!source) return;
 
-  if (selectedAmenityTypes.size === 0 || treesInRadiusIds.size === 0) {
+  if (selectedAmenityTypes.size === 0) {
     source.setData({ type: "FeatureCollection", features: [] });
     return;
   }
@@ -761,6 +781,16 @@ function updateTreesSource() {
   const showTrees = useAll || selectedAmenityTypes.has("trees");
 
   if (!showTrees) {
+    source.setData({ type: "FeatureCollection", features: [] });
+    return;
+  }
+
+  if (isFilterOnlyTrees()) {
+    source.setData(allTreesData);
+    return;
+  }
+
+  if (treesInRadiusIds.size === 0) {
     source.setData({ type: "FeatureCollection", features: [] });
     return;
   }
@@ -776,7 +806,7 @@ function updateStreetLightsSource() {
   const source = map.getSource("street-lights");
   if (!source) return;
 
-  if (selectedAmenityTypes.size === 0 || streetLightsInRadiusIds.size === 0) {
+  if (selectedAmenityTypes.size === 0) {
     source.setData({ type: "FeatureCollection", features: [] });
     return;
   }
@@ -789,12 +819,24 @@ function updateStreetLightsSource() {
     return;
   }
 
-  const inRadiusFeatures = allStreetLightsData.features.filter((_, index) => streetLightsInRadiusIds.has(index));
+  if (isFilterOnlyStreetLights()) {
+    source.setData(allStreetLightsData);
+    return;
+  }
+
+  if (streetLightsInRadiusIds.size === 0) {
+    source.setData({ type: "FeatureCollection", features: [] });
+    return;
+  }
+
+  const inRadiusFeatures = allStreetLightsData.features.filter((_, index) =>
+    streetLightsInRadiusIds.has(index)
+  );
   source.setData({ type: "FeatureCollection", features: inRadiusFeatures });
 }
 
 
-// Add tree icon layer (only trees within selected building's isochrone are shown)
+// Tree / street-light icons read from the trees and street-lights sources (isochrone-clipped unless filter-only Trees / Street lights)
 function addAmenityLayers() {
   map.addLayer({
     id: "tree-icons",
@@ -1711,9 +1753,9 @@ function openScoreExplainModal() {
 function updateFilterLabel() {
   const total = allFilterTypes.length;
   const selected = selectedAmenityTypes.size;
-  
+
   if (selected === 0 || selected === total) {
-    filterLabel.textContent = "All Types";
+    filterLabel.textContent = "All types";
   } else if (selected === 1) {
     const type = Array.from(selectedAmenityTypes)[0];
     const config = AMENITY_TYPE_CONFIG[type];
@@ -1721,56 +1763,30 @@ function updateFilterLabel() {
   } else {
     filterLabel.textContent = selected + " selected";
   }
-  
-  // Update select all button text
-  if (selectAllBtn) {
-    selectAllBtn.textContent = (selected === total) ? "Deselect All" : "Select All";
-  }
 }
 
-function handleFilterChange(e) {
-  const checkbox = e.target;
-  const value = checkbox.value;
-  
-  if (checkbox.checked) {
+function handleFilterRadioChange(e) {
+  const input = e.target;
+  const value = input.value;
+  lastFilterRadioSelection = value;
+
+  if (value === "all") {
+    selectedAmenityTypes.clear();
+    allFilterTypes.forEach(function (type) {
+      selectedAmenityTypes.add(type);
+    });
+  } else {
+    selectedAmenityTypes.clear();
     selectedAmenityTypes.add(value);
-  } else {
-    selectedAmenityTypes.delete(value);
   }
-  
-  updateFilterLabel();
-  updateAmenitiesSource();
-  updateTreesSource();
-  updateStreetLightsSource();
-  percentileSeriesCache.clear();
-  updateBuildingColors();
-  
-  if (selectedBuildingCentroid) {
-    selectBuilding(selectedBuildingCentroid, false);
-  }
-}
 
-function toggleSelectAll() {
-  const allSelected = selectedAmenityTypes.size === allFilterTypes.length;
-  
-  if (allSelected) {
-    // Deselect all
-    selectedAmenityTypes.clear();
-    filterItems.querySelectorAll('input').forEach(cb => cb.checked = false);
-  } else {
-    // Select all
-    selectedAmenityTypes.clear();
-    allFilterTypes.forEach(type => selectedAmenityTypes.add(type));
-    filterItems.querySelectorAll('input').forEach(cb => cb.checked = true);
-  }
-  
   updateFilterLabel();
   updateAmenitiesSource();
   updateTreesSource();
   updateStreetLightsSource();
   percentileSeriesCache.clear();
   updateBuildingColors();
-  
+
   if (selectedBuildingCentroid) {
     selectBuilding(selectedBuildingCentroid, false);
   }
@@ -1806,47 +1822,76 @@ function colorWithAlpha(hexColor, alpha) {
 function buildFilterItems(types) {
   filterItems.innerHTML = "";
   allFilterTypes = [];
-  selectedAmenityTypes.clear();
-  
-  // Add trees first if tree data is loaded
+
   if (allTreesData && allTreesData.features.length > 0) {
     allFilterTypes.push("trees");
-    selectedAmenityTypes.add("trees");
-    const treesConfig = AMENITY_TYPE_CONFIG["trees"];
-    const treesColor = treesConfig.color || DEFAULT_CONFIG.color;
-    const treesLabel = document.createElement("label");
-    treesLabel.className = "filter-item";
-    treesLabel.innerHTML = `<input type="checkbox" value="trees" checked /><span class="filter-type-pill" style="--pill-color:${treesColor};--pill-bg:${colorWithAlpha(treesColor, 0.14)};--pill-border:${colorWithAlpha(treesColor, 0.35)}">${treesConfig.label}</span>`;
-    treesLabel.querySelector("input").addEventListener("change", handleFilterChange);
-    filterItems.appendChild(treesLabel);
   }
 
   if (allStreetLightsData && allStreetLightsData.features.length > 0) {
     allFilterTypes.push("street-lights");
-    selectedAmenityTypes.add("street-lights");
+  }
+
+  const typesWithPoints = types.filter(t => typesWithData.has(t));
+  typesWithPoints.forEach(type => {
+    allFilterTypes.push(type);
+  });
+
+  const neutral = "#6b7280";
+  const allRow = document.createElement("label");
+  allRow.className = "filter-item";
+  allRow.innerHTML = `<input type="radio" name="amenity-filter-only" value="all" checked /><span class="filter-type-pill" style="--pill-color:${neutral};--pill-bg:${colorWithAlpha(neutral, 0.12)};--pill-border:${colorWithAlpha(neutral, 0.3)}">All types</span>`;
+  allRow.querySelector("input").addEventListener("change", handleFilterRadioChange);
+  filterItems.appendChild(allRow);
+
+  if (allTreesData && allTreesData.features.length > 0) {
+    const treesConfig = AMENITY_TYPE_CONFIG["trees"];
+    const treesColor = treesConfig.color || DEFAULT_CONFIG.color;
+    const treesLabel = document.createElement("label");
+    treesLabel.className = "filter-item";
+    treesLabel.innerHTML = `<input type="radio" name="amenity-filter-only" value="trees" /><span class="filter-type-pill" style="--pill-color:${treesColor};--pill-bg:${colorWithAlpha(treesColor, 0.14)};--pill-border:${colorWithAlpha(treesColor, 0.35)}">${treesConfig.label}</span>`;
+    treesLabel.querySelector("input").addEventListener("change", handleFilterRadioChange);
+    filterItems.appendChild(treesLabel);
+  }
+
+  if (allStreetLightsData && allStreetLightsData.features.length > 0) {
     const slConfig = AMENITY_TYPE_CONFIG["street-lights"];
     const slColor = slConfig.color || DEFAULT_CONFIG.color;
     const slLabel = document.createElement("label");
     slLabel.className = "filter-item";
-    slLabel.innerHTML = `<input type="checkbox" value="street-lights" checked /><span class="filter-type-pill" style="--pill-color:${slColor};--pill-bg:${colorWithAlpha(slColor, 0.14)};--pill-border:${colorWithAlpha(slColor, 0.35)}">${slConfig.label}</span>`;
-    slLabel.querySelector("input").addEventListener("change", handleFilterChange);
+    slLabel.innerHTML = `<input type="radio" name="amenity-filter-only" value="street-lights" /><span class="filter-type-pill" style="--pill-color:${slColor};--pill-bg:${colorWithAlpha(slColor, 0.14)};--pill-border:${colorWithAlpha(slColor, 0.35)}">${slConfig.label}</span>`;
+    slLabel.querySelector("input").addEventListener("change", handleFilterRadioChange);
     filterItems.appendChild(slLabel);
   }
-  
-  const typesWithPoints = types.filter(t => typesWithData.has(t));
-  
+
   typesWithPoints.forEach(type => {
-    allFilterTypes.push(type);
-    selectedAmenityTypes.add(type);
     const config = getAmenityConfig(type);
     const label = document.createElement("label");
     label.className = "filter-item";
     const color = config.color || DEFAULT_CONFIG.color;
-    label.innerHTML = `<input type="checkbox" value="${type}" checked /><span class="filter-type-pill" style="--pill-color:${color};--pill-bg:${colorWithAlpha(color, 0.14)};--pill-border:${colorWithAlpha(color, 0.35)}">${config.label}</span>`;
-    label.querySelector("input").addEventListener("change", handleFilterChange);
+    label.innerHTML = `<input type="radio" name="amenity-filter-only" value="${type}" /><span class="filter-type-pill" style="--pill-color:${color};--pill-bg:${colorWithAlpha(color, 0.14)};--pill-border:${colorWithAlpha(color, 0.35)}">${config.label}</span>`;
+    label.querySelector("input").addEventListener("change", handleFilterRadioChange);
     filterItems.appendChild(label);
   });
-  
+
+  selectedAmenityTypes.clear();
+  allFilterTypes.forEach(function (type) {
+    selectedAmenityTypes.add(type);
+  });
+
+  const wantAll =
+    !lastFilterRadioSelection ||
+    lastFilterRadioSelection === "all" ||
+    !allFilterTypes.includes(lastFilterRadioSelection);
+
+  if (!wantAll) {
+    selectedAmenityTypes.clear();
+    selectedAmenityTypes.add(lastFilterRadioSelection);
+  }
+
+  filterItems.querySelectorAll('input[name="amenity-filter-only"]').forEach(function (inp) {
+    inp.checked = wantAll ? inp.value === "all" : inp.value === lastFilterRadioSelection;
+  });
+
   updateFilterLabel();
   percentileSeriesCache.clear();
 }
@@ -1951,8 +1996,6 @@ document.addEventListener("keydown", function(e) {
     }
   }
 });
-
-selectAllBtn.addEventListener("click", toggleSelectAll);
 
 if (showPointsToggle) {
   showPointsToggle.addEventListener("change", function () {
