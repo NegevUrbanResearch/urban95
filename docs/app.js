@@ -74,6 +74,43 @@ const CLEAN_WEIGHTS = {
   health: 7.5,
 };
 
+const CLEAN_SCORE_COMPONENTS = [
+  { key: "trees", label: "Trees", shortTag: "trees in range" },
+  { key: "parks", label: "Parks", shortTag: "park polygons intersecting the walk area" },
+  { key: "playgrounds", label: "Playgrounds", shortTag: "playground POIs" },
+  { key: "health", label: "Health", shortTag: "health POIs" },
+  { key: "education", label: "Education", shortTag: "education POIs" },
+  { key: "bus_stops", label: "Bus stops", shortTag: "transit stop POIs" },
+  { key: "shelters", label: "Shelters", shortTag: "shelter POIs" },
+  { key: "community-centers", label: "Community centers", shortTag: "community-center POIs" },
+  { key: "businesscenters", label: "Business hubs", shortTag: "business-hub POIs" },
+  { key: "street-lights", label: "Street lights", shortTag: "street-light points" },
+];
+
+function cleanPtsPropertyName(weightKey, minutes) {
+  return "clean_pts_" + String(weightKey).replace(/-/g, "_") + "_" + minutes + "min";
+}
+
+function hasCleanPtsBreakdown(props, minutes) {
+  if (!props) return false;
+  const k = cleanPtsPropertyName("trees", minutes);
+  return Object.prototype.hasOwnProperty.call(props, k);
+}
+
+function buildFilteredFormulaLine(useAll) {
+  if (!useAll) {
+    return "Partial filtered score = sum of manifest point contributions for each category you selected (from precomputed clean_pts_* columns when available).";
+  }
+  const terms = CLEAN_SCORE_COMPONENTS.map(function (c) {
+    const w = CLEAN_WEIGHTS[c.key];
+    return w + " × (" + c.shortTag + ")";
+  });
+  return (
+    "Filtered score = " +
+    terms.join(" + ")
+  );
+}
+
 function filterTypeToCleanCountStem(filterType) {
   if (filterType === "trees") return "trees";
   if (filterType === "street-lights") return "street_lights";
@@ -90,12 +127,30 @@ function cleanCountStemToWeightKey(stem) {
   return null;
 }
 
+function filterTypeToCleanWeightKey(type) {
+  if (type === "trees") return "trees";
+  if (type === "street-lights") return "street-lights";
+  const stem = filterTypeToCleanCountStem(type);
+  return cleanCountStemToWeightKey(stem);
+}
+
 function getBuildingCleanFilteredScore(props, minutes) {
   const p = props || {};
   const sfx = "_" + minutes + "min";
   if (allFilterTypes.length === 0 || selectedAmenityTypes.size === 0) return 0;
   if (selectedAmenityTypes.size === allFilterTypes.length) {
     return Number(p["score_clean" + sfx]) || 0;
+  }
+  if (hasCleanPtsBreakdown(p, minutes)) {
+    let total = 0;
+    selectedAmenityTypes.forEach(function (type) {
+      const wk = filterTypeToCleanWeightKey(type);
+      if (!wk) return;
+      const col = cleanPtsPropertyName(wk, minutes);
+      const v = Number(p[col]);
+      if (Number.isFinite(v)) total += v;
+    });
+    return total;
   }
   let total = 0;
   selectedAmenityTypes.forEach((type) => {
@@ -108,6 +163,134 @@ function getBuildingCleanFilteredScore(props, minutes) {
     total += w * cnt;
   });
   return total;
+}
+
+function getExpandedContributionForType(props, minutes, type) {
+  const p = props || {};
+  const sfx = "_" + minutes + "min";
+  if (type === "trees") {
+    return (Number(p["num_trees" + sfx]) || 0) * 0.25;
+  }
+  if (type === "street-lights") {
+    return (Number(p["num_street_lights" + sfx]) || 0) * 0.25;
+  }
+  const statKey = amenityTypeToBuildingStatKey(type);
+  return Number(p["amen_" + statKey + sfx]) || 0;
+}
+
+function getFilteredContributionForType(props, minutes, type) {
+  const p = props || {};
+  const sfx = "_" + minutes + "min";
+  const wk = filterTypeToCleanWeightKey(type);
+  if (wk && hasCleanPtsBreakdown(p, minutes)) {
+    const col = cleanPtsPropertyName(wk, minutes);
+    const pts = Number(p[col]);
+    if (Number.isFinite(pts)) return pts;
+  }
+  if (type === "trees") {
+    return CLEAN_WEIGHTS.trees * (Number(p["num_trees" + sfx]) || 0);
+  }
+  if (type === "street-lights") {
+    const col = "clean_street_lights_" + minutes + "min";
+    const fromClean = Number(p[col]);
+    if (Number.isFinite(fromClean)) {
+      return CLEAN_WEIGHTS["street-lights"] * fromClean;
+    }
+    return CLEAN_WEIGHTS["street-lights"] * (Number(p["num_street_lights" + sfx]) || 0);
+  }
+  const stem = filterTypeToCleanCountStem(type);
+  const col = "clean_" + stem + "_" + minutes + "min";
+  const cnt = Number(p[col]);
+  if (Number.isFinite(cnt)) {
+    const wk2 = cleanCountStemToWeightKey(stem);
+    const w = wk2 != null ? CLEAN_WEIGHTS[wk2] : 0;
+    return w * cnt;
+  }
+  return 0;
+}
+
+function fillExplainSeries(series, feats, minutes) {
+  const explain = {};
+  const explainAmenity = {};
+  const sfx = "_" + minutes + "min";
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
+
+  const pushMetric = function (id, fn) {
+    const arr = [];
+    feats.forEach(function (f) {
+      arr.push(fn(f.properties || {}));
+    });
+    explain[id] = arr;
+  };
+
+  if (scoreMode === "clean") {
+    if (useAll) {
+      const sample = feats.length > 0 ? feats[0].properties || {} : {};
+      if (hasCleanPtsBreakdown(sample, minutes)) {
+        CLEAN_SCORE_COMPONENTS.forEach(function (c) {
+          const col = cleanPtsPropertyName(c.key, minutes);
+          const mid = "flt_pts_" + c.key.replace(/-/g, "_");
+          pushMetric(mid, function (p) {
+            return Number(p[col]) || 0;
+          });
+        });
+      } else {
+        pushMetric("flt_tree_w", function (p) {
+          return CLEAN_WEIGHTS.trees * (Number(p["num_trees" + sfx]) || 0);
+        });
+        pushMetric("flt_rest", function (p) {
+          const sc = Number(p["score_clean" + sfx]) || 0;
+          const tw = CLEAN_WEIGHTS.trees * (Number(p["num_trees" + sfx]) || 0);
+          return sc - tw;
+        });
+      }
+    } else {
+      selectedAmenityTypes.forEach(function (type) {
+        const id = "flt_sel_" + type;
+        pushMetric(id, function (p) {
+          return getFilteredContributionForType(p, minutes, type);
+        });
+      });
+    }
+  } else {
+    if (useAll) {
+      pushMetric("exp_amen", function (p) {
+        return Number(p["num_amenities" + sfx]) || 0;
+      });
+      pushMetric("exp_tree_w", function (p) {
+        return (Number(p["num_trees" + sfx]) || 0) * 0.25;
+      });
+      pushMetric("exp_sl_w", function (p) {
+        return (Number(p["num_street_lights" + sfx]) || 0) * 0.25;
+      });
+      const amenTypes = allFilterTypes.filter(function (t) {
+        return t !== "trees" && t !== "street-lights";
+      });
+      amenTypes.forEach(function (t) {
+        const statKey = amenityTypeToBuildingStatKey(t);
+        const id = "exp_amen_" + statKey;
+        explainAmenity[id] = [];
+      });
+      feats.forEach(function (f) {
+        const p = f.properties || {};
+        amenTypes.forEach(function (t) {
+          const statKey = amenityTypeToBuildingStatKey(t);
+          const id = "exp_amen_" + statKey;
+          explainAmenity[id].push(Number(p["amen_" + statKey + sfx]) || 0);
+        });
+      });
+    } else {
+      selectedAmenityTypes.forEach(function (type) {
+        const id = "exp_sel_" + type;
+        pushMetric(id, function (p) {
+          return getExpandedContributionForType(p, minutes, type);
+        });
+      });
+    }
+  }
+
+  series.explain = explain;
+  series.explainAmenity = explainAmenity;
 }
 
 // Calculate appropriate zoom level to fit a GeoJSON polygon in the viewport
@@ -1221,6 +1404,7 @@ function getPercentileSeriesForMinutes(minutes) {
   });
 
   const series = { overall };
+  fillExplainSeries(series, buildingsData.features, minutes);
   percentileSeriesCache.set(cacheKey, series);
   return series;
 }
@@ -1233,7 +1417,295 @@ function buildPercentileMetrics(buildingProps) {
 
   const overallScore = getBuildingOverallScore(buildingProps, walkMinutes);
   const overallPercentile = computePercentileRank(series.overall, overallScore);
-  return { overallPercentile };
+  return { overallPercentile, overallScore };
+}
+
+function percentileForSeries(arr, value) {
+  if (!arr || arr.length === 0) return null;
+  return computePercentileRank(arr, value);
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function explainRankBarColor(pct) {
+  if (pct == null) return "#94a3b8";
+  if (pct >= 70) return "#22c55e";
+  if (pct >= 40) return "#eab308";
+  return "#ef4444";
+}
+
+function buildExplainScoreBreakdown(buildingProps) {
+  const series = getPercentileSeriesForMinutes(walkMinutes);
+  if (!series || !series.explain || series.overall.length === 0) return null;
+
+  const p = buildingProps || {};
+  const m = walkMinutes;
+  const sfx = "_" + m + "min";
+  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
+  const overallScore = getBuildingOverallScore(p, m);
+  const overallPct = percentileForSeries(series.overall, overallScore);
+  const rows = [];
+  const isClean = scoreMode === "clean";
+
+  if (isClean) {
+    if (useAll) {
+      rows.push({ sectionTitle: "Weighted components" });
+      if (hasCleanPtsBreakdown(p, m)) {
+        CLEAN_SCORE_COMPONENTS.forEach(function (c) {
+          const col = cleanPtsPropertyName(c.key, m);
+          const v = Number(p[col]) || 0;
+          const w = CLEAN_WEIGHTS[c.key];
+          const mid = "flt_pts_" + c.key.replace(/-/g, "_");
+          const arr = series.explain[mid];
+          rows.push({
+            label: c.label,
+            detail: w + " pts × (" + c.shortTag + ")",
+            value: v,
+            valueLabel: formatMetricNumber(v) + " pts",
+            percentile: percentileForSeries(arr, v),
+          });
+        });
+      } else {
+        const treeW = CLEAN_WEIGHTS.trees * (Number(p["num_trees" + sfx]) || 0);
+        const rest = (Number(p["score_clean" + sfx]) || 0) - treeW;
+        rows.push({
+          label: "Trees (weighted)",
+          detail: "×" + CLEAN_WEIGHTS.trees + " per tree in range",
+          value: treeW,
+          valueLabel: formatMetricNumber(treeW) + " pts",
+          percentile: percentileForSeries(series.explain.flt_tree_w, treeW),
+        });
+        rows.push({
+          label: "Other manifest-weighted",
+          detail: "Regenerate data with preprocess_accessibility.py for a per-category breakdown.",
+          value: rest,
+          valueLabel: formatMetricNumber(rest) + " pts",
+          percentile: percentileForSeries(series.explain.flt_rest, rest),
+        });
+      }
+    } else {
+      rows.push({ sectionTitle: "Selected categories" });
+      selectedAmenityTypes.forEach(function (type) {
+        const id = "flt_sel_" + type;
+        const arr = series.explain[id];
+        const v = getFilteredContributionForType(p, m, type);
+        const cfg = getAmenityConfig(type);
+        let detail = "";
+        const wk = filterTypeToCleanWeightKey(type);
+        if (wk && hasCleanPtsBreakdown(p, m)) {
+          const comp = CLEAN_SCORE_COMPONENTS.find(function (c) {
+            return c.key === wk;
+          });
+          if (comp && CLEAN_WEIGHTS[wk] != null) {
+            detail = CLEAN_WEIGHTS[wk] + " pts × (" + comp.shortTag + ")";
+          }
+        }
+        rows.push({
+          label: cfg.label,
+          detail: detail,
+          value: v,
+          valueLabel: formatMetricNumber(v) + " pts",
+          percentile: percentileForSeries(arr, v),
+        });
+      });
+    }
+  } else {
+    if (useAll) {
+      rows.push({ sectionTitle: "Main components" });
+      const na = Number(p["num_amenities" + sfx]) || 0;
+      const tw = (Number(p["num_trees" + sfx]) || 0) * 0.25;
+      const sw = (Number(p["num_street_lights" + sfx]) || 0) * 0.25;
+      rows.push({
+        label: "Amenity POIs (count)",
+        detail: "1 point per POI in range",
+        value: na,
+        valueLabel: formatMetricNumber(na),
+        percentile: percentileForSeries(series.explain.exp_amen, na),
+      });
+      rows.push({
+        label: "Trees (×¼)",
+        detail: "",
+        value: tw,
+        valueLabel: formatMetricNumber(tw) + " pts",
+        percentile: percentileForSeries(series.explain.exp_tree_w, tw),
+      });
+      rows.push({
+        label: "Street lights (×¼)",
+        detail: "",
+        value: sw,
+        valueLabel: formatMetricNumber(sw) + " pts",
+        percentile: percentileForSeries(series.explain.exp_sl_w, sw),
+      });
+
+      const amenTypes = allFilterTypes.filter(function (t) {
+        return t !== "trees" && t !== "street-lights";
+      });
+      const amenRows = [];
+      amenTypes.forEach(function (t) {
+        const statKey = amenityTypeToBuildingStatKey(t);
+        const id = "exp_amen_" + statKey;
+        const arr = series.explainAmenity[id];
+        if (!arr) return;
+        const cnt = Number(p["amen_" + statKey + sfx]) || 0;
+        const cfg = getAmenityConfig(t);
+        amenRows.push({
+          label: cfg.label,
+          detail: "POI count in walk range",
+          value: cnt,
+          valueLabel: formatMetricNumber(cnt),
+          percentile: percentileForSeries(arr, cnt),
+        });
+      });
+      amenRows.sort(function (a, b) {
+        if (b.value !== a.value) return b.value - a.value;
+        return a.label.localeCompare(b.label);
+      });
+      if (amenRows.length > 0) {
+        rows.push({ sectionTitle: "POI categories (count in range)" });
+        amenRows.forEach(function (r) {
+          rows.push(r);
+        });
+      }
+    } else {
+      rows.push({ sectionTitle: "Selected categories" });
+      selectedAmenityTypes.forEach(function (type) {
+        const id = "exp_sel_" + type;
+        const arr = series.explain[id];
+        const v = getExpandedContributionForType(p, m, type);
+        const cfg = getAmenityConfig(type);
+        const suffix = type === "trees" || type === "street-lights" ? " pts" : " (count)";
+        rows.push({
+          label: cfg.label,
+          detail: type === "trees" || type === "street-lights" ? "×¼ weight" : "",
+          value: v,
+          valueLabel: formatMetricNumber(v) + suffix,
+          percentile: percentileForSeries(arr, v),
+        });
+      });
+    }
+  }
+
+  return {
+    formulaLine: isClean
+      ? buildFilteredFormulaLine(useAll)
+      : useAll
+        ? "Expanded index = POI count + ¼× trees + ¼× street lights in range."
+        : "Partial expanded index = sum of selected POI counts plus ¼× trees and ¼× lights when selected. ",
+    overallScoreLabel: formatMetricNumber(overallScore),
+    overallPercentile: overallPct,
+    rows: rows,
+  };
+}
+
+function renderScoreExplainCategoryList(breakdown) {
+  if (!breakdown || !breakdown.rows) return "";
+
+  let html = '<div class="score-explain-list">';
+  breakdown.rows.forEach(function (row) {
+    if (row.sectionTitle) {
+      html += '<h3 class="score-explain-section-h">' + escapeHtml(row.sectionTitle) + "</h3>";
+      return;
+    }
+    const pct = row.percentile;
+    const barW = pct != null ? Math.round(pct) : 0;
+    const barColor = explainRankBarColor(pct);
+    const pctDisplay =
+      pct != null ? pct + getOrdinalSuffix(pct) + " percentile" : "—";
+
+    html += '<div class="score-explain-card">';
+    html += '<div class="score-explain-card-main">';
+    html += '<div class="score-explain-card-title">';
+    html += '<span class="score-explain-card-name">' + escapeHtml(row.label) + "</span>";
+    if (row.detail) {
+      html += '<span class="score-explain-card-hint">' + escapeHtml(row.detail) + "</span>";
+    }
+    html += "</div>";
+    html += '<div class="score-explain-card-values">';
+    html += '<div class="score-explain-card-metric">';
+    html += '<span class="score-explain-metric-label">Score</span>';
+    html += '<span class="score-explain-metric-val">' + escapeHtml(row.valueLabel) + "</span>";
+    html += "</div>";
+    html += '<div class="score-explain-card-metric">';
+    html += '<span class="score-explain-metric-label">Percentile</span>';
+    html += '<span class="score-explain-metric-pct">' + escapeHtml(pctDisplay) + "</span>";
+    html += "</div>";
+    html += "</div>";
+    html += "</div>";
+    html += '<div class="score-explain-card-bar">';
+    if (pct != null) {
+      html +=
+        '<div class="score-explain-card-bar-fill" style="width:' +
+        barW +
+        "%;background:" +
+        barColor +
+        '"></div>';
+    }
+    html += "</div>";
+    html += "</div>";
+  });
+  html += "</div>";
+  return html;
+}
+
+function hideScoreExplainModal() {
+  const modal = document.getElementById("score-explain-modal");
+  if (modal) modal.classList.remove("show");
+}
+
+function openScoreExplainModal() {
+  if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) return;
+  const modal = document.getElementById("score-explain-modal");
+  const scrollEl = document.getElementById("score-explain-modal-scroll");
+  if (!modal || !scrollEl) return;
+
+  const breakdown = buildExplainScoreBreakdown(selectedBuildingCentroid.feature.properties || {});
+  const scoreKind = scoreMode === "clean" ? "Filtered" : "Expanded";
+  const eyebrow = document.getElementById("score-explain-eyebrow");
+  const note = document.getElementById("score-explain-hero-note");
+  const numEl = document.getElementById("score-explain-hero-num");
+  const pctEl = document.getElementById("score-explain-hero-pct");
+  const meterFill = document.getElementById("score-explain-hero-meter-fill");
+
+  if (eyebrow) {
+    eyebrow.textContent = scoreKind + " · " + walkMinutes + " min walk · vs all buildings";
+  }
+
+  if (!breakdown) {
+    if (numEl) numEl.textContent = "—";
+    if (pctEl) pctEl.textContent = "—";
+    if (meterFill) meterFill.style.width = "0%";
+    if (note) note.textContent = "";
+    scrollEl.innerHTML =
+      '<p class="score-explain-empty">Score breakdown is unavailable for the current selection.</p>';
+    scrollEl.scrollTop = 0;
+    modal.classList.add("show");
+    return;
+  }
+
+  if (numEl) numEl.textContent = breakdown.overallScoreLabel;
+  if (pctEl) {
+    pctEl.textContent =
+      breakdown.overallPercentile != null
+        ? breakdown.overallPercentile + getOrdinalSuffix(breakdown.overallPercentile)
+        : "—";
+  }
+  if (meterFill) {
+    meterFill.style.width =
+      breakdown.overallPercentile != null
+        ? Math.min(100, Math.max(0, breakdown.overallPercentile)) + "%"
+        : "0%";
+  }
+  if (note) note.textContent = breakdown.formulaLine;
+
+  scrollEl.innerHTML = renderScoreExplainCategoryList(breakdown);
+  scrollEl.scrollTop = 0;
+  modal.classList.add("show");
 }
 
 function updateFilterLabel() {
@@ -1463,6 +1935,11 @@ document.addEventListener("touchstart", function(e) {
 
 document.addEventListener("keydown", function(e) {
   if (e.key === "Escape") {
+    const scoreExplainModal = document.getElementById("score-explain-modal");
+    if (scoreExplainModal && scoreExplainModal.classList.contains("show")) {
+      hideScoreExplainModal();
+      return;
+    }
     closeFilterPopup();
     if (currentMode === "house") {
       clearRadiusSelection();
@@ -1708,13 +2185,27 @@ function updateRadiusInfo() {
   }
 
   const scoreKind = scoreMode === "clean" ? "Filtered" : "Expanded";
-  let html = '<div class="percentile-summary">';
+
+  let html = '<div class="percentile-popup-inner">';
+  html += '<div class="percentile-summary">';
   html += `<div class="percentile-label">${scoreKind} accessibility — citywide percentile</div>`;
   html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
   html += `<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="width:${metrics.overallPercentile}%"></div></div>`;
   html += "</div>";
 
+  html += '<div class="percentile-actions">';
+  html +=
+    '<button type="button" class="score-explain-btn" id="score-explain-open-btn">Explain score</button>';
+  html += "</div>";
+  html += "</div>";
+
   infoPanel.innerHTML = html;
+  const openBtn = infoPanel.querySelector("#score-explain-open-btn");
+  if (openBtn) {
+    openBtn.onclick = function () {
+      openScoreExplainModal();
+    };
+  }
   infoPanel.style.display = "block";
 }
 
@@ -1738,6 +2229,7 @@ function clearRadiusSelection() {
   
   const infoPanel = document.getElementById("radius-info");
   if (infoPanel) infoPanel.style.display = "none";
+  hideScoreExplainModal();
 }
 
 const scoreModelToggle = document.getElementById("score-model-toggle");
@@ -2004,15 +2496,29 @@ infoModal.addEventListener("click", function(e) {
 const modalTabs = document.querySelectorAll(".modal-tab");
 const tabContents = document.querySelectorAll(".modal-tab-content");
 
+const modalScroll = document.querySelector("#info-modal .modal-scroll");
+
 modalTabs.forEach(tab => {
   tab.addEventListener("click", function() {
     const targetTab = this.dataset.tab;
-    
-    modalTabs.forEach(t => t.classList.remove("active"));
-    tabContents.forEach(c => c.classList.remove("active"));
-    
+
+    modalTabs.forEach(t => {
+      t.classList.remove("active");
+      t.setAttribute("aria-selected", "false");
+    });
+    tabContents.forEach(c => {
+      c.classList.remove("active");
+      c.setAttribute("aria-hidden", "true");
+    });
+
     this.classList.add("active");
-    document.getElementById("tab-" + targetTab).classList.add("active");
+    this.setAttribute("aria-selected", "true");
+    const panel = document.getElementById("tab-" + targetTab);
+    if (panel) {
+      panel.classList.add("active");
+      panel.setAttribute("aria-hidden", "false");
+    }
+    if (modalScroll) modalScroll.scrollTop = 0;
   });
 });
 
@@ -2537,6 +3043,17 @@ document.getElementById("neighborhood-modal-close").addEventListener("click", hi
 document.getElementById("neighborhood-modal").addEventListener("click", function(e) {
   if (e.target === this) hideNeighborhoodModal();
 });
+
+(function initScoreExplainModal() {
+  const el = document.getElementById("score-explain-modal");
+  const closeBtn = document.getElementById("score-explain-modal-close");
+  if (closeBtn && el) {
+    closeBtn.addEventListener("click", hideScoreExplainModal);
+    el.addEventListener("click", function (e) {
+      if (e.target === el) hideScoreExplainModal();
+    });
+  }
+})();
 
 function renderCitywideModal() {
   const body = document.getElementById("citywide-body");

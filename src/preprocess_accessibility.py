@@ -87,6 +87,16 @@ CLEAN_WEIGHTS = {
 }
 
 
+def _clean_pts_column_stem(weight_key: str) -> str:
+    return str(weight_key).replace("-", "_")
+
+
+def _init_clean_pts_columns(buildings, suffix: str) -> None:
+    for wk in CLEAN_WEIGHTS:
+        stem = _clean_pts_column_stem(wk)
+        buildings[f"clean_pts_{stem}{suffix}"] = 0.0
+
+
 def _normalize_clean_amenity_key(value) -> str:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return ""
@@ -642,6 +652,7 @@ def compute_building_accessibility(
             buildings[f"num_street_lights{suffix}"] = 0
             buildings[f"score_clean{suffix}"] = 0.0
             buildings[f"score_expanded{suffix}"] = 0.0
+            _init_clean_pts_columns(buildings, suffix)
             continue
 
         iso_gdf = gpd.GeoDataFrame(iso_records, crs="EPSG:4326").to_crs(epsg=crs_metric)
@@ -700,10 +711,13 @@ def compute_building_accessibility(
             + buildings[f"num_street_lights{suffix}"].astype(float) * 0.25
         )
 
-        clean_scores = {int(bid): 0.0 for bid in buildings["building_id"].unique()}
+        bids = [int(b) for b in buildings["building_id"].unique()]
+        clean_detail = {k: {bid: 0.0 for bid in bids} for k in CLEAN_WEIGHTS}
+
         nt = buildings.set_index("building_id")[f"num_trees{suffix}"]
         for bid, n in nt.items():
-            clean_scores[int(bid)] += CLEAN_WEIGHTS["trees"] * float(n)
+            ib = int(bid)
+            clean_detail["trees"][ib] += CLEAN_WEIGHTS["trees"] * float(n)
 
         if parks_gdf is not None and len(parks_gdf) > 0:
             pj = gpd.sjoin(
@@ -715,7 +729,8 @@ def compute_building_accessibility(
             if len(pj) > 0:
                 pc = pj.groupby("building_id").size()
                 for bid, c in pc.items():
-                    clean_scores[int(bid)] += CLEAN_WEIGHTS["parks"] * float(c)
+                    ib = int(bid)
+                    clean_detail["parks"][ib] += CLEAN_WEIGHTS["parks"] * float(c)
 
         if len(amenities_clean) > 0 and "amenity_type" in amenities_clean.columns:
             cj = gpd.sjoin(
@@ -728,13 +743,34 @@ def compute_building_accessibility(
                 cj = cj.copy()
                 cj["_ak"] = cj["amenity_type"].map(_normalize_clean_amenity_key)
                 for (bid, ak), grp in cj.groupby(["building_id", "_ak"]):
-                    w = CLEAN_WEIGHTS.get(ak, 0.0)
+                    if not ak or ak not in CLEAN_WEIGHTS:
+                        continue
+                    w = CLEAN_WEIGHTS[ak]
                     if w <= 0:
                         continue
-                    clean_scores[int(bid)] += w * float(len(grp))
+                    ib = int(bid)
+                    clean_detail[ak][ib] += w * float(len(grp))
 
+        for wk in CLEAN_WEIGHTS:
+            stem = _clean_pts_column_stem(wk)
+            col = f"clean_pts_{stem}{suffix}"
+            buildings[col] = buildings["building_id"].map(lambda b, k=wk: clean_detail[k].get(int(b), 0.0)).astype(float)
+
+        clean_scores = {
+            bid: sum(clean_detail[k][bid] for k in CLEAN_WEIGHTS) for bid in bids
+        }
         sc_series = buildings["building_id"].map(lambda b: clean_scores.get(int(b), 0.0))
         buildings[f"score_clean{suffix}"] = sc_series.astype(float)
+
+        sum_cols = [f"clean_pts_{_clean_pts_column_stem(wk)}{suffix}" for wk in CLEAN_WEIGHTS]
+        pts_sum = buildings[sum_cols].sum(axis=1)
+        max_diff = (buildings[f"score_clean{suffix}"] - pts_sum).abs().max()
+        if max_diff > 1e-3:
+            logging.warning(
+                "clean_pts columns sum differs from score_clean (max abs diff=%s) for %smin.",
+                max_diff,
+                minutes,
+            )
 
     # Export isochrone polygons as GeoJSON for the frontend
     DOCS_DATA_DIR.mkdir(exist_ok=True)
@@ -790,7 +826,6 @@ def compute_building_accessibility(
     else:
         logging.warning("No legacy amenities to write to %s (expanded metrics will be zero on site).", amenities_all_path)
 
-    logging.info("Writing per-amenity-type point layers for heatmaps...")
     for amen_type, subset in amenities_filtered.groupby("amenity_type"):
         safe_name = str(amen_type).replace(" ", "_").replace("/", "_").replace("\\", "_")
         out_path = OUTPUT_DIR / f"amenities_{safe_name}.geojson"

@@ -1,86 +1,108 @@
-# Cities for Children: Beer Sheva Streetscape Analysis
+# Cities for Children: Beer Sheva streetscape accessibility
 
-**[View Live Map](https://negevurbanresearch.github.io/urban95/)**
+**[View the live map](https://negevurbanresearch.github.io/urban95/)**
 
-A spatial analysis project to visualize and assess how child-friendly different parts of Beer Sheva's streetscape are. This project is a collaboration between **Urban95** and **NUR** as part of the "Cities for Children" initiative.
+This project maps how easy it is to reach everyday services and child-relevant features on foot from residential buildings in Beer Sheva. It is a collaboration between **Urban95** and **NUR** under the “Cities for Children” initiative.
 
-## Getting Started
+---
 
-1. Unzip `data.zip` to get the `data/` folder with GeoJSON layers (e.g. `buildings.geojson`, `amenities.geojson`).
-2. Install Python dependencies and (optional) Node for running the site locally:
+## What you get
+
+- **Interactive map** (`docs/`) — MapLibre GL, with optional deck.gl clusters for dense points and Chart.js for dashboards.
+- **Two scoring models** — **Filtered** uses a curated amenity manifest with explicit weights; **Expanded** uses a broader classification with a simpler index (see in-app *About* for detail).
+- **Three scales** — Single building (with walking-time area), neighborhood comparison, and citywide summary with rankings.
+
+---
+
+## Run the map locally
+
+From the repository root (serves the whole repo so `./data` resolves next to `docs/index.html`):
 
 ```bash
 pip install -r requirements.txt
 npm install
+npm run start
 ```
 
-## Project Structure
+Open **http://localhost:8080/docs/index.html**
 
-```
-urban95/
-├── data/                 # GeoJSON layers (from data.zip)
-├── output/               # Preprocessed GeoJSON for the web map (generated)
-├── filtered/             # Optional: distance-filtered layers (from src/filter.py)
-├── docs/                 # Static site for GitHub Pages (MapLibre GL map)
-│   ├── index.html
-│   ├── style.css
-│   └── app.js
-├── src/
-│   ├── preprocess_accessibility.py   # Build accessibility metrics per building
-│   └── filter.py                     # Optional: filter layers by distance to neighborhoods
-├── requirements.txt
-├── package.json
-└── README.md
-```
+To serve only the `docs/` folder (paths like `./data` will break unless you mirror files), use `npm run start:docs` only if you adjust asset URLs accordingly.
 
-## Preprocessing (Python)
+---
 
-From the repo root, run the accessibility preprocessing. This writes `output/buildings_accessibility.geojson` and `output/amenities_<type>.geojson` for the web map:
+## Data layout
+
+Processed layers for the website live under **`docs/data/`** (GeoJSON plus `neighborhood_charts.json` and `citywide_stats.json`). The app loads them with `BASE = "./data"` in `docs/app.js`.
+
+Typical files include building footprints with accessibility fields, amenity layers (`amenities_new.geojson`, `amenities_all.geojson`), trees, parks, street lights, precomputed walking isochrones, and neighborhood boundaries. Exact filenames must match `docs/app.js`.
+
+---
+
+## Regenerating outputs (Python)
+
+### 1. Prerequisites
+
+- Raw GIS under `data/` (see `src/preprocess_accessibility.py` for expected inputs — e.g. `buildings.geojson`, `amenities.geojson`, `sidewalks_and_trees.geojson`, parks).
+- **`docs/data/amenities_new.geojson`** — merged “clean manifest” points (and optionally **`docs/data/street_lights.geojson`**) used for Filtered scoring.
+- **`.env`** in the repo root with a Mapbox token used only for isochrone generation:
+
+  ```text
+  mapbox_access_token=YOUR_TOKEN
+  ```
+
+### 2. Building-level metrics and web GeoJSON
+
+Writes full-precision copy to `output/` and an optimized copy to `docs/data/` (buildings, amenities, trees, parks, isochrones, etc.):
 
 ```bash
 python src/preprocess_accessibility.py
 ```
 
-Optional: filter all layers to a distance from neighborhoods (writes to `filtered/`):
+### 3. Neighborhood and citywide aggregates
+
+Run after `buildings_accessibility.geojson` (and related layers) exist in `docs/data/`:
+
+```bash
+python src/preprocess_neighborhoods.py
+```
+
+This updates **`docs/data/neighborhoods.geojson`**, **`neighborhood_charts.json`**, and **`citywide_stats.json`**.
+
+---
+
+## Repository layout (short)
+
+```
+urban95/
+├── docs/                    # Static site (GitHub Pages root)
+│   ├── index.html           # Map UI + in-app help
+│   ├── app.js
+│   ├── style.css
+│   ├── data/                # GeoJSON + JSON consumed by the map
+│   └── icons/
+├── output/                  # Full preprocessing output (optional archive)
+├── data/                    # Source GIS for preprocessing
+├── src/
+│   ├── preprocess_accessibility.py
+│   ├── preprocess_neighborhoods.py
+│   └── filter.py            # Optional spatial filter to `filtered/`
+├── requirements.txt
+├── package.json
+└── README.md
+```
+
+---
+
+## GitHub Pages
+
+Publish from the **`docs/`** folder. Commit the contents of **`docs/data/`** so the deployed site has the same files as local `./data`, or host assets elsewhere and update URLs in `docs/app.js`.
+
+---
+
+## Optional: filter source layers
 
 ```bash
 python src/filter.py
 ```
 
-## Web Map (vanilla JS + MapLibre GL)
-
-- **Local:** Serve the repo root so `docs/` can load `output/` GeoJSON. Then open the map:
-
-```bash
-npm run start
-# Open http://localhost:8080/docs/index.html
-```
-
-- **GitHub Pages:** Publish from the `docs/` folder. Either commit the contents of `output/` into `docs/output/` so the app’s `../output/` (or `output/`) paths work, or host the GeoJSON elsewhere and set the URLs in `docs/app.js`.
-
-The map shows building footprints colored by number of amenities within radius, with an optional heatmap per amenity type.
-
-## Data
-
-- **Buildings:** Building footprints.
-- **Amenities:** Points of interest (type in `top_classi`); used for per-building counts and heatmaps.
-
-
-
-## To do list
-For Maya/Kfir:
-- deduplication and removing internal businesses from centers
-- dividing the categories better and giving scores
-- create default index map
-
-to discuss:
-- creating option for users to update scoring method
-
-good libraries:
-
-Python: folium (probably the easiest), there is also pydeck
-JS: deck.gl / maplibre GL JS
-
-Developer notes for Noam/Tuval:
-- update web tool to calculate proportions of land with canopy coverage in area around each building radius 
-(note this became an issue since lots of trees are missing canopy values)
+Writes distance-filtered layers under `filtered/` when configured (used by preprocessing if present).
