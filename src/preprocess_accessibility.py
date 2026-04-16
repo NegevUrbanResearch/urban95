@@ -494,7 +494,7 @@ def compute_building_accessibility(
             logging.warning("Could not persist repaired text to %s: %s", merged_path, e)
         m = m.to_crs(epsg=crs_metric)
         clean_parts.append(m)
-        logging.info("Loaded clean manifest points: %s (%d features)", merged_path.name, len(m))
+        logging.info("Loaded default manifest points: %s (%d features)", merged_path.name, len(m))
     if sl_path.is_file():
         sl = gpd.read_file(sl_path)
         if sl.crs is None:

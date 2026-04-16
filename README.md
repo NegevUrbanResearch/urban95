@@ -9,7 +9,7 @@ This project maps how easy it is to reach everyday services and child-relevant f
 ## What you get
 
 - **Interactive map** (`docs/`) — MapLibre GL, with optional deck.gl clusters for dense points and Chart.js for dashboards.
-- **Two scoring models** — **Filtered** uses a curated amenity manifest with explicit weights; **Expanded** uses a broader classification with a simpler index (see in-app *About* for detail).
+- **Two scoring models** — **Default** uses the default data manifest (curated amenity categories with explicit weights); **Expanded** uses a broader classification with a simpler index (see in-app *About* for detail).
 - **Three scales** — Single building (with walking-time area), neighborhood comparison, and citywide summary with rankings.
 
 ---
@@ -43,7 +43,7 @@ Typical files include building footprints with accessibility fields, amenity lay
 ### 1. Prerequisites
 
 - Raw GIS under `data/` (see `src/preprocess_accessibility.py` for expected inputs — e.g. `buildings.geojson`, `amenities.geojson`, `sidewalks_and_trees.geojson`, parks).
-- **`docs/data/amenities_new.geojson`** — merged “clean manifest” points (and optionally **`docs/data/street_lights.geojson`**) used for Filtered scoring.
+- **`docs/data/amenities_new.geojson`** — merged points from the default data manifest (and optionally **`docs/data/street_lights.geojson`**) used for Default scoring.
 - **`.env`** in the repo root with a Mapbox token used only for isochrone generation:
 
   ```text

@@ -99,14 +99,14 @@ function hasCleanPtsBreakdown(props, minutes) {
 
 function buildFilteredFormulaLine(useAll) {
   if (!useAll) {
-    return "Partial filtered score = sum of manifest point contributions for each category you selected (from precomputed clean_pts_* columns when available).";
+    return "Partial score (default manifest) = sum of manifest point contributions for each category you selected (from precomputed clean_pts_* columns when available).";
   }
   const terms = CLEAN_SCORE_COMPONENTS.map(function (c) {
     const w = CLEAN_WEIGHTS[c.key];
     return w + " × (" + c.shortTag + ")";
   });
   return (
-    "Filtered score = " +
+    "Default score = " +
     terms.join(" + ")
   );
 }
@@ -655,7 +655,7 @@ function warnIfBuildingScoresIncomplete(fc) {
   const hasExpanded = keys.some(k => k.indexOf("score_expanded_") === 0);
   if (!hasClean) {
     console.warn(
-      "[urban95] buildings_accessibility.geojson has no score_clean_* properties. Filtered choropleth will be 0 until you regenerate outputs with src/preprocess_accessibility.py."
+      "[urban95] buildings_accessibility.geojson has no score_clean_* properties. Default (manifest) choropleth will be 0 until you regenerate outputs with src/preprocess_accessibility.py."
     );
   }
   if (!hasStreet || !hasExpanded) {
@@ -686,7 +686,7 @@ function scanAmenityTypesFromFeatures(fc) {
 function applyScoreModeAmenities() {
   const useLegacy = scoreMode === "expanded" && allAmenitiesDataLegacy && (allAmenitiesDataLegacy.features || []).length > 0;
   if (scoreMode === "expanded" && !useLegacy) {
-    console.warn("amenities_all.geojson missing or empty; showing clean manifest points in legacy mode.");
+    console.warn("amenities_all.geojson missing or empty; showing default manifest points in legacy mode.");
   }
   if (useLegacy) {
     allAmenitiesData = allAmenitiesDataLegacy;
@@ -1637,7 +1637,7 @@ function buildExplainScoreBreakdown(buildingProps) {
     formulaLine: isClean
       ? buildFilteredFormulaLine(useAll)
       : useAll
-        ? "Expanded index = POI count + ¼× trees + ¼× street lights in range."
+        ? "Expanded index = POI count + ¼× trees + ¼× street lights."
         : "Partial expanded index = sum of selected POI counts plus ¼× trees and ¼× lights when selected. ",
     overallScoreLabel: formatMetricNumber(overallScore),
     overallPercentile: overallPct,
@@ -1707,7 +1707,7 @@ function openScoreExplainModal() {
   if (!modal || !scrollEl) return;
 
   const breakdown = buildExplainScoreBreakdown(selectedBuildingCentroid.feature.properties || {});
-  const scoreKind = scoreMode === "clean" ? "Filtered" : "Expanded";
+  const scoreKind = scoreMode === "clean" ? "Default" : "Expanded";
   const eyebrow = document.getElementById("score-explain-eyebrow");
   const note = document.getElementById("score-explain-hero-note");
   const numEl = document.getElementById("score-explain-hero-num");
@@ -2227,7 +2227,7 @@ function updateRadiusInfo() {
     return;
   }
 
-  const scoreKind = scoreMode === "clean" ? "Filtered" : "Expanded";
+  const scoreKind = scoreMode === "clean" ? "Default" : "Expanded";
 
   let html = '<div class="percentile-popup-inner">';
   html += '<div class="percentile-summary">';
@@ -2879,7 +2879,7 @@ function showNeighborhoodModal(feature) {
 
     document.getElementById("neighborhood-modal-title").textContent = props.Name || "Unknown";
     document.getElementById("neighborhood-modal-subtitle").textContent =
-      `${pct}${getOrdinalSuffix(pct)} percentile • ${walkMinutes}-min walk • ${isClean ? "Filtered" : "Expanded"}`;
+      `${pct}${getOrdinalSuffix(pct)} percentile • ${walkMinutes}-min walk • ${isClean ? "Default" : "Expanded"}`;
 
     const body = document.getElementById("neighborhood-modal-body");
     neighborhoodCharts.forEach(c => c.destroy());
@@ -2904,7 +2904,7 @@ function showNeighborhoodModal(feature) {
     html += '<div class="cw-section">';
     html += '<div class="cw-section-title">Amenity breakdown</div>';
     html += isClean
-      ? '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts in this area (clean manifest taxonomy)</p>'
+      ? '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts in this area (default manifest taxonomy)</p>'
       : '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts in this area (legacy taxonomy)</p>';
     html += '<div class="cw-chart-container cw-pie-chart"><canvas id="hood-amenity-pie"></canvas></div>';
     html += "</div>";
@@ -3127,20 +3127,20 @@ function renderCitywideModal() {
   html += '<div class="cw-section">';
   html += '<div class="cw-section-title">Amenity inventory</div>';
   html += isClean
-    ? '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts by type (clean manifest taxonomy)</p>'
+    ? '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts by type (default manifest taxonomy)</p>'
     : '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts by type (legacy taxonomy)</p>';
   html += '<div class="cw-chart-container cw-pie-chart"><canvas id="cw-amenity-pie"></canvas></div>';
   html += '</div>';
 
   const histDist =
     scoreMode === "clean" && stats["distribution_clean" + sfx]
-      ? "filtered"
+      ? "default"
       : scoreMode === "expanded" && stats["distribution_expanded" + sfx]
         ? "expanded"
         : "reachability index";
   html += '<div class="cw-section">';
   html += `<div class="cw-section-title">Building score distribution — ${histDist}</div>`;
-  html += `<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">${walkMinutes}-min walk • Matches ${scoreMode === "clean" ? "Filtered" : "Expanded"} in Building mode</p>`;
+  html += `<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">${walkMinutes}-min walk • Matches ${scoreMode === "clean" ? "Default" : "Expanded"} in Building mode</p>`;
   html += '<div class="cw-chart-container"><canvas id="cw-score-hist"></canvas></div>';
   html += '</div>';
 

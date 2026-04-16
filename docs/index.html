@@ -100,7 +100,7 @@
         <div class="metric-options" id="score-model-toggle">
           <label class="radio-option">
             <input type="radio" name="score-model" value="clean" checked />
-            <span>Filtered</span>
+            <span>Default</span>
           </label>
           <label class="radio-option">
             <input type="radio" name="score-model" value="expanded" />
@@ -255,9 +255,9 @@
                   Changing the filter updates the map with only displayed items counting in the score.
               </li>
               <li>
-                <strong>Building score: Filtered vs Expanded</strong>
+                <strong>Building score: Default vs Expanded</strong>
                 <p>
-                  <em>Filtered</em> uses a curated category set with explicit weights (default for comparisons). <em>Expanded</em> uses a wider set of amenity types with a simpler index.
+                  <em>Default</em> uses the default data manifest: a curated category set with explicit weights (default for comparisons). <em>Expanded</em> uses a wider set of amenity types with a simpler index.
                 </p>
               </li>
             </ul>
@@ -284,13 +284,9 @@
               </div>
             </div>
             <div class="about-section">
-              <strong>Data Manifests</strong>
+              <strong>Data manifests</strong>
               <p>
-                Layers include residential footprints, neighborhood boundaries, parks, street trees, street lights where available, and amenity data for both <strong>Filtered</strong> and <strong>Expanded</strong> modes.
-              </p>
-              <br>
-              <p>
-                <strong>1. Filtered:</strong>
+                <strong>1. Default:</strong>
                 Scores use weighted counts inside each walk-time area from the curated manifest: trees, parks, playgrounds, health, education, transit-related stops, shelters, community and business hubs, and street lighting. Weights are set according to a predefined formula.
               </p>
 
