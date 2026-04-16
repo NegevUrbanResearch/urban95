@@ -29,6 +29,7 @@ from shapely.geometry import shape as shapely_shape
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
+FILTERED_DIR = REPO_ROOT / "filtered"
 OUTPUT_DIR = REPO_ROOT / "output"
 DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"  # Web-accessible output for deployment
 
@@ -69,6 +70,73 @@ PARK_SIMPLIFY_TOLERANCE_M = 2.0  # Parks can use higher tolerance since they're 
 
 WALK_MINUTES = [5, 10, 15]
 ISOCHRONE_CACHE_DIR = OUTPUT_DIR / "isochrone_cache"
+
+# Weighted "clean" score (points per unit within walk isochrone). Only layers present in the
+# merged manifest; roads/shadow omitted. Keys match amenity_type in amenities_new / street_lights.
+CLEAN_WEIGHTS = {
+    "trees": 4.0,
+    "parks": 15.0,
+    "playgrounds": 15.0,
+    "street-lights": 3.75,
+    "bus_stops": 7.5,
+    "shelters": 10.0,
+    "education": 7.5,
+    "community-centers": 5.0,
+    "businesscenters": 5.0,
+    "health": 7.5,
+}
+
+
+def _clean_pts_column_stem(weight_key: str) -> str:
+    return str(weight_key).replace("-", "_")
+
+
+def _init_clean_pts_columns(buildings, suffix: str) -> None:
+    for wk in CLEAN_WEIGHTS:
+        stem = _clean_pts_column_stem(wk)
+        buildings[f"clean_pts_{stem}{suffix}"] = 0.0
+
+
+def _normalize_clean_amenity_key(value) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    s = str(value).strip().lower().replace(" ", "_")
+    return s
+
+
+def append_shelters_from_merged_to_legacy(
+    amenities_legacy: gpd.GeoDataFrame,
+    merged_path: Path,
+    crs_metric: int,
+    amenity_type_column: str,
+) -> gpd.GeoDataFrame:
+    """Adds shelter points from docs/data/amenities_new.geojson into the legacy amenity set for expanded scoring and amenities_all output."""
+    if not merged_path.is_file():
+        return amenities_legacy
+    m = gpd.read_file(merged_path)
+    if m.crs is None:
+        m.set_crs(epsg=4326, inplace=True)
+    m = repair_dataframe_encoding(m)
+    m = m.to_crs(epsg=crs_metric)
+    if "amenity_type" not in m.columns:
+        return amenities_legacy
+    sh = m[m["amenity_type"].map(_normalize_clean_amenity_key) == "shelters"].copy()
+    if len(sh) == 0:
+        return amenities_legacy
+    sh["amenity_type"] = "shelters"
+    if len(amenities_legacy) == 0:
+        if amenity_type_column not in sh.columns:
+            sh[amenity_type_column] = "shelters"
+        return sh
+    for c in amenities_legacy.columns:
+        if c == amenities_legacy.geometry.name:
+            continue
+        if c not in sh.columns:
+            sh[c] = None
+    sh = sh[amenities_legacy.columns]
+    out = gpd.GeoDataFrame(pd.concat([amenities_legacy, sh], ignore_index=True), crs=amenities_legacy.crs)
+    logging.info("Appended %d shelter points from merged manifest to legacy amenities.", len(sh))
+    return out
 
 
 def repair_text_encoding(text: str) -> str:
@@ -383,18 +451,68 @@ def compute_building_accessibility(
     OUTPUT_DIR.mkdir(exist_ok=True)
     token = load_mapbox_token()
 
-    buildings_path = DATA_DIR / "buildings.geojson"
-    amenities_path = DATA_DIR / "amenities.geojson"
+    buildings_path = FILTERED_DIR / "buildings.geojson"
+    if not buildings_path.is_file():
+        buildings_path = DATA_DIR / "buildings.geojson"
+    legacy_amenities_path = DATA_DIR / "amenities.geojson"
     trees_path = DATA_DIR / "sidewalks_and_trees.geojson"
     parks_path = DATA_DIR / "parks_and_greenspaces.geojson"
 
-    logging.info("Loading buildings and amenities...")
+    logging.info("Loading buildings from %s...", buildings_path)
     crs_metric = 2039
     buildings = load_layer(buildings_path, target_crs=crs_metric)
-    amenities = load_layer(amenities_path, target_crs=crs_metric)
+    if "Used" in buildings.columns:
+        _n = len(buildings)
+        buildings = buildings[buildings["Used"].astype(str).str.strip() == "מגורים"].copy()
+        logging.info("Residential only (מגורים): %d of %d buildings", len(buildings), _n)
+        if len(buildings) == 0:
+            raise ValueError("No buildings left after filtering Used == מגורים")
 
-    logging.info("Repairing text encoding (Hebrew/Arabic)...")
-    amenities = repair_dataframe_encoding(amenities)
+    amenities_legacy = gpd.GeoDataFrame()
+    if legacy_amenities_path.is_file():
+        amenities_legacy = load_layer(legacy_amenities_path, target_crs=crs_metric)
+        logging.info("Repairing text encoding on legacy amenities (Hebrew/Arabic)...")
+        amenities_legacy = repair_dataframe_encoding(amenities_legacy)
+    else:
+        logging.warning(
+            "Missing %s — expanded (main-branch) scores will be zero. Place the legacy amenities file for expanded metrics.",
+            legacy_amenities_path,
+        )
+
+    clean_parts = []
+    merged_path = DOCS_DATA_DIR / "amenities_new.geojson"
+    street_lights_gdf = None
+    sl_path = DOCS_DATA_DIR / "street_lights.geojson"
+    if merged_path.is_file():
+        m = gpd.read_file(merged_path)
+        if m.crs is None:
+            m.set_crs(epsg=4326, inplace=True)
+        m = repair_dataframe_encoding(m)
+        try:
+            m.to_crs(epsg=4326).to_file(merged_path, driver="GeoJSON")
+        except OSError as e:
+            logging.warning("Could not persist repaired text to %s: %s", merged_path, e)
+        m = m.to_crs(epsg=crs_metric)
+        clean_parts.append(m)
+        logging.info("Loaded clean manifest points: %s (%d features)", merged_path.name, len(m))
+    if sl_path.is_file():
+        sl = gpd.read_file(sl_path)
+        if sl.crs is None:
+            sl.set_crs(epsg=4326, inplace=True)
+        sl = repair_dataframe_encoding(sl)
+        try:
+            sl.to_crs(epsg=4326).to_file(sl_path, driver="GeoJSON")
+        except OSError as e:
+            logging.warning("Could not persist repaired text to %s: %s", sl_path, e)
+        street_lights_gdf = sl.to_crs(epsg=crs_metric)
+        sl_tagged = street_lights_gdf.copy()
+        sl_tagged["amenity_type"] = "street-lights"
+        clean_parts.append(sl_tagged)
+        logging.info("Loaded street lights (clean + expanded like trees): %s (%d features)", sl_path.name, len(sl_tagged))
+
+    amenities_clean = gpd.GeoDataFrame()
+    if clean_parts:
+        amenities_clean = gpd.GeoDataFrame(pd.concat(clean_parts, ignore_index=True), crs=f"EPSG:{crs_metric}")
 
     trees_gdf = None
     if trees_path.exists():
@@ -421,21 +539,26 @@ def compute_building_accessibility(
     buildings = buildings[valid].copy()
     buildings["building_id"] = buildings.index
 
-    logging.info("Preparing amenities with type classification...")
-    amenities = amenities.copy()
-    if amenity_type_column not in amenities.columns:
-        raise KeyError(f"Expected column '{amenity_type_column}' in amenities layer.")
+    logging.info("Preparing legacy amenities (expanded / main-branch taxonomy)...")
+    if len(amenities_legacy) > 0:
+        if amenity_type_column not in amenities_legacy.columns:
+            raise KeyError(f"Expected column '{amenity_type_column}' in legacy amenities layer.")
 
-    amenities["amenity_type"] = (
-        amenities[amenity_type_column]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .str.replace(" ", "_", regex=False)
-        .str.replace("/", "_", regex=False)
-        .replace({"nan": None})
+        amenities_legacy = amenities_legacy.copy()
+        amenities_legacy["amenity_type"] = (
+            amenities_legacy[amenity_type_column]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .str.replace(" ", "_", regex=False)
+            .str.replace("/", "_", regex=False)
+            .replace({"nan": None})
+        )
+        amenities_legacy = amenities_legacy[~amenities_legacy["amenity_type"].isna()]
+
+    amenities_legacy = append_shelters_from_merged_to_legacy(
+        amenities_legacy, merged_path, crs_metric, amenity_type_column
     )
-    amenities = amenities[~amenities["amenity_type"].isna()]
 
     # Compute building centroids in WGS84 for Mapbox API
     logging.info("Computing building centroids...")
@@ -526,35 +649,38 @@ def compute_building_accessibility(
             logging.warning("No isochrone polygons for %d-min threshold.", minutes)
             buildings[f"num_amenities{suffix}"] = 0
             buildings[f"num_trees{suffix}"] = 0
+            buildings[f"num_street_lights{suffix}"] = 0
+            buildings[f"score_clean{suffix}"] = 0.0
+            buildings[f"score_expanded{suffix}"] = 0.0
+            _init_clean_pts_columns(buildings, suffix)
             continue
 
         iso_gdf = gpd.GeoDataFrame(iso_records, crs="EPSG:4326").to_crs(epsg=crs_metric)
 
-        # Spatial join: amenities within isochrone polygons
-        joined = gpd.sjoin(
-            amenities.set_geometry("geometry"),
-            iso_gdf.set_geometry("geometry")[["building_id", "geometry"]],
-            predicate="within",
-            how="inner",
-        )
-
-        if len(joined) > 0:
-            counts = (
-                joined.groupby(["building_id", "amenity_type"])
-                .size()
-                .reset_index(name="count")
+        if len(amenities_legacy) > 0:
+            joined = gpd.sjoin(
+                amenities_legacy.set_geometry("geometry"),
+                iso_gdf.set_geometry("geometry")[["building_id", "geometry"]],
+                predicate="within",
+                how="inner",
             )
-            pivot = counts.pivot(index="building_id", columns="amenity_type", values="count").fillna(0)
-            pivot.columns = [f"amen_{str(c).replace(' ', '_')}{suffix}" for c in pivot.columns]
-            pivot = pivot.reset_index()
-            buildings = buildings.merge(pivot, on="building_id", how="left")
+
+            if len(joined) > 0:
+                counts = (
+                    joined.groupby(["building_id", "amenity_type"])
+                    .size()
+                    .reset_index(name="count")
+                )
+                pivot = counts.pivot(index="building_id", columns="amenity_type", values="count").fillna(0)
+                pivot.columns = [f"amen_{str(c).replace(' ', '_')}{suffix}" for c in pivot.columns]
+                pivot = pivot.reset_index()
+                buildings = buildings.merge(pivot, on="building_id", how="left")
 
         metric_cols = [c for c in buildings.columns if c.startswith("amen_") and c.endswith(suffix)]
         for c in metric_cols:
             buildings[c] = buildings[c].fillna(0).astype(int)
         buildings[f"num_amenities{suffix}"] = buildings[metric_cols].sum(axis=1).astype(int) if metric_cols else 0
 
-        # Trees within isochrone
         if trees_gdf is not None:
             tree_join = gpd.sjoin(
                 trees_gdf,
@@ -566,6 +692,85 @@ def compute_building_accessibility(
             buildings[f"num_trees{suffix}"] = buildings["building_id"].map(tree_counts).fillna(0).astype(int)
         else:
             buildings[f"num_trees{suffix}"] = 0
+
+        if street_lights_gdf is not None:
+            sl_join = gpd.sjoin(
+                street_lights_gdf,
+                iso_gdf.set_geometry("geometry")[["building_id", "geometry"]],
+                predicate="within",
+                how="inner",
+            )
+            sl_counts = sl_join.groupby("building_id").size()
+            buildings[f"num_street_lights{suffix}"] = buildings["building_id"].map(sl_counts).fillna(0).astype(int)
+        else:
+            buildings[f"num_street_lights{suffix}"] = 0
+
+        buildings[f"score_expanded{suffix}"] = (
+            buildings[f"num_amenities{suffix}"].astype(float)
+            + buildings[f"num_trees{suffix}"].astype(float) * 0.25
+            + buildings[f"num_street_lights{suffix}"].astype(float) * 0.25
+        )
+
+        bids = [int(b) for b in buildings["building_id"].unique()]
+        clean_detail = {k: {bid: 0.0 for bid in bids} for k in CLEAN_WEIGHTS}
+
+        nt = buildings.set_index("building_id")[f"num_trees{suffix}"]
+        for bid, n in nt.items():
+            ib = int(bid)
+            clean_detail["trees"][ib] += CLEAN_WEIGHTS["trees"] * float(n)
+
+        if parks_gdf is not None and len(parks_gdf) > 0:
+            pj = gpd.sjoin(
+                parks_gdf,
+                iso_gdf.set_geometry("geometry")[["building_id", "geometry"]],
+                predicate="intersects",
+                how="inner",
+            )
+            if len(pj) > 0:
+                pc = pj.groupby("building_id").size()
+                for bid, c in pc.items():
+                    ib = int(bid)
+                    clean_detail["parks"][ib] += CLEAN_WEIGHTS["parks"] * float(c)
+
+        if len(amenities_clean) > 0 and "amenity_type" in amenities_clean.columns:
+            cj = gpd.sjoin(
+                amenities_clean.set_geometry("geometry"),
+                iso_gdf.set_geometry("geometry")[["building_id", "geometry"]],
+                predicate="within",
+                how="inner",
+            )
+            if len(cj) > 0:
+                cj = cj.copy()
+                cj["_ak"] = cj["amenity_type"].map(_normalize_clean_amenity_key)
+                for (bid, ak), grp in cj.groupby(["building_id", "_ak"]):
+                    if not ak or ak not in CLEAN_WEIGHTS:
+                        continue
+                    w = CLEAN_WEIGHTS[ak]
+                    if w <= 0:
+                        continue
+                    ib = int(bid)
+                    clean_detail[ak][ib] += w * float(len(grp))
+
+        for wk in CLEAN_WEIGHTS:
+            stem = _clean_pts_column_stem(wk)
+            col = f"clean_pts_{stem}{suffix}"
+            buildings[col] = buildings["building_id"].map(lambda b, k=wk: clean_detail[k].get(int(b), 0.0)).astype(float)
+
+        clean_scores = {
+            bid: sum(clean_detail[k][bid] for k in CLEAN_WEIGHTS) for bid in bids
+        }
+        sc_series = buildings["building_id"].map(lambda b: clean_scores.get(int(b), 0.0))
+        buildings[f"score_clean{suffix}"] = sc_series.astype(float)
+
+        sum_cols = [f"clean_pts_{_clean_pts_column_stem(wk)}{suffix}" for wk in CLEAN_WEIGHTS]
+        pts_sum = buildings[sum_cols].sum(axis=1)
+        max_diff = (buildings[f"score_clean{suffix}"] - pts_sum).abs().max()
+        if max_diff > 1e-3:
+            logging.warning(
+                "clean_pts columns sum differs from score_clean (max abs diff=%s) for %smin.",
+                max_diff,
+                minutes,
+            )
 
     # Export isochrone polygons as GeoJSON for the frontend
     DOCS_DATA_DIR.mkdir(exist_ok=True)
@@ -595,28 +800,32 @@ def compute_building_accessibility(
         to_export = to_export.drop(columns=[c])
     to_export = _unique_columns(to_export)
     buildings_wgs84 = to_export.to_crs(epsg=4326)
-    amenities_wgs84 = amenities.to_crs(epsg=4326)
+    amenities_wgs84 = amenities_legacy.to_crs(epsg=4326) if len(amenities_legacy) > 0 else gpd.GeoDataFrame()
 
     buildings_out = OUTPUT_DIR / "buildings_accessibility.geojson"
     logging.info("Writing buildings with accessibility metrics: %s", buildings_out)
     buildings_wgs84.to_file(buildings_out, driver="GeoJSON")
 
-    # Filter amenities: exclude invalid types and null geometries
-    amenities_filtered = amenities_wgs84[
-        ~amenities_wgs84["amenity_type"].isin(EXCLUDED_AMENITY_TYPES)
-        & ~amenities_wgs84.geometry.is_empty
-        & amenities_wgs84.geometry.notna()
-    ]
+    if len(amenities_wgs84) == 0:
+        amenities_filtered = gpd.GeoDataFrame()
+    else:
+        amenities_filtered = amenities_wgs84[
+            ~amenities_wgs84["amenity_type"].isin(EXCLUDED_AMENITY_TYPES)
+            & ~amenities_wgs84.geometry.is_empty
+            & amenities_wgs84.geometry.notna()
+        ]
     
     # Keep only essential columns for the amenities output
     amenity_cols = [c for c in AMENITY_KEEP_COLUMNS if c in amenities_filtered.columns]
     amenities_filtered = amenities_filtered[amenity_cols]
     
     amenities_all_path = OUTPUT_DIR / "amenities_all.geojson"
-    amenities_filtered.to_file(amenities_all_path, driver="GeoJSON")
-    logging.info("Wrote %s (%d features)", amenities_all_path, len(amenities_filtered))
+    if len(amenities_filtered) > 0:
+        amenities_filtered.to_file(amenities_all_path, driver="GeoJSON")
+        logging.info("Wrote %s (%d features)", amenities_all_path, len(amenities_filtered))
+    else:
+        logging.warning("No legacy amenities to write to %s (expanded metrics will be zero on site).", amenities_all_path)
 
-    logging.info("Writing per-amenity-type point layers for heatmaps...")
     for amen_type, subset in amenities_filtered.groupby("amenity_type"):
         safe_name = str(amen_type).replace(" ", "_").replace("/", "_").replace("\\", "_")
         out_path = OUTPUT_DIR / f"amenities_{safe_name}.geojson"
@@ -663,6 +872,15 @@ def compute_building_accessibility(
     
     # Write minimal GeoJSON (no CRS metadata, compact format)
     logging.info("Writing optimized GeoJSON files...")
+    _sc = [c for c in buildings_web.columns if c.startswith("score_clean")]
+    _se = [c for c in buildings_web.columns if c.startswith("score_expanded")]
+    _sl = [c for c in buildings_web.columns if c.startswith("num_street_lights")]
+    logging.info(
+        "Building score columns for web: score_clean=%s, score_expanded=%s, num_street_lights=%s",
+        bool(_sc),
+        bool(_se),
+        bool(_sl),
+    )
     write_minimal_geojson(buildings_web, DOCS_DATA_DIR / "buildings_accessibility.geojson", precision=5)
     buildings_file_size = (DOCS_DATA_DIR / "buildings_accessibility.geojson").stat().st_size
     logging.info("Buildings: %.1fMB (%d features)", buildings_file_size / 1e6, len(buildings_web))

@@ -90,32 +90,33 @@
         <label class="toggle">
           <input type="checkbox" id="show-points-toggle" checked />
           <span class="toggle-slider"></span>
-          <span class="toggle-label">Show points & heatmaps</span>
+          <span class="toggle-label">Show points</span>
         </label>
       </div>
 
       <div class="section">
-        <div class="section-title">Metrics Display</div>
-        <div class="metric-options" id="metric-display-toggle">
+        <div class="section-title">Building score</div>
+        <div class="metric-options" id="score-model-toggle">
           <label class="radio-option">
-            <input type="radio" name="metric-display" value="raw" checked />
-            <span>Raw</span>
+            <input type="radio" name="score-model" value="clean" checked />
+            <span>Filtered</span>
           </label>
           <label class="radio-option">
-            <input type="radio" name="metric-display" value="percentile" />
-            <span>Percentile</span>
+            <input type="radio" name="score-model" value="expanded" />
+            <span>Expanded</span>
           </label>
         </div>
       </div>
 
       <div class="section legend-section">
-        <div class="section-title">Accessibility</div>
+        <div class="section-title">Accessibility (percentile)</div>
         <div class="legend-gradient"></div>
         <div id="legend-labels" class="legend-labels">
           <span>0</span>
-          <span>5</span>
-          <span>10</span>
-          <span>20+</span>
+          <span>25</span>
+          <span>50</span>
+          <span>75</span>
+          <span>100</span>
         </div>
       </div>
     </div>
@@ -125,6 +126,39 @@
     <div id="tooltip"></div>
 
     <div id="filter-backdrop" class="filter-backdrop"></div>
+
+    <div
+      id="score-explain-modal"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="score-explain-title"
+    >
+      <div class="modal-content score-explain-modal-content">
+        <button type="button" id="score-explain-modal-close" class="modal-close" aria-label="Close explain score">
+          &times;
+        </button>
+        <div class="score-explain-modal-hero">
+          <p class="score-explain-eyebrow" id="score-explain-eyebrow"></p>
+          <h2 id="score-explain-title" class="score-explain-title">Explain score</h2>
+          <div class="score-explain-hero-metrics">
+            <div class="score-explain-hero-block">
+              <span class="score-explain-hero-label">Weighted score</span>
+              <span class="score-explain-hero-num" id="score-explain-hero-num">—</span>
+            </div>
+            <div class="score-explain-hero-block score-explain-hero-block-pct">
+              <span class="score-explain-hero-label">Citywide percentile</span>
+              <span class="score-explain-hero-pct" id="score-explain-hero-pct">—</span>
+              <div class="score-explain-hero-meter" aria-hidden="true">
+                <div class="score-explain-hero-meter-fill" id="score-explain-hero-meter-fill"></div>
+              </div>
+            </div>
+          </div>
+          <p class="score-explain-hero-note" id="score-explain-hero-note"></p>
+        </div>
+        <div id="score-explain-modal-scroll" class="score-explain-modal-scroll"></div>
+      </div>
+    </div>
 
     <div id="neighborhood-modal" class="modal">
       <div class="modal-content citywide-content">
@@ -152,56 +186,125 @@
       </div>
     </div>
 
-    <div id="info-modal" class="modal">
+    <div
+      id="info-modal"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="info-modal-title"
+    >
       <div class="modal-content">
-        <button id="modal-close" class="modal-close">&times;</button>
-        
+        <button type="button" id="modal-close" class="modal-close" aria-label="Close help">&times;</button>
+
         <div class="modal-header">
           <div class="modal-title">
-            <h2>Cities for Children</h2>
+            <h2 id="info-modal-title">Cities for Children</h2>
             <p>Beer Sheva Accessibility Map</p>
           </div>
         </div>
 
-        <div class="modal-tabs">
-          <button class="modal-tab active" data-tab="howto">How to Use</button>
-          <button class="modal-tab" data-tab="about">About</button>
+        <div class="modal-tabs" role="tablist" aria-label="Help">
+          <button
+            type="button"
+            class="modal-tab active"
+            id="modal-tab-howto"
+            role="tab"
+            aria-selected="true"
+            aria-controls="tab-howto"
+            data-tab="howto"
+          >
+            How to Use
+          </button>
+          <button
+            type="button"
+            class="modal-tab"
+            id="modal-tab-about"
+            role="tab"
+            aria-selected="false"
+            aria-controls="tab-about"
+            data-tab="about"
+          >
+            About
+          </button>
         </div>
 
-        <div class="modal-tab-content active" id="tab-howto">
-          <ul class="howto-list">
-            <li>
-              <strong>Three Analysis Modes</strong>
-              <p>Use the <em>Building</em>, <em>Neighborhood</em>, and <em>City</em> toggle to switch between scales. Building mode lets you inspect individual buildings, Neighborhood mode compares areas across the city, and City mode shows a full overview with rankings and distributions.</p>
-            </li>
-            <li>
-              <strong>Building Mode</strong>
-              <p>Click anywhere on the map to select the nearest building. A walking-distance isochrone will appear showing the reachable area, with a count of nearby amenities. Toggle between raw counts and percentile ranking to see how a building compares to the rest of the city.</p>
-            </li>
-            <li>
-              <strong>Neighborhood &amp; City Modes</strong>
-              <p>In Neighborhood mode, click any neighborhood polygon to see its detailed breakdown — amenity mix, per-type averages, and citywide percentile rankings. City mode opens a dashboard with amenity distribution, score histograms, and a full neighborhood ranking.</p>
-            </li>
-            <li>
-              <strong>Filter &amp; Walking Time</strong>
-              <p>Use the filter dropdown to focus on specific amenity types such as healthcare, education, or recreation. Switch between 5, 10, and 15 minute walking times to see how accessibility changes at different distances.</p>
-            </li>
-          </ul>
-        </div>
-
-        <div class="modal-tab-content" id="tab-about">
-          <p>This map is a collaboration between <strong>Urban95</strong> and <strong>NUR</strong> as part of the "Cities for Children" initiative, exploring how accessible Beer Sheva's neighborhoods are for families with young children.</p>
-          <div class="about-section">
-            <strong>Methodology</strong>
-            <p>Each building's accessibility score is calculated by counting amenities reachable within walking-time isochrones (5, 10, or 15 minutes) computed from the pedestrian street network. Trees are included but weighted at 1/4 the value of other amenities. Building colors use a percentile scale — each color band represents an equal share of buildings, so relative differences are visible regardless of the count range. Neighborhood and city-level statistics are aggregated from these per-building scores.</p>
+        <div class="modal-scroll">
+          <div class="modal-tab-content active" id="tab-howto" role="tabpanel" aria-labelledby="modal-tab-howto">
+            <p class="modal-lead">
+              Pick a scale, set walking time and filters. Colors show <strong>percentile rank</strong> versus all buildings in the city
+              (<dfn title="0 = lowest access, 100 = highest">0–100</dfn>).
+            </p>
+            <ul class="howto-list">
+              <li>
+                <strong>Building, Neighborhood, or City</strong>
+                <p>
+                  <em>Building</em> — Tap or click the map to snap to the nearest home. 
+                </p>
+                <p>
+                  <em>Neighborhood</em> — Click a neighborhood for charts and stats.
+                </p>
+                <p>
+                  <em>City</em> — Opens a city dashboard (inventory, score distribution, neighborhood ranking); outlines stay on the map for context.
+                </p>
+              </li>
+              <li>
+                <strong>Walking time &amp; filter</strong>
+                <p>
+                  Choose <em>5</em>, <em>10</em>, or <em>15</em> minutes. Use the filter for amenity types (including trees and street lighting where listed).
+                  Changing the filter updates the map with only displayed items counting in the score.
+              </li>
+              <li>
+                <strong>Building score: Filtered vs Expanded</strong>
+                <p>
+                  <em>Filtered</em> uses a curated category set with explicit weights (default for comparisons). <em>Expanded</em> uses a wider set of amenity types with a simpler index.
+                </p>
+              </li>
+            </ul>
           </div>
-          <div class="about-section">
-            <strong>Data</strong>
-            <p>The map uses building footprints, points of interest including healthcare facilities, educational institutions, commercial areas, and recreational spaces, street tree locations, and neighborhood boundaries throughout the city.</p>
+
+          <div class="modal-tab-content" id="tab-about" role="tabpanel" aria-labelledby="modal-tab-about" aria-hidden="true">
+            <p>
+              A collaboration between <strong>Urban95</strong> and <strong>NUR</strong> under the “Cities for Children” initiative — exploring how reachable everyday services and child-relevant features are from homes across Beer Sheva.
+            </p>
+            <div class="about-section">
+              <strong>Map colors &amp; percentile</strong>
+              <p>
+                Color scheme: red = lower access, green = higher. The value is your <strong>rank among all homes</strong> for this walk time and score mode.
+              </p>
+              <div class="modal-legend-preview" aria-hidden="true">
+                <div class="modal-legend-bar"></div>
+                <div class="modal-legend-ticks">
+                  <span>0</span>
+                  <span>25</span>
+                  <span>50</span>
+                  <span>75</span>
+                  <span>100</span>
+                </div>
+              </div>
+            </div>
+            <div class="about-section">
+              <strong>Data Manifests</strong>
+              <p>
+                Layers include residential footprints, neighborhood boundaries, parks, street trees, street lights where available, and amenity data for both <strong>Filtered</strong> and <strong>Expanded</strong> modes.
+              </p>
+              <br>
+              <p>
+                <strong>1. Filtered:</strong>
+                Scores use weighted counts inside each walk-time area from the curated manifest: trees, parks, playgrounds, health, education, transit-related stops, shelters, community and business hubs, and street lighting. Weights are set according to a predefined formula.
+              </p>
+
+              <p>
+                <strong>2. Expanded:</strong>
+                Uses the full points-of-interest classification: the index is amenity counts plus one-quarter weight per tree and per street light in range. This is useful for broader type coverage.
+              </p>
+
+
+   
+            </div>
           </div>
         </div>
 
-        <button id="modal-start" class="modal-start-btn">Start Exploring</button>
+        <button type="button" id="modal-start" class="modal-start-btn">Start Exploring</button>
       </div>
     </div>
 

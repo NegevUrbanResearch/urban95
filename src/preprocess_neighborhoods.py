@@ -2,12 +2,14 @@
 
 Outputs:
   - docs/data/neighborhoods.geojson  (enriched with per-amenity averages and percentile ranks)
+  - docs/data/neighborhood_charts.json  (per-hood POI inventory: clean vs legacy taxonomy)
   - docs/data/citywide_stats.json    (aggregate statistics for dashboard)
 """
 
 import json
 import logging
 import os
+import re
 import warnings
 from pathlib import Path
 
@@ -25,17 +27,81 @@ DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"
 
 BUILDINGS_PATH = DOCS_DATA_DIR / "buildings_accessibility.geojson"
 NEIGHBORHOODS_PATH = DOCS_DATA_DIR / "neighborhoods.geojson"
-AMENITIES_PATH = DOCS_DATA_DIR / "amenities_all.geojson"
+AMENITIES_NEW_PATH = DOCS_DATA_DIR / "amenities_new.geojson"
+AMENITIES_LEGACY_PATH = DOCS_DATA_DIR / "amenities_all.geojson"
 TREES_PATH = DOCS_DATA_DIR / "trees.geojson"
 
 WALK_MINUTES = [5, 10, 15]
 
-AMENITY_TYPES = [
-    "healthcare", "education", "commercial", "services",
-    "religious_institutions", "parks_and_recreation", "public_institutions",
-    "fitness", "transportation", "financial_services", "tourism",
-    "senior_services_and_living",
-]
+EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES = frozenset({"bicycle_track"})
+
+
+def amenity_stat_keys_from_buildings(buildings: gpd.GeoDataFrame) -> list:
+    """Reads amen_<key>_<5|10|15>min columns from buildings_accessibility (any taxonomy)."""
+    keys = set()
+    for col in buildings.columns:
+        m = re.match(r"^amen_(.+)_(?:5|10|15)min$", str(col))
+        if m:
+            keys.add(m.group(1))
+    return sorted(keys)
+
+
+def amenity_type_counts_from_geojson(path: Path, exclude_types: frozenset | None = None) -> dict:
+    exclude_types = exclude_types or frozenset()
+    data = load_geojson(path)
+    type_counts: dict = {}
+    for feat in data.get("features") or []:
+        t = (feat.get("properties") or {}).get("amenity_type", "other")
+        if t in exclude_types:
+            continue
+        type_counts[t] = type_counts.get(t, 0) + 1
+    return type_counts
+
+
+def inventory_counts_per_neighborhood(
+    hoods_wgs84: gpd.GeoDataFrame,
+    points_path: Path,
+    exclude_amenity_types: frozenset | None = None,
+):
+    """Point-in-polygon counts by amenity_type for each neighborhood Name."""
+    if not points_path.is_file():
+        return {}
+    pts = gpd.read_file(points_path)
+    if pts.crs is None:
+        pts = pts.set_crs(epsg=4326)
+    elif pts.crs != hoods_wgs84.crs:
+        pts = pts.to_crs(hoods_wgs84.crs)
+    if "amenity_type" not in pts.columns:
+        return {}
+    if exclude_amenity_types:
+        pts = pts[~pts["amenity_type"].isin(exclude_amenity_types)]
+        if len(pts) == 0:
+            return {}
+    h = hoods_wgs84[["Name", "geometry"]].copy().rename(columns={"Name": "hood_name"})
+    j = gpd.sjoin(pts, h, predicate="within", how="inner")
+    if len(j) == 0:
+        return {}
+    out = {}
+    for name, grp in j.groupby("hood_name", dropna=True):
+        vc = grp["amenity_type"].value_counts()
+        out[str(name)] = {str(k): int(v) for k, v in vc.items()}
+    return out
+
+
+def percentile_ranks_across_hoods(values_by_name: dict) -> dict:
+    """Percentile rank (0–100) of each neighborhood's value among all neighborhoods."""
+    names = list(values_by_name.keys())
+    vals = [values_by_name[n] for n in names]
+    sorted_vals = sorted(vals)
+    n_total = len(sorted_vals)
+    if n_total == 0:
+        return {}
+    out = {}
+    for n in names:
+        val = values_by_name[n]
+        rank = sum(1 for v in sorted_vals if v <= val)
+        out[n] = round(rank / n_total * 100)
+    return out
 
 
 def load_geojson(path):
@@ -74,13 +140,8 @@ def main():
     unassigned = buildings["neighborhood"].isna().sum()
     logging.info("  %d buildings unassigned (outside all neighborhoods)", unassigned)
 
-    # Determine which amenity columns actually exist in buildings
-    existing_types = []
-    for t in AMENITY_TYPES:
-        col5 = f"amen_{t}_5min"
-        if col5 in buildings.columns:
-            existing_types.append(t)
-    logging.info("  %d amenity types found in data", len(existing_types))
+    existing_types = amenity_stat_keys_from_buildings(buildings)
+    logging.info("  %d amenity stat keys in buildings: %s", len(existing_types), existing_types[:12])
 
     # Build neighborhood stats
     neighborhood_stats = {}
@@ -110,6 +171,15 @@ def main():
                 col = f"amen_{t}{sfx}"
                 vals = pd.to_numeric(group[col], errors="coerce").fillna(0)
                 stats[f"avg_{t}{sfx}"] = round(float(vals.mean()), 2)
+
+            sc_col = f"score_clean{sfx}"
+            if sc_col in group.columns:
+                sc_vals = pd.to_numeric(group[sc_col], errors="coerce").fillna(0)
+                stats[f"avg_score_clean{sfx}"] = round(float(sc_vals.mean()), 2)
+                stats[f"coverage_clean{sfx}"] = round(float((sc_vals > 0).mean() * 100), 1)
+            else:
+                stats[f"avg_score_clean{sfx}"] = 0.0
+                stats[f"coverage_clean{sfx}"] = 0.0
 
         neighborhood_stats[name] = stats
 
@@ -141,6 +211,39 @@ def main():
         for name, val in vals.items():
             rank = sum(1 for v in sorted_vals if v <= val)
             neighborhood_stats[name][f"pct_trees{sfx}"] = round(rank / n_total * 100)
+
+        # Filtered score: overall percentile across neighborhoods
+        vals = {n: s.get(f"avg_score_clean{sfx}", 0) for n, s in neighborhood_stats.items()}
+        sorted_vals = sorted(vals.values())
+        n_total = len(sorted_vals)
+        for name, val in vals.items():
+            rank = sum(1 for v in sorted_vals if v <= val)
+            neighborhood_stats[name][f"pct_clean_overall{sfx}"] = round(rank / n_total * 100) if n_total else 0
+
+    # Point-in-polygon inventory (clean vs legacy taxonomy) for neighborhood/city pies
+    logging.info("Computing per-neighborhood POI inventory (clean vs legacy)...")
+    inv_clean = inventory_counts_per_neighborhood(
+        neighborhoods, AMENITIES_NEW_PATH, exclude_amenity_types=EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES
+    )
+    inv_legacy = inventory_counts_per_neighborhood(neighborhoods, AMENITIES_LEGACY_PATH)
+
+    clean_types = set()
+    for d in inv_clean.values():
+        clean_types.update(d.keys())
+    for t in sorted(clean_types):
+        counts_by_hood = {n: inv_clean.get(n, {}).get(t, 0) for n in neighborhood_stats.keys()}
+        pr = percentile_ranks_across_hoods(counts_by_hood)
+        for name in neighborhood_stats:
+            neighborhood_stats[name][f"pct_inv_clean_{t}"] = pr.get(name, 0)
+
+    leg_types = set()
+    for d in inv_legacy.values():
+        leg_types.update(d.keys())
+    for t in sorted(leg_types):
+        counts_by_hood = {n: inv_legacy.get(n, {}).get(t, 0) for n in neighborhood_stats.keys()}
+        pr = percentile_ranks_across_hoods(counts_by_hood)
+        for name in neighborhood_stats:
+            neighborhood_stats[name][f"pct_inv_legacy_{t}"] = pr.get(name, 0)
 
     # Enrich neighborhoods GeoJSON and write with WGS84 coordinates
     logging.info("Enriching neighborhoods GeoJSON...")
@@ -181,18 +284,36 @@ def main():
         json.dump(enriched_geojson, f, separators=(",", ":"), ensure_ascii=False)
     logging.info("  Wrote enriched neighborhoods.geojson (%d features)", len(enriched_features))
 
+    charts_payload = {"inventory_clean": inv_clean, "inventory_legacy": inv_legacy}
+    with open(DOCS_DATA_DIR / "neighborhood_charts.json", "w") as f:
+        json.dump(charts_payload, f, separators=(",", ":"), ensure_ascii=False)
+    logging.info("  Wrote neighborhood_charts.json")
+
     # Citywide statistics
     logging.info("Computing citywide statistics...")
     citywide = {"total_buildings": len(buildings)}
 
-    # Amenity counts from amenities file
-    amenities_data = load_geojson(AMENITIES_PATH)
-    type_counts = {}
-    for feat in amenities_data["features"]:
-        t = feat["properties"].get("amenity_type", "other")
-        type_counts[t] = type_counts.get(t, 0) + 1
-    citywide["amenity_counts"] = type_counts
-    citywide["total_amenities"] = sum(type_counts.values())
+    # Pie chart: legacy POI inventory (same taxonomy as building amen_* / neighborhood breakdown).
+    if AMENITIES_LEGACY_PATH.is_file():
+        legacy_counts = amenity_type_counts_from_geojson(AMENITIES_LEGACY_PATH)
+        citywide["amenity_counts"] = legacy_counts
+        logging.info("  citywide amenity_counts: legacy file %s (%d types)", AMENITIES_LEGACY_PATH.name, len(legacy_counts))
+    elif AMENITIES_NEW_PATH.is_file():
+        fallback = amenity_type_counts_from_geojson(
+            AMENITIES_NEW_PATH, exclude_types=EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES
+        )
+        citywide["amenity_counts"] = fallback
+        logging.info("  citywide amenity_counts: manifest only %s (no amenities_all)", AMENITIES_NEW_PATH.name)
+    else:
+        citywide["amenity_counts"] = {}
+
+    if AMENITIES_NEW_PATH.is_file():
+        citywide["amenity_counts_clean"] = amenity_type_counts_from_geojson(
+            AMENITIES_NEW_PATH, exclude_types=EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES
+        )
+
+    citywide["total_amenities"] = sum((citywide.get("amenity_counts") or {}).values())
+    citywide["total_amenities_clean"] = sum((citywide.get("amenity_counts_clean") or {}).values())
 
     # Tree count
     trees_data = load_geojson(TREES_PATH)
@@ -213,11 +334,28 @@ def main():
         citywide[f"avg_trees{sfx}"] = round(float(t_vals.mean()), 2)
         citywide[f"coverage{sfx}"] = round(float((a_vals > 0).mean() * 100), 1)
 
-        # Distribution buckets for histogram (overall score)
+        # Histograms: match building score modes (same columns as house-mode choropleth)
+        sc_col = f"score_clean{sfx}"
+        if sc_col in buildings.columns:
+            clean_vals = pd.to_numeric(buildings[sc_col], errors="coerce").fillna(0)
+            hc, he = np.histogram(clean_vals, bins=20)
+            citywide[f"distribution_clean{sfx}"] = {
+                "counts": hc.tolist(),
+                "edges": [round(e, 2) for e in he.tolist()],
+            }
+        se_col = f"score_expanded{sfx}"
+        if se_col in buildings.columns:
+            exp_vals = pd.to_numeric(buildings[se_col], errors="coerce").fillna(0)
+            hc, he = np.histogram(exp_vals, bins=20)
+            citywide[f"distribution_expanded{sfx}"] = {
+                "counts": hc.tolist(),
+                "edges": [round(e, 2) for e in he.tolist()],
+            }
+
         hist_counts, hist_edges = np.histogram(overall, bins=20)
         citywide[f"distribution{sfx}"] = {
             "counts": hist_counts.tolist(),
-            "edges": [round(e, 1) for e in hist_edges.tolist()]
+            "edges": [round(e, 1) for e in hist_edges.tolist()],
         }
 
         # Per-type averages
@@ -241,6 +379,25 @@ def main():
             "coverage_10min": stats.get("coverage_10min", 0),
         })
     citywide["neighborhood_ranking"] = ranking
+
+    ranking_clean = []
+    for name, stats in sorted(
+        neighborhood_stats.items(),
+        key=lambda x: x[1].get("avg_score_clean_10min", 0),
+        reverse=True,
+    ):
+        ranking_clean.append({
+            "name": name,
+            "building_count": stats["building_count"],
+            "avg_score_clean_5min": stats.get("avg_score_clean_5min", 0),
+            "avg_score_clean_10min": stats.get("avg_score_clean_10min", 0),
+            "avg_score_clean_15min": stats.get("avg_score_clean_15min", 0),
+            "pct_clean_overall_5min": stats.get("pct_clean_overall_5min", 0),
+            "pct_clean_overall_10min": stats.get("pct_clean_overall_10min", 0),
+            "pct_clean_overall_15min": stats.get("pct_clean_overall_15min", 0),
+            "coverage_clean_10min": stats.get("coverage_clean_10min", 0),
+        })
+    citywide["neighborhood_ranking_clean"] = ranking_clean
 
     # Per-type neighborhood comparison (top/bottom for each type at 10min)
     type_comparisons = {}
