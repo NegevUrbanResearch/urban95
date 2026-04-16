@@ -29,6 +29,7 @@ from shapely.geometry import shape as shapely_shape
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
+FILTERED_DIR = REPO_ROOT / "filtered"
 OUTPUT_DIR = REPO_ROOT / "output"
 DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"  # Web-accessible output for deployment
 
@@ -105,6 +106,7 @@ def append_shelters_from_merged_to_legacy(
     m = gpd.read_file(merged_path)
     if m.crs is None:
         m.set_crs(epsg=4326, inplace=True)
+    m = repair_dataframe_encoding(m)
     m = m.to_crs(epsg=crs_metric)
     if "amenity_type" not in m.columns:
         return amenities_legacy
@@ -439,14 +441,22 @@ def compute_building_accessibility(
     OUTPUT_DIR.mkdir(exist_ok=True)
     token = load_mapbox_token()
 
-    buildings_path = DATA_DIR / "buildings.geojson"
+    buildings_path = FILTERED_DIR / "buildings.geojson"
+    if not buildings_path.is_file():
+        buildings_path = DATA_DIR / "buildings.geojson"
     legacy_amenities_path = DATA_DIR / "amenities.geojson"
     trees_path = DATA_DIR / "sidewalks_and_trees.geojson"
     parks_path = DATA_DIR / "parks_and_greenspaces.geojson"
 
-    logging.info("Loading buildings...")
+    logging.info("Loading buildings from %s...", buildings_path)
     crs_metric = 2039
     buildings = load_layer(buildings_path, target_crs=crs_metric)
+    if "Used" in buildings.columns:
+        _n = len(buildings)
+        buildings = buildings[buildings["Used"].astype(str).str.strip() == "מגורים"].copy()
+        logging.info("Residential only (מגורים): %d of %d buildings", len(buildings), _n)
+        if len(buildings) == 0:
+            raise ValueError("No buildings left after filtering Used == מגורים")
 
     amenities_legacy = gpd.GeoDataFrame()
     if legacy_amenities_path.is_file():
@@ -467,6 +477,11 @@ def compute_building_accessibility(
         m = gpd.read_file(merged_path)
         if m.crs is None:
             m.set_crs(epsg=4326, inplace=True)
+        m = repair_dataframe_encoding(m)
+        try:
+            m.to_crs(epsg=4326).to_file(merged_path, driver="GeoJSON")
+        except OSError as e:
+            logging.warning("Could not persist repaired text to %s: %s", merged_path, e)
         m = m.to_crs(epsg=crs_metric)
         clean_parts.append(m)
         logging.info("Loaded clean manifest points: %s (%d features)", merged_path.name, len(m))
@@ -474,6 +489,11 @@ def compute_building_accessibility(
         sl = gpd.read_file(sl_path)
         if sl.crs is None:
             sl.set_crs(epsg=4326, inplace=True)
+        sl = repair_dataframe_encoding(sl)
+        try:
+            sl.to_crs(epsg=4326).to_file(sl_path, driver="GeoJSON")
+        except OSError as e:
+            logging.warning("Could not persist repaired text to %s: %s", sl_path, e)
         street_lights_gdf = sl.to_crs(epsg=crs_metric)
         sl_tagged = street_lights_gdf.copy()
         sl_tagged["amenity_type"] = "street-lights"
