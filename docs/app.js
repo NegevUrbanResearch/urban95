@@ -611,7 +611,7 @@ const URBAN95_FIXED_MINUTES = 10;
 function getScoreModeLabel(mode) {
   const m = mode || scoreMode;
   if (m === "weighted") return "Urban95";
-  return "Amenities focus";
+  return "Amenities Focus";
 }
 
 function forceAllAmenityTypesSelected() {
@@ -763,7 +763,7 @@ function showIsochroneLoadingScreen() {
   if (loadingProgressBar) {
     loadingProgressBar.style.width = "100%";
   }
-  setLoadingStatus("Loading walking areas for Amenities focus...");
+  setLoadingStatus("Loading walking areas for Amenities Focus...");
 }
 
 function hideIsochroneLoadingScreen() {
@@ -963,7 +963,7 @@ function scanAmenityTypesFromFeatures(fc) {
 function applyScoreModeAmenities() {
   const useLegacy = scoreMode === "expanded" && allAmenitiesDataLegacy && (allAmenitiesDataLegacy.features || []).length > 0;
   if (scoreMode === "expanded" && !useLegacy) {
-    console.warn("amenities_all.geojson missing or empty; Amenities focus mode may be incomplete.");
+    console.warn("amenities_all.geojson missing or empty; Amenities Focus mode may be incomplete.");
   }
   if (useLegacy) {
     allAmenitiesData = allAmenitiesDataLegacy;
@@ -1043,7 +1043,7 @@ function isFilterOnlyStreetLights() {
   );
 }
 
-// Update trees source — Urban95 shows all trees at detail zoom, Amenities focus keeps isochrone clipping
+// Update trees source — Urban95 shows all trees at detail zoom, Amenities Focus keeps isochrone clipping
 function updateTreesSource() {
   if (!allTreesData) return;
 
@@ -2106,8 +2106,8 @@ function buildExplainScoreBreakdown(buildingProps) {
     formulaLine: isClean
       ? buildFilteredFormulaLine(useAll)
       : useAll
-        ? "Amenities focus index = POI count + ¼× trees + ¼× street lights."
-        : "Partial amenities focus index = sum of selected POI counts plus ¼× trees and ¼× lights when selected. ",
+        ? "Amenities Focus index = POI count + ¼× trees + ¼× street lights."
+        : "Partial Amenities Focus index = sum of selected POI counts plus ¼× trees and ¼× lights when selected. ",
     overallScoreLabel: formatMetricNumber(overallScore),
     overallPercentile: overallPct,
     rows: rows,
@@ -4178,7 +4178,7 @@ function renderCitywideModal() {
 
     const histDist =
       scoreMode === "expanded" && stats["distribution_expanded" + sfx]
-        ? "Amenities focus"
+        ? "Amenities Focus"
         : "reachability index";
     html += '<div class="cw-section">';
     html += `<div class="cw-section-title">Building score distribution — ${histDist}</div>`;
