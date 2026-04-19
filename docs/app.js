@@ -15,7 +15,7 @@ const NEIGHBORHOOD_CHARTS_URL = BASE + "/neighborhood_charts.json";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
 
 function shouldTryGzip(url) {
-  return url === BUILDINGS_URL;
+  return url === BUILDINGS_URL || url === ISOCHRONES_URL;
 }
 
 async function parseGzipJsonResponse(response) {
@@ -31,22 +31,75 @@ async function parseGzipJsonResponse(response) {
 async function fetchJsonWithGzipFallback(url, options) {
   const opts = options || {};
   const required = opts.required !== false;
+  const loadStartedAt = performance.now();
+  let loadMode = "plain";
+  console.log("[Load] fetch start:", url);
   if (shouldTryGzip(url)) {
     const gzipUrl = url + ".gz";
     try {
+      loadMode = "gzip";
+      const gzFetchStartedAt = performance.now();
       const gzResponse = await fetch(gzipUrl);
-      return await parseGzipJsonResponse(gzResponse);
+      console.log(
+        "[Load] gzip response received:",
+        gzipUrl,
+        Math.round(performance.now() - gzFetchStartedAt) + "ms",
+        "status",
+        gzResponse.status
+      );
+      const gzParseStartedAt = performance.now();
+      const gzParsed = await parseGzipJsonResponse(gzResponse);
+      console.log(
+        "[Load] gzip parse done:",
+        gzipUrl,
+        Math.round(performance.now() - gzParseStartedAt) + "ms"
+      );
+      console.log(
+        "[Load] fetch complete:",
+        url,
+        "mode=" + loadMode,
+        "total=" + Math.round(performance.now() - loadStartedAt) + "ms"
+      );
+      return gzParsed;
     } catch (gzipErr) {
       console.warn("Compressed fetch failed, falling back to plain file:", gzipUrl, gzipErr);
+      loadMode = "plain-fallback";
     }
   }
 
+  const plainFetchStartedAt = performance.now();
   const plainResponse = await fetch(url);
+  console.log(
+    "[Load] plain response received:",
+    url,
+    Math.round(performance.now() - plainFetchStartedAt) + "ms",
+    "status",
+    plainResponse.status
+  );
   if (!plainResponse.ok) {
     if (required) throw new Error("HTTP " + plainResponse.status + " " + url);
+    console.warn(
+      "[Load] optional fetch missing:",
+      url,
+      "mode=" + loadMode,
+      "total=" + Math.round(performance.now() - loadStartedAt) + "ms"
+    );
     return null;
   }
-  return plainResponse.json();
+  const plainParseStartedAt = performance.now();
+  const plainParsed = await plainResponse.json();
+  console.log(
+    "[Load] plain parse done:",
+    url,
+    Math.round(performance.now() - plainParseStartedAt) + "ms"
+  );
+  console.log(
+    "[Load] fetch complete:",
+    url,
+    "mode=" + loadMode,
+    "total=" + Math.round(performance.now() - loadStartedAt) + "ms"
+  );
+  return plainParsed;
 }
 
 const EXCLUDED_CLEAN_POINT_AMENITY_TYPES = new Set(["bicycle_track"]);
@@ -658,6 +711,7 @@ let neighborhoodCharts = [];
 const loadingScreen = document.getElementById("loading-screen");
 const loadingStatus = document.querySelector(".loading-status");
 const loadingProgressBar = document.querySelector(".loading-progress-bar");
+let waitingForIsochroneLoad = false;
 
 // Track loading progress
 const loadingState = {
@@ -700,9 +754,29 @@ function hideLoadingScreen() {
   }
 }
 
+function showIsochroneLoadingScreen() {
+  waitingForIsochroneLoad = true;
+  if (loadingScreen) {
+    loadingScreen.classList.remove("hidden");
+  }
+  if (loadingProgressBar) {
+    loadingProgressBar.style.width = "100%";
+  }
+  setLoadingStatus("Loading walking areas for Amenities focus...");
+}
+
+function hideIsochroneLoadingScreen() {
+  waitingForIsochroneLoad = false;
+  const allLoaded = Object.values(loadingState).every(Boolean);
+  if (allLoaded) {
+    hideLoadingScreen();
+  }
+}
+
 // Fallback: hide loading screen after 60 seconds regardless
 setTimeout(() => {
   if (loadingScreen && !loadingScreen.classList.contains("hidden")) {
+    if (waitingForIsochroneLoad) return;
     console.warn("Loading timeout - forcing hide");
     hideLoadingScreen();
   }
@@ -768,22 +842,34 @@ async function loadAmenityIcons() {
 function loadTreesIfNeeded() {
   if (treesLoadStarted || allTreesData) return;
   treesLoadStarted = true;
+  const treesLoadStartedAt = performance.now();
+  console.log("[Load] trees: start");
   
   fetchJsonWithGzipFallback(TREES_URL)
     .then(function (treesData) {
       if (!treesData) throw new Error("Empty tree data");
       allTreesData = treesData;
+      console.log("[Load] trees: features", (treesData.features || []).length);
       
+      const treesProcessStartedAt = performance.now();
       const types = allAmenityTypes.slice();
       buildFilterItems(types);
       updateAmenitiesSource();
       updateTreesSource();
       updateStreetLightsSource();
       updateBuildingColors();
+      console.log(
+        "[Load] trees: processing complete",
+        Math.round(performance.now() - treesProcessStartedAt) + "ms"
+      );
 
       if (selectedBuildingCentroid) {
         selectBuilding(selectedBuildingCentroid, false);
       }
+      console.log(
+        "[Load] trees: complete total",
+        Math.round(performance.now() - treesLoadStartedAt) + "ms"
+      );
       loadStreetLightsIfNeeded();
     })
     .catch(function (err) {
@@ -795,22 +881,34 @@ function loadTreesIfNeeded() {
 function loadStreetLightsIfNeeded() {
   if (streetLightsLoadStarted || allStreetLightsData) return;
   streetLightsLoadStarted = true;
+  const streetLightsLoadStartedAt = performance.now();
+  console.log("[Load] street-lights: start");
 
   fetchJsonWithGzipFallback(STREET_LIGHTS_URL)
     .then(function (data) {
       if (!data) throw new Error("Empty street light data");
       allStreetLightsData = data;
+      console.log("[Load] street-lights: features", (data.features || []).length);
 
+      const streetLightsProcessStartedAt = performance.now();
       const types = allAmenityTypes.slice();
       buildFilterItems(types);
       updateAmenitiesSource();
       updateTreesSource();
       updateStreetLightsSource();
       updateBuildingColors();
+      console.log(
+        "[Load] street-lights: processing complete",
+        Math.round(performance.now() - streetLightsProcessStartedAt) + "ms"
+      );
 
       if (selectedBuildingCentroid) {
         selectBuilding(selectedBuildingCentroid, false);
       }
+      console.log(
+        "[Load] street-lights: complete total",
+        Math.round(performance.now() - streetLightsLoadStartedAt) + "ms"
+      );
     })
     .catch(function (err) {
       console.error("Failed to load street lights:", err);
@@ -2479,23 +2577,43 @@ function findClosestBuilding(lngLat) {
 }
 
 // Load isochrone polygons from precomputed file
-function loadIsochrones() {
+function loadIsochrones(options) {
+  const opts = options || {};
+  const background = opts.background === true;
   if (isochronesLoaded || isochroneLoadStarted) return;
   isochroneLoadStarted = true;
+  const isochronesLoadStartedAt = performance.now();
+  console.log("[Load] isochrones: start");
 
-  setLoadingStatus("Loading walking areas\u2026");
+  if (!background) {
+    setLoadingStatus("Loading walking areas...");
+  }
 
   fetchJsonWithGzipFallback(ISOCHRONES_URL)
     .then(function (data) {
       if (!data || !data.features) throw new Error("Invalid isochrone data");
+      const isochronesIndexStartedAt = performance.now();
       data.features.forEach(function (f) {
         const bid = f.properties.building_id;
         const mins = f.properties.minutes;
         isochroneIndex[bid + "_" + mins] = f;
       });
+      console.log(
+        "[Load] isochrones: indexed",
+        data.features.length,
+        "features in",
+        Math.round(performance.now() - isochronesIndexStartedAt) + "ms"
+      );
       isochronesLoaded = true;
       loadingState.isochrones = true;
       updateLoadingProgress();
+      console.log(
+        "[Load] isochrones: complete total",
+        Math.round(performance.now() - isochronesLoadStartedAt) + "ms"
+      );
+      if (waitingForIsochroneLoad) {
+        hideIsochroneLoadingScreen();
+      }
       if (selectedBuildingCentroid) {
         selectBuilding(selectedBuildingCentroid, false);
       }
@@ -2505,6 +2623,12 @@ function loadIsochrones() {
       isochroneLoadStarted = false;
       loadingState.isochrones = true;
       updateLoadingProgress();
+      if (waitingForIsochroneLoad) {
+        setLoadingStatus("Failed loading walking areas. Please retry in a moment.");
+        setTimeout(() => {
+          hideIsochroneLoadingScreen();
+        }, 900);
+      }
     });
 }
 
@@ -2593,6 +2717,21 @@ function selectBuilding(building, doFly = true) {
     updateStreetLightsSource();
     updateRadiusInfo();
 
+    if (doFly) {
+      map.easeTo({
+        center: [building.lng, building.lat],
+        zoom: Math.max(map.getZoom(), 16),
+        duration: 1400,
+        easing: easeInOutQuad,
+        essential: true
+      });
+    }
+    return;
+  }
+
+  if (!isochronesLoaded) {
+    showIsochroneLoadingScreen();
+    loadIsochrones();
     if (doFly) {
       map.easeTo({
         center: [building.lng, building.lat],
@@ -2764,8 +2903,14 @@ if (scoreModelToggle) {
     }
     percentileSeriesCache.clear();
     if (scoreMode !== "weighted") {
+      if (!isochronesLoaded) {
+        showIsochroneLoadingScreen();
+      }
       loadIsochrones();
     } else {
+      if (waitingForIsochroneLoad) {
+        hideIsochroneLoadingScreen();
+      }
       loadingState.isochrones = true;
       updateLoadingProgress();
     }
@@ -2850,27 +2995,42 @@ map.on("mousemove", "street-light-icons", (e) => {
 });
 
 map.on("load", async function () {
+  const appLoadStartedAt = performance.now();
+  console.log("[Load] app startup: map load event");
   loadingState.mapReady = true;
   updateLoadingProgress();
   
   // Load icons first
   setLoadingStatus("Loading icons...");
+  const iconsStartedAt = performance.now();
   await loadAmenityIcons();
+  console.log(
+    "[Load] icons: complete",
+    Math.round(performance.now() - iconsStartedAt) + "ms"
+  );
   loadingState.icons = true;
   updateLoadingProgress();
   
   // Add amenity layers after icons are loaded
+  const layerInitStartedAt = performance.now();
   addAmenityLayers();
   initDeckAmenityOverlay();
   setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
+  console.log(
+    "[Load] layer init: complete",
+    Math.round(performance.now() - layerInitStartedAt) + "ms"
+  );
 
   setLoadingStatus("Loading buildings...");
+  const buildingsStartedAt = performance.now();
   fetchJsonWithGzipFallback(BUILDINGS_URL)
     .then(function (fc) {
+      console.log("[Load] buildings: features", (fc.features || []).length);
       buildingsData = fc;
       warnIfBuildingScoresIncomplete(fc);
       percentileSeriesCache.clear();
       
+      const centroidsStartedAt = performance.now();
       buildingCentroids = [];
       (fc.features || []).forEach(function (f) {
         if (f.geometry) {
@@ -2883,10 +3043,25 @@ map.on("load", async function () {
           });
         }
       });
+      console.log(
+        "[Load] buildings: centroid build",
+        buildingCentroids.length,
+        "items in",
+        Math.round(performance.now() - centroidsStartedAt) + "ms"
+      );
       
+      const buildingColorsStartedAt = performance.now();
       updateBuildingColors();
+      console.log(
+        "[Load] buildings: color update",
+        Math.round(performance.now() - buildingColorsStartedAt) + "ms"
+      );
       loadingState.buildings = true;
       updateLoadingProgress();
+      console.log(
+        "[Load] buildings: complete total",
+        Math.round(performance.now() - buildingsStartedAt) + "ms"
+      );
     })
     .catch(function (err) {
       console.error("Failed to load buildings:", err);
@@ -2895,8 +3070,15 @@ map.on("load", async function () {
     });
 
   setLoadingStatus("Loading parks...");
+  const parksStartedAt = performance.now();
   fetchJsonWithGzipFallback(PARKS_URL, { required: false }).then(function (fc) {
     if (fc && map.getSource("parks")) map.getSource("parks").setData(fc);
+    console.log(
+      "[Load] parks: complete",
+      fc && fc.features ? fc.features.length : 0,
+      "features in",
+      Math.round(performance.now() - parksStartedAt) + "ms"
+    );
     loadingState.parks = true;
     updateLoadingProgress();
   }).catch(function (err) {
@@ -2906,11 +3088,13 @@ map.on("load", async function () {
   });
   
   setLoadingStatus("Loading amenities...");
+  const amenitiesStartedAt = performance.now();
   Promise.all([
     fetchJsonWithGzipFallback(AMENITIES_CLEAN_URL, { required: true }),
     fetchJsonWithGzipFallback(AMENITIES_LEGACY_URL, { required: false })
   ])
     .then(function (results) {
+      const amenitiesProcessStartedAt = performance.now();
       const cleanFc = filterCleanManifestPointFeatures(results[0]);
       const legacyFc = results[1];
 
@@ -2931,9 +3115,21 @@ map.on("load", async function () {
       }
 
       applyScoreModeAmenities();
+      console.log(
+        "[Load] amenities: process/apply complete in",
+        Math.round(performance.now() - amenitiesProcessStartedAt) + "ms",
+        "clean=",
+        cleanFc && cleanFc.features ? cleanFc.features.length : 0,
+        "legacy=",
+        legacyFc && legacyFc.features ? legacyFc.features.length : 0
+      );
 
       loadingState.amenities = true;
       updateLoadingProgress();
+      console.log(
+        "[Load] amenities: complete total",
+        Math.round(performance.now() - amenitiesStartedAt) + "ms"
+      );
 
       if (map.getZoom() >= 13) {
         loadTreesIfNeeded();
@@ -2949,7 +3145,14 @@ map.on("load", async function () {
   loadingState.trees = true;
   updateLoadingProgress();
 
-  loadIsochrones();
+  loadingState.isochrones = true;
+  updateLoadingProgress();
+  loadIsochrones({ background: true });
+  console.log("[Load] isochrones: background loading started");
+  console.log(
+    "[Load] app startup: async jobs queued in",
+    Math.round(performance.now() - appLoadStartedAt) + "ms"
+  );
 
   map.getCanvas().style.cursor = "";
 });
