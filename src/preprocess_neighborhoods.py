@@ -13,6 +13,7 @@ import math
 import os
 import re
 import warnings
+import gzip
 from bisect import bisect_right
 from pathlib import Path
 
@@ -29,7 +30,10 @@ from shapely.geometry import Polygon, mapping as shapely_mapping
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"
 
-BUILDINGS_PATH = DOCS_DATA_DIR / "buildings_accessibility.geojson"
+BUILDINGS_CANDIDATES = [
+    DOCS_DATA_DIR / "buildings_accessibility.geojson.gz",
+    DOCS_DATA_DIR / "buildings_accessibility.geojson",
+]
 NEIGHBORHOODS_PATH = DOCS_DATA_DIR / "neighborhoods.geojson"
 AMENITIES_NEW_PATH = DOCS_DATA_DIR / "amenities_new.geojson"
 AMENITIES_LEGACY_PATH = DOCS_DATA_DIR / "amenities_all.geojson"
@@ -121,8 +125,21 @@ def percentile_ranks_across_hoods(values_by_name: dict) -> dict:
 
 
 def load_geojson(path):
-    with open(path) as f:
+    if str(path).endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return json.load(f)
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_geodataframe(path: Path) -> gpd.GeoDataFrame:
+    if str(path).endswith(".geojson.gz"):
+        data = load_geojson(path)
+        gdf = gpd.GeoDataFrame.from_features(data.get("features") or [])
+        if gdf.crs is None:
+            gdf = gdf.set_crs(epsg=4326)
+        return gdf
+    return gpd.read_file(path)
 
 
 def weighted_subcategory_stems_from_buildings(buildings: gpd.GeoDataFrame) -> dict[str, list[str]]:
@@ -414,8 +431,13 @@ def build_neighborhood_surface_geojson(
 
 
 def main():
+    buildings_path = next((p for p in BUILDINGS_CANDIDATES if p.is_file()), None)
+    if buildings_path is None:
+        candidate_text = ", ".join(str(p) for p in BUILDINGS_CANDIDATES)
+        raise FileNotFoundError(f"No buildings layer found. Tried: {candidate_text}")
+
     logging.info("Loading buildings...")
-    buildings = gpd.read_file(BUILDINGS_PATH)
+    buildings = load_geodataframe(buildings_path)
     logging.info("  %d buildings loaded", len(buildings))
 
     logging.info("Loading neighborhoods...")

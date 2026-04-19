@@ -321,7 +321,14 @@ def _unique_columns(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 def load_layer(path: Path, target_crs: int) -> gpd.GeoDataFrame:
     """Loads a GeoJSON/shape layer and reprojects it to target_crs."""
-    gdf = gpd.read_file(path)
+    if str(path).endswith(".geojson.gz"):
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+        gdf = gpd.GeoDataFrame.from_features(data.get("features") or [])
+        if gdf.crs is None:
+            gdf = gdf.set_crs(epsg=4326)
+    else:
+        gdf = gpd.read_file(path)
     gdf = _unique_columns(gdf)
     if gdf.crs is None:
         raise ValueError(f"Layer {path} has no CRS defined.")
@@ -596,7 +603,7 @@ def fetch_isochrones(lng: float, lat: float, token: str, minutes: list = None) -
 
 
 def compute_building_accessibility(
-    amenity_type_column: str = "top_classi",
+    amenity_type_column: str = "amenity_type",
 ) -> None:
     """Computes per-building accessibility metrics using Mapbox walking isochrones and writes optimized GeoJSON outputs."""
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -611,6 +618,7 @@ def compute_building_accessibility(
     buildings_candidates = [
         FILTERED_DIR / "buildings.geojson",
         DATA_DIR / "buildings.geojson",
+        DOCS_DATA_DIR / "buildings_accessibility.geojson.gz",
         DOCS_DATA_DIR / "buildings_accessibility.geojson",
     ]
     legacy_amenities_candidates = [
@@ -729,13 +737,21 @@ def compute_building_accessibility(
     )
 
     logging.info("Preparing legacy amenities (expanded / main-branch taxonomy)...")
+    legacy_type_col = amenity_type_column
     if len(amenities_legacy) > 0:
-        if amenity_type_column not in amenities_legacy.columns:
-            raise KeyError(f"Expected column '{amenity_type_column}' in legacy amenities layer.")
+        if legacy_type_col not in amenities_legacy.columns:
+            if legacy_type_col != "top_classi" and "top_classi" in amenities_legacy.columns:
+                logging.warning(
+                    "Legacy amenities missing '%s'; falling back to 'top_classi'.",
+                    legacy_type_col,
+                )
+                legacy_type_col = "top_classi"
+            else:
+                raise KeyError(f"Expected column '{legacy_type_col}' in legacy amenities layer.")
 
         amenities_legacy = amenities_legacy.copy()
         amenities_legacy["amenity_type"] = (
-            amenities_legacy[amenity_type_column]
+            amenities_legacy[legacy_type_col]
             .astype(str)
             .str.strip()
             .str.lower()
@@ -746,7 +762,7 @@ def compute_building_accessibility(
         amenities_legacy = amenities_legacy[~amenities_legacy["amenity_type"].isna()]
 
     amenities_legacy = append_shelters_from_merged_to_legacy(
-        amenities_legacy, merged_path, crs_metric, amenity_type_column
+        amenities_legacy, merged_path, crs_metric, legacy_type_col
     )
 
     # Compute building centroids in WGS84 for Mapbox API

@@ -605,6 +605,7 @@ let _deckHovering = false;
 let _lastDeckClickTime = 0;
 let latestRadiusCounts = {};
 const percentileSeriesCache = new Map();
+const buildingAmenityStatKeyCache = new Map();
 const URBAN95_FIXED_MINUTES = 10;
 
 function getScoreModeLabel(mode) {
@@ -1872,6 +1873,24 @@ function percentileForSeries(arr, value) {
   return computePercentileRank(arr, value);
 }
 
+function getBuildingAmenityStatKeysForMinutes(minutes) {
+  const cacheKey = String(minutes);
+  if (buildingAmenityStatKeyCache.has(cacheKey)) {
+    return buildingAmenityStatKeyCache.get(cacheKey);
+  }
+  const keys = new Set();
+  if (buildingsData && Array.isArray(buildingsData.features) && buildingsData.features.length > 0) {
+    const sample = buildingsData.features[0].properties || {};
+    const suffix = "_" + minutes + "min";
+    Object.keys(sample).forEach(function (k) {
+      if (!k.startsWith("amen_") || !k.endsWith(suffix)) return;
+      keys.add(k.slice(5, -suffix.length));
+    });
+  }
+  buildingAmenityStatKeyCache.set(cacheKey, keys);
+  return keys;
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -2032,20 +2051,26 @@ function buildExplainScoreBreakdown(buildingProps) {
       const amenTypes = allFilterTypes.filter(function (t) {
         return t !== "trees" && t !== "street-lights";
       });
+      const availableAmenityStatKeys = getBuildingAmenityStatKeysForMinutes(m);
       const amenRows = [];
       amenTypes.forEach(function (t) {
         const statKey = amenityTypeToBuildingStatKey(t);
         const id = "exp_amen_" + statKey;
         const arr = series.explainAmenity[id];
         if (!arr) return;
-        const cnt = Number(p["amen_" + statKey + sfx]) || 0;
+        const hasBuildingColumn = availableAmenityStatKeys.has(statKey);
+        const cnt = hasBuildingColumn
+          ? Number(p["amen_" + statKey + sfx]) || 0
+          : Number(latestRadiusCounts[t]) || 0;
         const cfg = getAmenityConfig(t);
         amenRows.push({
           label: cfg.label,
-          detail: "POI count in walk range",
+          detail: hasBuildingColumn
+            ? "POI count in walk range"
+            : "POI count in walk range (citywide percentile unavailable in this dataset)",
           value: cnt,
           valueLabel: formatMetricNumber(cnt),
-          percentile: percentileForSeries(arr, cnt),
+          percentile: hasBuildingColumn ? percentileForSeries(arr, cnt) : null,
         });
       });
       amenRows.sort(function (a, b) {
@@ -2323,6 +2348,7 @@ function handleFilterRadioChange(e) {
   updateTreesSource();
   updateStreetLightsSource();
   percentileSeriesCache.clear();
+  buildingAmenityStatKeyCache.clear();
   updateBuildingColors();
 
   if (selectedBuildingCentroid) {
@@ -2435,6 +2461,7 @@ function buildFilterItems(types) {
   syncFilterUiForScoreMode();
   updateFilterLabel();
   percentileSeriesCache.clear();
+  buildingAmenityStatKeyCache.clear();
 }
 
 // Track if we just opened the popup (to prevent immediate close on touch)
@@ -2902,6 +2929,7 @@ if (scoreModelToggle) {
       scoreMode = "weighted";
     }
     percentileSeriesCache.clear();
+    buildingAmenityStatKeyCache.clear();
     if (scoreMode !== "weighted") {
       if (!isochronesLoaded) {
         showIsochroneLoadingScreen();
@@ -3029,6 +3057,7 @@ map.on("load", async function () {
       buildingsData = fc;
       warnIfBuildingScoresIncomplete(fc);
       percentileSeriesCache.clear();
+      buildingAmenityStatKeyCache.clear();
       
       const centroidsStartedAt = performance.now();
       buildingCentroids = [];
