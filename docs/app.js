@@ -15,7 +15,13 @@ const NEIGHBORHOOD_CHARTS_URL = BASE + "/neighborhood_charts.json";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
 
 function shouldTryGzip(url) {
-  return url === BUILDINGS_URL || url === ISOCHRONES_URL;
+  return (
+    url === BUILDINGS_URL ||
+    url === ISOCHRONES_URL ||
+    url === TREES_URL ||
+    url === STREET_LIGHTS_URL ||
+    url === AMENITIES_LEGACY_URL
+  );
 }
 
 async function parseGzipJsonResponse(response) {
