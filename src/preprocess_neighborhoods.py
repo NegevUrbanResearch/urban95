@@ -2,15 +2,18 @@
 
 Outputs:
   - docs/data/neighborhoods.geojson  (enriched with per-amenity averages and percentile ranks)
+  - docs/data/neighborhood_surface.geojson  (precomputed neighborhood hex surface for fast map switching)
   - docs/data/neighborhood_charts.json  (per-hood POI inventory: clean vs legacy taxonomy)
   - docs/data/citywide_stats.json    (aggregate statistics for dashboard)
 """
 
 import json
 import logging
+import math
 import os
 import re
 import warnings
+from bisect import bisect_right
 from pathlib import Path
 
 os.environ["PROJ_DEBUG"] = "OFF"
@@ -21,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely.geometry import Polygon, mapping as shapely_mapping
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"
@@ -32,8 +36,20 @@ AMENITIES_LEGACY_PATH = DOCS_DATA_DIR / "amenities_all.geojson"
 TREES_PATH = DOCS_DATA_DIR / "trees.geojson"
 
 WALK_MINUTES = [5, 10, 15]
+WEIGHTED_CATEGORY_STEMS = [
+    "environmental_quality",
+    "nature",
+    "play",
+    "safety_mobility",
+    "family_services",
+]
 
 EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES = frozenset({"bicycle_track"})
+
+HEX_CELL_SIDE_METERS = 50.0
+HEX_LOCAL_DATA_RADIUS_METERS = 470.0
+HEX_IDW_RADIUS_METERS = 425.0
+URBAN95_FIXED_MINUTES = 10
 
 
 def amenity_stat_keys_from_buildings(buildings: gpd.GeoDataFrame) -> list:
@@ -109,6 +125,294 @@ def load_geojson(path):
         return json.load(f)
 
 
+def weighted_subcategory_stems_from_buildings(buildings: gpd.GeoDataFrame) -> dict[str, list[str]]:
+    out = {stem: set() for stem in WEIGHTED_CATEGORY_STEMS}
+    for col in buildings.columns:
+        col_s = str(col)
+        for stem in WEIGHTED_CATEGORY_STEMS:
+            prefix = f"score_weighted_sub_{stem}_"
+            if not col_s.startswith(prefix):
+                continue
+            for minutes in WALK_MINUTES:
+                suffix = f"_{minutes}min"
+                if not col_s.endswith(suffix):
+                    continue
+                sub_stem = col_s[len(prefix):-len(suffix)]
+                if sub_stem:
+                    out[stem].add(sub_stem)
+                break
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def bulk_percentile_ranks(values: np.ndarray) -> np.ndarray:
+    """Replicates frontend bulkPercentileRanks (0..100, rounded)."""
+    n = int(values.size)
+    if n == 0:
+        return np.array([], dtype=float)
+    sorted_vals = sorted(float(v) for v in values.tolist())
+    out = []
+    for v in values.tolist():
+        at_or_below = bisect_right(sorted_vals, float(v))
+        out.append(round((at_or_below / n) * 100))
+    return np.asarray(out, dtype=float)
+
+
+def as_numeric_series(df: pd.DataFrame, col: str, fallback: float = 0.0) -> np.ndarray:
+    if col not in df.columns:
+        return np.full(len(df), fallback, dtype=float)
+    vals = pd.to_numeric(df[col], errors="coerce").fillna(fallback)
+    return vals.to_numpy(dtype=float)
+
+
+def build_hexagon(cx: float, cy: float, side: float) -> Polygon:
+    half_h = math.sqrt(3) * side / 2.0
+    return Polygon([
+        (cx + side, cy),
+        (cx + side / 2.0, cy + half_h),
+        (cx - side / 2.0, cy + half_h),
+        (cx - side, cy),
+        (cx - side / 2.0, cy - half_h),
+        (cx + side / 2.0, cy - half_h),
+    ])
+
+
+def hex_grid_for_polygon_bounds(minx: float, miny: float, maxx: float, maxy: float, side: float) -> list[Polygon]:
+    """Creates a flat-top hex grid that covers the input bounds."""
+    x_step = 1.5 * side
+    y_step = math.sqrt(3) * side
+    pad_x = side * 2.5
+    pad_y = y_step * 1.5
+    x = minx - pad_x
+    col = 0
+    grid: list[Polygon] = []
+    while x <= maxx + pad_x:
+        y = miny - pad_y
+        if col % 2 == 1:
+            y += y_step / 2.0
+        while y <= maxy + pad_y:
+            grid.append(build_hexagon(x, y, side))
+            y += y_step
+        x += x_step
+        col += 1
+    return grid
+
+
+def has_nearby_sample(cx: float, cy: float, samples: list[tuple[float, float]], radius_m: float) -> bool:
+    if not samples:
+        return False
+    r2 = radius_m * radius_m
+    for sx, sy in samples:
+        dx = sx - cx
+        dy = sy - cy
+        if dx * dx + dy * dy <= r2:
+            return True
+    return False
+
+
+def idw_score(cx: float, cy: float, samples: list[tuple[float, float, float]], radius_m: float) -> float:
+    if not samples:
+        return 0.0
+    r2 = radius_m * radius_m
+    nearest_d2 = float("inf")
+    nearest_score = 0.0
+    num = 0.0
+    den = 0.0
+    for sx, sy, sv in samples:
+        dx = sx - cx
+        dy = sy - cy
+        d2 = dx * dx + dy * dy
+        if d2 < 1e-9:
+            return float(sv)
+        if d2 < nearest_d2:
+            nearest_d2 = d2
+            nearest_score = float(sv)
+        if d2 > r2:
+            continue
+        w = 1.0 / d2
+        num += float(sv) * w
+        den += w
+    if den <= 0:
+        return nearest_score
+    return num / den
+
+
+def round_coords(c, prec=5):
+    if isinstance(c, (list, tuple)):
+        if len(c) >= 2 and isinstance(c[0], (int, float)):
+            return [round(x, prec) for x in c]
+        return [round_coords(x, prec) for x in c]
+    return c
+
+
+def round_geometry_coords(g, prec=5):
+    if not isinstance(g, dict):
+        return g
+    if "coordinates" in g:
+        g["coordinates"] = round_coords(g["coordinates"], prec)
+    elif "geometries" in g and isinstance(g["geometries"], list):
+        g["geometries"] = [round_geometry_coords(sub_geom, prec) for sub_geom in g["geometries"]]
+    return g
+
+
+def normalize_surface_filter_key(value: str) -> str:
+    s = re.sub(r"[^0-9a-zA-Z]+", "_", str(value).strip().lower())
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or "other"
+
+
+def amenity_filter_score_by_type(buildings_df: pd.DataFrame, amenity_type: str, minutes: int) -> np.ndarray:
+    sfx = f"_{minutes}min"
+    t = str(amenity_type)
+    if t == "trees":
+        return as_numeric_series(buildings_df, f"num_trees{sfx}", fallback=0.0) * 0.25
+    if t == "street-lights":
+        return as_numeric_series(buildings_df, f"num_street_lights{sfx}", fallback=0.0) * 0.25
+    stat_key = "healthcare" if t == "health" else t
+    return as_numeric_series(buildings_df, f"amen_{stat_key}{sfx}", fallback=0.0)
+
+
+def build_neighborhood_surface_geojson(
+    neighborhoods_projected: gpd.GeoDataFrame,
+    buildings: gpd.GeoDataFrame,
+    filter_types: list[str],
+) -> dict:
+    assigned = buildings[buildings["neighborhood"].notna()].copy()
+    if len(assigned) == 0:
+        return {"type": "FeatureCollection", "features": []}
+
+    weighted_by_minutes: dict[int, np.ndarray] = {}
+    expanded_pct_by_minutes: dict[int, np.ndarray] = {}
+    filter_pct_by_minutes: dict[int, dict[str, np.ndarray]] = {}
+    for minutes in WALK_MINUTES:
+        sfx = f"_{minutes}min"
+
+        weighted = as_numeric_series(
+            assigned,
+            f"score_weighted{sfx}" if f"score_weighted{sfx}" in assigned.columns else "score_weighted",
+            fallback=0.0,
+        )
+        weighted_by_minutes[minutes] = np.clip(weighted, 0.0, 100.0)
+
+        if f"score_expanded{sfx}" in assigned.columns:
+            expanded_raw = as_numeric_series(assigned, f"score_expanded{sfx}", fallback=0.0)
+        else:
+            amenities = as_numeric_series(assigned, f"num_amenities{sfx}", fallback=0.0)
+            trees = as_numeric_series(assigned, f"num_trees{sfx}", fallback=0.0)
+            street_lights = as_numeric_series(assigned, f"num_street_lights{sfx}", fallback=0.0)
+            expanded_raw = amenities + trees * 0.25 + street_lights * 0.25
+        expanded_pct_by_minutes[minutes] = np.clip(bulk_percentile_ranks(expanded_raw), 0.0, 100.0)
+
+        pct_by_filter: dict[str, np.ndarray] = {}
+        for f_type in filter_types:
+            filter_vals = amenity_filter_score_by_type(assigned, f_type, minutes)
+            pct_by_filter[f_type] = np.clip(bulk_percentile_ranks(filter_vals), 0.0, 100.0)
+        filter_pct_by_minutes[minutes] = pct_by_filter
+
+    weighted_fixed = weighted_by_minutes.get(URBAN95_FIXED_MINUTES)
+    if weighted_fixed is None:
+        weighted_fixed = weighted_by_minutes.get(10) or weighted_by_minutes.get(5) or weighted_by_minutes.get(15)
+    if weighted_fixed is None:
+        weighted_fixed = np.zeros(len(assigned), dtype=float)
+
+    local_points_by_name: dict[str, list[tuple[float, float]]] = {}
+    local_scores_by_name: dict[str, dict[str, list[tuple[float, float, float]]]] = {}
+    for i, (_, row) in enumerate(assigned.iterrows()):
+        name = str(row.get("neighborhood", ""))
+        geom_proj = row.get("_centroid_proj")
+        if geom_proj is None or geom_proj.is_empty:
+            continue
+        x = float(geom_proj.x)
+        y = float(geom_proj.y)
+        local_points_by_name.setdefault(name, []).append((x, y))
+        score_bucket = local_scores_by_name.setdefault(name, {})
+        score_bucket.setdefault("score_weighted", []).append((x, y, float(weighted_fixed[i])))
+        for minutes in WALK_MINUTES:
+            w_key = f"score_weighted_{minutes}min"
+            e_key = f"score_expanded_{minutes}min"
+            score_bucket.setdefault(w_key, []).append((x, y, float(weighted_by_minutes[minutes][i])))
+            score_bucket.setdefault(e_key, []).append((x, y, float(expanded_pct_by_minutes[minutes][i])))
+            for f_type in filter_types:
+                f_norm = normalize_surface_filter_key(f_type)
+                f_key = f"score_filter_{f_norm}_{minutes}min"
+                score_bucket.setdefault(f_key, []).append((x, y, float(filter_pct_by_minutes[minutes][f_type][i])))
+
+    geoms: list = []
+    props: list[dict] = []
+
+    hoods_proj = neighborhoods_projected[["Name", "geometry"]].copy()
+    for _, hood_row in hoods_proj.iterrows():
+        hood_name = str(hood_row.get("Name", "Unknown neighborhood"))
+        poly = hood_row.geometry
+        if poly is None or poly.is_empty:
+            continue
+        minx, miny, maxx, maxy = poly.bounds
+        grid = hex_grid_for_polygon_bounds(minx, miny, maxx, maxy, HEX_CELL_SIDE_METERS)
+
+        local_points = local_points_by_name.get(hood_name, [])
+        local_scores = local_scores_by_name.get(hood_name, {})
+        hex_counter = 1
+        for cell in grid:
+            try:
+                clipped = cell.intersection(poly)
+            except Exception:
+                continue
+            if clipped is None or clipped.is_empty:
+                continue
+            if clipped.geom_type not in ("Polygon", "MultiPolygon"):
+                continue
+
+            centroid = clipped.centroid
+            cx = float(centroid.x)
+            cy = float(centroid.y)
+            has_local = has_nearby_sample(cx, cy, local_points, HEX_LOCAL_DATA_RADIUS_METERS)
+
+            out_props = {
+                "hex_id": f"H{hex_counter}",
+                "neighborhood_name": hood_name,
+                "has_buildings": 1 if has_local else 0,
+            }
+            if has_local:
+                weighted_fixed_val = idw_score(cx, cy, local_scores.get("score_weighted", []), HEX_IDW_RADIUS_METERS)
+            else:
+                weighted_fixed_val = 0.0
+            out_props["score_weighted"] = round(max(0.0, min(100.0, float(weighted_fixed_val))), 2)
+            for minutes in WALK_MINUTES:
+                w_key = f"score_weighted_{minutes}min"
+                e_key = f"score_expanded_{minutes}min"
+                if has_local:
+                    w_val = idw_score(cx, cy, local_scores.get(w_key, []), HEX_IDW_RADIUS_METERS)
+                    e_val = idw_score(cx, cy, local_scores.get(e_key, []), HEX_IDW_RADIUS_METERS)
+                else:
+                    w_val = 0.0
+                    e_val = 0.0
+                out_props[w_key] = round(max(0.0, min(100.0, float(w_val))), 2)
+                out_props[e_key] = round(max(0.0, min(100.0, float(e_val))), 2)
+                for f_type in filter_types:
+                    f_norm = normalize_surface_filter_key(f_type)
+                    f_key = f"score_filter_{f_norm}_{minutes}min"
+                    if has_local:
+                        f_val = idw_score(cx, cy, local_scores.get(f_key, []), HEX_IDW_RADIUS_METERS)
+                    else:
+                        f_val = 0.0
+                    out_props[f_key] = round(max(0.0, min(100.0, float(f_val))), 2)
+
+            geoms.append(clipped)
+            props.append(out_props)
+            hex_counter += 1
+
+    if not geoms:
+        return {"type": "FeatureCollection", "features": []}
+
+    surface_gdf = gpd.GeoDataFrame(props, geometry=geoms, crs=neighborhoods_projected.crs)
+    surface_wgs84 = surface_gdf.to_crs(epsg=4326)
+    features = []
+    for _, row in surface_wgs84.iterrows():
+        geom_json = round_geometry_coords(shapely_mapping(row.geometry))
+        row_props = {k: row[k] for k in surface_wgs84.columns if k != "geometry"}
+        features.append({"type": "Feature", "properties": row_props, "geometry": geom_json})
+    return {"type": "FeatureCollection", "features": features}
+
+
 def main():
     logging.info("Loading buildings...")
     buildings = gpd.read_file(BUILDINGS_PATH)
@@ -128,10 +432,14 @@ def main():
     # Ensure same CRS
     if buildings.crs and neighborhoods.crs and buildings.crs != neighborhoods.crs:
         neighborhoods = neighborhoods.to_crs(buildings.crs)
+    neighborhoods_projected = neighborhoods.to_crs(epsg=2039)
 
     # Compute building centroids for spatial join (project to metric CRS for accuracy)
     buildings_projected = buildings.to_crs(epsg=2039)
-    buildings["_centroid"] = buildings_projected.geometry.centroid.to_crs(epsg=4326)
+    centroids_projected = buildings_projected.geometry.centroid
+    centroids_wgs84 = gpd.GeoSeries(centroids_projected, crs="EPSG:2039").to_crs(epsg=4326)
+    buildings["_centroid_proj"] = centroids_projected
+    buildings["_centroid"] = centroids_wgs84
     buildings_pts = buildings.set_geometry("_centroid")
 
     logging.info("Assigning buildings to neighborhoods...")
@@ -141,6 +449,7 @@ def main():
     logging.info("  %d buildings unassigned (outside all neighborhoods)", unassigned)
 
     existing_types = amenity_stat_keys_from_buildings(buildings)
+    weighted_sub_stems = weighted_subcategory_stems_from_buildings(buildings)
     logging.info("  %d amenity stat keys in buildings: %s", len(existing_types), existing_types[:12])
 
     # Build neighborhood stats
@@ -181,6 +490,31 @@ def main():
                 stats[f"avg_score_clean{sfx}"] = 0.0
                 stats[f"coverage_clean{sfx}"] = 0.0
 
+            sw_col = f"score_weighted{sfx}"
+            if sw_col in group.columns:
+                sw_vals = pd.to_numeric(group[sw_col], errors="coerce").fillna(0)
+                stats[f"avg_score_weighted{sfx}"] = round(float(sw_vals.mean()), 2)
+                stats[f"coverage_weighted{sfx}"] = round(float((sw_vals > 0).mean() * 100), 1)
+            else:
+                stats[f"avg_score_weighted{sfx}"] = 0.0
+                stats[f"coverage_weighted{sfx}"] = 0.0
+
+            for cat_stem in WEIGHTED_CATEGORY_STEMS:
+                cat_col = f"score_weighted_{cat_stem}{sfx}"
+                if cat_col in group.columns:
+                    cat_vals = pd.to_numeric(group[cat_col], errors="coerce").fillna(0)
+                    stats[f"avg_score_weighted_{cat_stem}{sfx}"] = round(float(cat_vals.mean()), 2)
+                else:
+                    stats[f"avg_score_weighted_{cat_stem}{sfx}"] = 0.0
+                for sub_stem in weighted_sub_stems.get(cat_stem, []):
+                    sub_col = f"score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
+                    out_col = f"avg_score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
+                    if sub_col in group.columns:
+                        sub_vals = pd.to_numeric(group[sub_col], errors="coerce").fillna(0)
+                        stats[out_col] = round(float(sub_vals.mean()), 2)
+                    else:
+                        stats[out_col] = 0.0
+
         neighborhood_stats[name] = stats
 
     # Compute percentile rankings across neighborhoods for each metric
@@ -220,6 +554,13 @@ def main():
             rank = sum(1 for v in sorted_vals if v <= val)
             neighborhood_stats[name][f"pct_clean_overall{sfx}"] = round(rank / n_total * 100) if n_total else 0
 
+        vals = {n: s.get(f"avg_score_weighted{sfx}", 0) for n, s in neighborhood_stats.items()}
+        sorted_vals = sorted(vals.values())
+        n_total = len(sorted_vals)
+        for name, val in vals.items():
+            rank = sum(1 for v in sorted_vals if v <= val)
+            neighborhood_stats[name][f"pct_weighted_overall{sfx}"] = round(rank / n_total * 100) if n_total else 0
+
     # Point-in-polygon inventory (clean vs legacy taxonomy) for neighborhood/city pies
     logging.info("Computing per-neighborhood POI inventory (clean vs legacy)...")
     inv_clean = inventory_counts_per_neighborhood(
@@ -247,8 +588,6 @@ def main():
 
     # Enrich neighborhoods GeoJSON and write with WGS84 coordinates
     logging.info("Enriching neighborhoods GeoJSON...")
-    from shapely.geometry import mapping as shapely_mapping
-
     enriched_features = []
     for _, row in neighborhoods.iterrows():
         name = row.get("Name", "")
@@ -264,14 +603,8 @@ def main():
             continue
 
         geom_json = shapely_mapping(geom)
-        # Round coordinates
-        def round_coords(c, prec=5):
-            if isinstance(c, (list, tuple)):
-                if len(c) >= 2 and isinstance(c[0], (int, float)):
-                    return [round(x, prec) for x in c]
-                return [round_coords(x, prec) for x in c]
-            return c
-        geom_json["coordinates"] = round_coords(geom_json["coordinates"])
+
+        geom_json = round_geometry_coords(geom_json)
 
         enriched_features.append({
             "type": "Feature",
@@ -283,6 +616,23 @@ def main():
     with open(DOCS_DATA_DIR / "neighborhoods.geojson", "w") as f:
         json.dump(enriched_geojson, f, separators=(",", ":"), ensure_ascii=False)
     logging.info("  Wrote enriched neighborhoods.geojson (%d features)", len(enriched_features))
+
+    logging.info("Precomputing neighborhood surface hex map...")
+    surface_filter_types: list[str] = ["trees", "street-lights"]
+    for t in existing_types:
+        if t not in surface_filter_types:
+            surface_filter_types.append(t)
+    neighborhood_surface_geojson = build_neighborhood_surface_geojson(
+        neighborhoods_projected,
+        buildings,
+        surface_filter_types,
+    )
+    with open(DOCS_DATA_DIR / "neighborhood_surface.geojson", "w") as f:
+        json.dump(neighborhood_surface_geojson, f, separators=(",", ":"), ensure_ascii=False)
+    logging.info(
+        "  Wrote neighborhood_surface.geojson (%d features)",
+        len(neighborhood_surface_geojson.get("features") or []),
+    )
 
     charts_payload = {"inventory_clean": inv_clean, "inventory_legacy": inv_legacy}
     with open(DOCS_DATA_DIR / "neighborhood_charts.json", "w") as f:
@@ -351,6 +701,30 @@ def main():
                 "counts": hc.tolist(),
                 "edges": [round(e, 2) for e in he.tolist()],
             }
+        sw_col = f"score_weighted{sfx}"
+        if sw_col in buildings.columns:
+            weighted_vals = pd.to_numeric(buildings[sw_col], errors="coerce").fillna(0)
+            hc, he = np.histogram(weighted_vals, bins=20)
+            citywide[f"distribution_weighted{sfx}"] = {
+                "counts": hc.tolist(),
+                "edges": [round(e, 2) for e in he.tolist()],
+            }
+
+        for cat_stem in WEIGHTED_CATEGORY_STEMS:
+            cat_col = f"score_weighted_{cat_stem}{sfx}"
+            if cat_col in buildings.columns:
+                cat_vals = pd.to_numeric(buildings[cat_col], errors="coerce").fillna(0)
+                citywide[f"avg_score_weighted_{cat_stem}{sfx}"] = round(float(cat_vals.mean()), 2)
+            else:
+                citywide[f"avg_score_weighted_{cat_stem}{sfx}"] = 0.0
+            for sub_stem in weighted_sub_stems.get(cat_stem, []):
+                sub_col = f"score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
+                out_col = f"avg_score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
+                if sub_col in buildings.columns:
+                    sub_vals = pd.to_numeric(buildings[sub_col], errors="coerce").fillna(0)
+                    citywide[out_col] = round(float(sub_vals.mean()), 2)
+                else:
+                    citywide[out_col] = 0.0
 
         hist_counts, hist_edges = np.histogram(overall, bins=20)
         citywide[f"distribution{sfx}"] = {
@@ -398,6 +772,25 @@ def main():
             "coverage_clean_10min": stats.get("coverage_clean_10min", 0),
         })
     citywide["neighborhood_ranking_clean"] = ranking_clean
+
+    ranking_weighted = []
+    for name, stats in sorted(
+        neighborhood_stats.items(),
+        key=lambda x: x[1].get("avg_score_weighted_10min", 0),
+        reverse=True,
+    ):
+        ranking_weighted.append({
+            "name": name,
+            "building_count": stats["building_count"],
+            "avg_score_weighted_5min": stats.get("avg_score_weighted_5min", 0),
+            "avg_score_weighted_10min": stats.get("avg_score_weighted_10min", 0),
+            "avg_score_weighted_15min": stats.get("avg_score_weighted_15min", 0),
+            "pct_weighted_overall_5min": stats.get("pct_weighted_overall_5min", 0),
+            "pct_weighted_overall_10min": stats.get("pct_weighted_overall_10min", 0),
+            "pct_weighted_overall_15min": stats.get("pct_weighted_overall_15min", 0),
+            "coverage_weighted_10min": stats.get("coverage_weighted_10min", 0),
+        })
+    citywide["neighborhood_ranking_weighted"] = ranking_weighted
 
     # Per-type neighborhood comparison (top/bottom for each type at 10min)
     type_comparisons = {}

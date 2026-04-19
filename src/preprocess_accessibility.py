@@ -1,7 +1,12 @@
 import logging
 import os
 import warnings
+import math
+import re
 from pathlib import Path
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Suppress PROJ/GDAL version mismatch warnings before importing geopandas
 os.environ["PROJ_DEBUG"] = "OFF"
@@ -22,10 +27,12 @@ import geopandas as gpd
 import pandas as pd
 import json
 import time
+import runpy
 
 import requests
 from dotenv import load_dotenv
 from shapely.geometry import shape as shapely_shape
+from tqdm.auto import tqdm
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
@@ -70,6 +77,9 @@ PARK_SIMPLIFY_TOLERANCE_M = 2.0  # Parks can use higher tolerance since they're 
 
 WALK_MINUTES = [5, 10, 15]
 ISOCHRONE_CACHE_DIR = OUTPUT_DIR / "isochrone_cache"
+_DEFAULT_HIGH_WORKERS = max(16, min(64, (os.cpu_count() or 8) * 4))
+INDEX_SCORE_WORKERS = max(1, int(os.getenv("INDEX_SCORE_WORKERS", _DEFAULT_HIGH_WORKERS)))
+ISOCHRONE_FETCH_WORKERS = max(1, int(os.getenv("ISOCHRONE_FETCH_WORKERS", _DEFAULT_HIGH_WORKERS)))
 
 # Weighted "clean" score (points per unit within walk isochrone). Only layers present in the
 # merged manifest; roads/shadow omitted. Keys match amenity_type in amenities_new / street_lights.
@@ -86,9 +96,107 @@ CLEAN_WEIGHTS = {
     "health": 7.5,
 }
 
+WEIGHTED_CATEGORY_STEMS = {
+    "Environmental Quality": "environmental_quality",
+    "Nature": "nature",
+    "Play": "play",
+    "Safety & Mobility": "safety_mobility",
+    "Family Services": "family_services",
+}
+
 
 def _clean_pts_column_stem(weight_key: str) -> str:
     return str(weight_key).replace("-", "_")
+
+
+def _weighted_component_stem(name: str) -> str:
+    s = str(name or "").strip().lower().replace("&", "and")
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = s.strip("_")
+    return s or "component"
+
+
+def append_weighted_urban95_scores(
+    buildings: gpd.GeoDataFrame,
+    data_dir: Path,
+    workers: int = INDEX_SCORE_WORKERS,
+) -> gpd.GeoDataFrame:
+    """Appends Urban95 weighted score columns using src/index calculation.py methodology."""
+    module_path = REPO_ROOT / "src" / "index calculation.py"
+    mod = runpy.run_path(str(module_path))
+    build_layers = mod["build_layers_from_docs_data"]
+    calculate_master_index = mod["calculate_master_index"]
+    subcategory_weight_map = mod.get("CATEGORY_SUBCATEGORY_WEIGHTS", {}) or {}
+
+    layers = build_layers(data_dir=data_dir, target_epsg=2039)
+    centroids = buildings.geometry.centroid
+
+    total = len(buildings)
+
+    weighted_scores = [0.0] * total
+    category_scores = {stem: [0.0] * total for stem in WEIGHTED_CATEGORY_STEMS.values()}
+    subcategory_defs = []
+    for cat_name, sub_weights in subcategory_weight_map.items():
+        cat_stem = WEIGHTED_CATEGORY_STEMS.get(cat_name)
+        if not cat_stem:
+            continue
+        for sub_name in (sub_weights or {}).keys():
+            sub_stem = _weighted_component_stem(sub_name)
+            subcategory_defs.append((cat_name, cat_stem, sub_name, sub_stem))
+    subcategory_scores = {
+        (cat_stem, sub_stem): [0.0] * total
+        for _, cat_stem, _, sub_stem in subcategory_defs
+    }
+
+    def _score_one(idx: int, x: float, y: float):
+        try:
+            result = calculate_master_index(x, y, layers)
+            weighted = float(result.get("final_index", 0.0))
+            cat = result.get("category_scores", {}) or {}
+            sub = result.get("subcategory_scores", {}) or {}
+            out_cat = {
+                stem: float(cat.get(cat_name, 0.0))
+                for cat_name, stem in WEIGHTED_CATEGORY_STEMS.items()
+            }
+            out_sub = {}
+            for cat_name, cat_stem, sub_name, sub_stem in subcategory_defs:
+                sub_vals = sub.get(cat_name, {}) or {}
+                out_sub[(cat_stem, sub_stem)] = float(sub_vals.get(sub_name, 0.0))
+        except Exception:
+            weighted = 0.0
+            out_cat = {stem: 0.0 for stem in WEIGHTED_CATEGORY_STEMS.values()}
+            out_sub = {k: 0.0 for k in subcategory_scores.keys()}
+        return idx, weighted, out_cat, out_sub
+
+    if total > 0:
+        with ThreadPoolExecutor(max_workers=max(1, int(workers))) as executor:
+            futures = [
+                executor.submit(_score_one, idx, float(pt.x), float(pt.y))
+                for idx, pt in enumerate(centroids)
+            ]
+            for future in tqdm(
+                as_completed(futures),
+                total=total,
+                desc="Urban95 weighted score",
+                unit="building",
+            ):
+                idx, weighted, out_cat, out_sub = future.result()
+                weighted_scores[idx] = weighted
+                for stem, val in out_cat.items():
+                    category_scores[stem][idx] = val
+                for key, val in out_sub.items():
+                    if key in subcategory_scores:
+                        subcategory_scores[key][idx] = val
+
+    for minutes in WALK_MINUTES:
+        suffix = f"_{minutes}min"
+        buildings[f"score_weighted{suffix}"] = weighted_scores
+        for stem, vals in category_scores.items():
+            buildings[f"score_weighted_{stem}{suffix}"] = vals
+        for (cat_stem, sub_stem), vals in subcategory_scores.items():
+            buildings[f"score_weighted_sub_{cat_stem}_{sub_stem}{suffix}"] = vals
+
+    return buildings
 
 
 def _init_clean_pts_columns(buildings, suffix: str) -> None:
@@ -263,6 +371,25 @@ def write_minimal_geojson(gdf: gpd.GeoDataFrame, path: Path, precision: int = 5)
     import json
     from shapely.geometry import mapping
     
+    def _sanitize_json_value(value):
+        """Converts pandas/numpy values to JSON-safe primitives."""
+        if hasattr(value, "item"):
+            value = value.item()
+        if value is None:
+            return None
+        if isinstance(value, float):
+            return value if math.isfinite(value) else 0.0
+        if isinstance(value, dict):
+            return {k: _sanitize_json_value(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_sanitize_json_value(v) for v in value]
+        try:
+            if pd.isna(value):
+                return None
+        except Exception:
+            pass
+        return value
+
     features = []
     for _, row in gdf.iterrows():
         geom = row.geometry
@@ -272,11 +399,13 @@ def write_minimal_geojson(gdf: gpd.GeoDataFrame, path: Path, precision: int = 5)
         geom_json = mapping(geom)
         geom_json = _round_geojson_coords(geom_json, precision)
         
-        props = {k: v for k, v in row.items() if k != gdf.geometry.name and v is not None}
-        # Convert numpy types to native Python types
-        for k, v in props.items():
-            if hasattr(v, 'item'):
-                props[k] = v.item()
+        props = {}
+        for k, v in row.items():
+            if k == gdf.geometry.name:
+                continue
+            sanitized = _sanitize_json_value(v)
+            if sanitized is not None:
+                props[k] = sanitized
         
         features.append({
             "type": "Feature",
@@ -289,8 +418,8 @@ def write_minimal_geojson(gdf: gpd.GeoDataFrame, path: Path, precision: int = 5)
         "features": features
     }
     
-    with open(path, 'w') as f:
-        json.dump(geojson, f, separators=(',', ':'))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(geojson, f, separators=(",", ":"), allow_nan=False)
 
 
 def reduce_coordinate_precision(gdf: gpd.GeoDataFrame, precision: int = 6) -> gpd.GeoDataFrame:
@@ -342,17 +471,21 @@ def _round_geojson_coords(geojson: dict, precision: int) -> dict:
     return {"type": geom_type, "coordinates": round_coord(coords)}
 
 
-_session = None
+_thread_local = threading.local()
 
 
 def _get_session() -> requests.Session:
     """Returns a reusable requests session (connection pooling)."""
-    global _session
-    if _session is None:
-        _session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=4)
-        _session.mount("https://", adapter)
-    return _session
+    session = getattr(_thread_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=ISOCHRONE_FETCH_WORKERS,
+            pool_maxsize=ISOCHRONE_FETCH_WORKERS,
+        )
+        session.mount("https://", adapter)
+        _thread_local.session = session
+    return session
 
 
 def load_mapbox_token() -> str:
@@ -411,10 +544,17 @@ def fetch_isochrones(lng: float, lat: float, token: str, minutes: list = None) -
         session = _get_session()
 
         resp = None
-        for attempt in range(5):
-            resp = session.get(url, params=params, timeout=30)
+        for attempt in range(6):
+            resp = session.get(url, params=params, timeout=(8, 25))
             if resp.status_code == 429:
-                wait = min(2 ** (attempt + 1), 30)
+                retry_after = resp.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        wait = float(retry_after)
+                    except ValueError:
+                        wait = min(1.5 ** (attempt + 1), 12)
+                else:
+                    wait = min(1.5 ** (attempt + 1), 12)
                 time.sleep(wait)
                 continue
             resp.raise_for_status()
@@ -451,12 +591,43 @@ def compute_building_accessibility(
     OUTPUT_DIR.mkdir(exist_ok=True)
     token = load_mapbox_token()
 
-    buildings_path = FILTERED_DIR / "buildings.geojson"
-    if not buildings_path.is_file():
-        buildings_path = DATA_DIR / "buildings.geojson"
-    legacy_amenities_path = DATA_DIR / "amenities.geojson"
-    trees_path = DATA_DIR / "sidewalks_and_trees.geojson"
-    parks_path = DATA_DIR / "parks_and_greenspaces.geojson"
+    def first_existing_path(candidates: list[Path]) -> Path | None:
+        for p in candidates:
+            if p.is_file():
+                return p
+        return None
+
+    buildings_candidates = [
+        FILTERED_DIR / "buildings.geojson",
+        DATA_DIR / "buildings.geojson",
+        DOCS_DATA_DIR / "buildings_accessibility.geojson",
+    ]
+    legacy_amenities_candidates = [
+        DATA_DIR / "amenities.geojson",
+        FILTERED_DIR / "amenities.geojson",
+        DOCS_DATA_DIR / "amenities_all.geojson",
+    ]
+    trees_candidates = [
+        DATA_DIR / "sidewalks_and_trees.geojson",
+        FILTERED_DIR / "sidewalks_and_trees.geojson",
+        DOCS_DATA_DIR / "trees.geojson",
+    ]
+    parks_candidates = [
+        DATA_DIR / "parks_and_greenspaces.geojson",
+        FILTERED_DIR / "parks_and_greenspaces.geojson",
+        DOCS_DATA_DIR / "parks.geojson",
+    ]
+
+    buildings_path = first_existing_path(buildings_candidates)
+    legacy_amenities_path = first_existing_path(legacy_amenities_candidates)
+    trees_path = first_existing_path(trees_candidates)
+    parks_path = first_existing_path(parks_candidates)
+
+    if buildings_path is None:
+        candidate_text = ", ".join(str(p) for p in buildings_candidates)
+        raise FileNotFoundError(
+            f"No buildings layer found. Tried: {candidate_text}"
+        )
 
     logging.info("Loading buildings from %s...", buildings_path)
     crs_metric = 2039
@@ -469,7 +640,7 @@ def compute_building_accessibility(
             raise ValueError("No buildings left after filtering Used == מגורים")
 
     amenities_legacy = gpd.GeoDataFrame()
-    if legacy_amenities_path.is_file():
+    if legacy_amenities_path is not None and legacy_amenities_path.is_file():
         amenities_legacy = load_layer(legacy_amenities_path, target_crs=crs_metric)
         logging.info("Repairing text encoding on legacy amenities (Hebrew/Arabic)...")
         amenities_legacy = repair_dataframe_encoding(amenities_legacy)
@@ -515,13 +686,13 @@ def compute_building_accessibility(
         amenities_clean = gpd.GeoDataFrame(pd.concat(clean_parts, ignore_index=True), crs=f"EPSG:{crs_metric}")
 
     trees_gdf = None
-    if trees_path.exists():
+    if trees_path is not None and trees_path.exists():
         try:
             trees_gdf = load_layer(trees_path, target_crs=crs_metric)
         except Exception as e:
             logging.warning("Could not load trees: %s", e)
     parks_gdf = None
-    if parks_path.exists():
+    if parks_path is not None and parks_path.exists():
         try:
             parks_gdf = load_layer(parks_path, target_crs=crs_metric)
         except Exception as e:
@@ -538,6 +709,13 @@ def compute_building_accessibility(
             pass
     buildings = buildings[valid].copy()
     buildings["building_id"] = buildings.index
+
+    logging.info("Computing Urban95 weighted score columns using %d workers...", INDEX_SCORE_WORKERS)
+    buildings = append_weighted_urban95_scores(
+        buildings,
+        DOCS_DATA_DIR,
+        workers=INDEX_SCORE_WORKERS,
+    )
 
     logging.info("Preparing legacy amenities (expanded / main-branch taxonomy)...")
     if len(amenities_legacy) > 0:
@@ -576,7 +754,8 @@ def compute_building_accessibility(
     ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Build task list and count cached
-    tasks = []
+    cache_to_bids = defaultdict(list)
+    cache_to_coords = {}
     cached_count = 0
     for _, row in centroids_wgs84.iterrows():
         bid = row["building_id"]
@@ -585,44 +764,110 @@ def compute_building_accessibility(
         is_cached = (ISOCHRONE_CACHE_DIR / f"{cache_key}.json").exists()
         if is_cached:
             cached_count += 1
-        tasks.append((bid, lng, lat, is_cached))
+        cache_to_bids[cache_key].append(bid)
+        cache_to_coords[cache_key] = (lng, lat)
 
     api_needed = total - cached_count
     logging.info("Fetching isochrones: %d buildings (%d cached, %d need API calls)...", total, cached_count, api_needed)
 
-    api_count = 0
-    for idx, (bid, lng, lat, is_cached) in enumerate(tasks):
+    for cache_key, bids in cache_to_bids.items():
+        cache_file = ISOCHRONE_CACHE_DIR / f"{cache_key}.json"
+        if not cache_file.exists():
+            continue
+        lng, lat = cache_to_coords[cache_key]
         try:
             polys = fetch_isochrones(lng, lat, token)
-            all_isochrones[bid] = polys
-        except Exception as e:
-            logging.warning("Isochrone fetch failed for building %d: %s", bid, e)
-            all_isochrones[bid] = {}
-            failed_buildings.append((bid, lng, lat))
+            for bid in bids:
+                all_isochrones[bid] = polys
+        except Exception:
+            for bid in bids:
+                all_isochrones[bid] = {}
+                failed_buildings.append((bid, lng, lat, cache_key))
 
-        if not is_cached:
-            api_count += 1
-            time.sleep(1.0)
-            if api_count % 50 == 0:
-                logging.info("  API calls: %d/%d (total progress: %d/%d)", api_count, api_needed, idx + 1, total)
-        elif (idx + 1) % 2000 == 0:
-            logging.info("  Cache progress: %d/%d buildings...", idx + 1, total)
+    missing_keys = []
+    for cache_key, bids in cache_to_bids.items():
+        cache_file = ISOCHRONE_CACHE_DIR / f"{cache_key}.json"
+        if cache_file.exists():
+            continue
+        lng, lat = cache_to_coords[cache_key]
+        missing_keys.append((cache_key, lng, lat, bids))
+
+    logging.info(
+        "Isochrone API key fetches: %d unique centroids across %d buildings using %d workers.",
+        len(missing_keys),
+        sum(len(bids) for _, _, _, bids in missing_keys),
+        ISOCHRONE_FETCH_WORKERS,
+    )
+
+    def _fetch_key_task(cache_key: str, lng: float, lat: float, bids_for_key: list[int]):
+        try:
+            polys = fetch_isochrones(lng, lat, token)
+            return cache_key, polys, None, bids_for_key, lng, lat
+        except Exception as exc:
+            return cache_key, {}, exc, bids_for_key, lng, lat
+
+    if missing_keys:
+        with ThreadPoolExecutor(max_workers=ISOCHRONE_FETCH_WORKERS) as executor:
+            futures = [
+                executor.submit(_fetch_key_task, cache_key, lng, lat, bids)
+                for cache_key, lng, lat, bids in missing_keys
+            ]
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc="Isochrone API",
+                unit="centroid",
+            ):
+                cache_key, polys, err, bids_for_key, lng, lat = future.result()
+                if err is None:
+                    for bid in bids_for_key:
+                        all_isochrones[bid] = polys
+                else:
+                    for bid in bids_for_key:
+                        all_isochrones[bid] = {}
+                        failed_buildings.append((bid, lng, lat, cache_key))
 
     # Retry failed buildings in rounds with increasing delays
     max_retries = 3
     for retry_round in range(max_retries):
         if not failed_buildings:
             break
-        delay = 2.0 * (retry_round + 1)
-        logging.info("Retry round %d/%d: %d failed buildings (%.0fs delay)...", retry_round + 1, max_retries, len(failed_buildings), delay)
+        delay = 1.5 * (retry_round + 1)
+        grouped_failed = defaultdict(list)
+        for bid, lng, lat, cache_key in failed_buildings:
+            grouped_failed[(cache_key, lng, lat)].append(bid)
+
+        logging.info(
+            "Retry round %d/%d: %d failed key requests for %d buildings (%.1fs pre-delay)...",
+            retry_round + 1,
+            max_retries,
+            len(grouped_failed),
+            len(failed_buildings),
+            delay,
+        )
+
+        time.sleep(delay)
         still_failed = []
-        for bid, lng, lat in failed_buildings:
-            time.sleep(delay)
-            try:
-                polys = fetch_isochrones(lng, lat, token)
-                all_isochrones[bid] = polys
-            except Exception:
-                still_failed.append((bid, lng, lat))
+        retry_items = [(k, lng, lat, bids) for (k, lng, lat), bids in grouped_failed.items()]
+        with ThreadPoolExecutor(max_workers=ISOCHRONE_FETCH_WORKERS) as executor:
+            futures = [
+                executor.submit(_fetch_key_task, cache_key, lng, lat, bids)
+                for cache_key, lng, lat, bids in retry_items
+            ]
+            for future in tqdm(
+                as_completed(futures),
+                total=len(futures),
+                desc=f"Isochrone retry {retry_round + 1}",
+                unit="centroid",
+            ):
+                cache_key, polys, err, bids_for_key, lng, lat = future.result()
+                if err is None:
+                    for bid in bids_for_key:
+                        all_isochrones[bid] = polys
+                else:
+                    for bid in bids_for_key:
+                        still_failed.append((bid, lng, lat, cache_key))
+
         recovered = len(failed_buildings) - len(still_failed)
         if recovered:
             logging.info("  Recovered %d buildings in round %d.", recovered, retry_round + 1)
@@ -874,11 +1119,13 @@ def compute_building_accessibility(
     logging.info("Writing optimized GeoJSON files...")
     _sc = [c for c in buildings_web.columns if c.startswith("score_clean")]
     _se = [c for c in buildings_web.columns if c.startswith("score_expanded")]
+    _sw = [c for c in buildings_web.columns if c.startswith("score_weighted")]
     _sl = [c for c in buildings_web.columns if c.startswith("num_street_lights")]
     logging.info(
-        "Building score columns for web: score_clean=%s, score_expanded=%s, num_street_lights=%s",
+        "Building score columns for web: score_clean=%s, score_expanded=%s, score_weighted=%s, num_street_lights=%s",
         bool(_sc),
         bool(_se),
+        bool(_sw),
         bool(_sl),
     )
     write_minimal_geojson(buildings_web, DOCS_DATA_DIR / "buildings_accessibility.geojson", precision=5)
