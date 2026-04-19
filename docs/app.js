@@ -20,17 +20,11 @@ function shouldTryGzip(url) {
 
 async function parseGzipJsonResponse(response) {
   if (!response.ok) throw new Error("HTTP " + response.status);
-  const compressedBuffer = await response.arrayBuffer();
-
-  if (typeof DecompressionStream === "function") {
-    const compressedStream = new Blob([compressedBuffer]).stream();
-    const decompressedStream = compressedStream.pipeThrough(new DecompressionStream("gzip"));
-    const text = await new Response(decompressedStream).text();
-    return JSON.parse(text);
+  if (typeof DecompressionStream !== "function" || !response.body) {
+    throw new Error("Browser does not support gzip stream decompression");
   }
-
-  // Fallback for environments without DecompressionStream support.
-  const text = new TextDecoder("utf-8").decode(new Uint8Array(compressedBuffer));
+  const decompressedStream = response.body.pipeThrough(new DecompressionStream("gzip"));
+  const text = await new Response(decompressedStream).text();
   return JSON.parse(text);
 }
 
@@ -672,7 +666,7 @@ const loadingState = {
   parks: false,
   trees: false,
   amenities: false,
-  isochrones: scoreMode === "weighted",
+  isochrones: false,
   mapReady: false
 };
 
@@ -2955,13 +2949,7 @@ map.on("load", async function () {
   loadingState.trees = true;
   updateLoadingProgress();
 
-  // Isochrones are only needed for Amenities focus mode.
-  if (scoreMode !== "weighted") {
-    loadIsochrones();
-  } else {
-    loadingState.isochrones = true;
-    updateLoadingProgress();
-  }
+  loadIsochrones();
 
   map.getCanvas().style.cursor = "";
 });
