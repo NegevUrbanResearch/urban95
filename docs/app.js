@@ -410,7 +410,7 @@ const map = new maplibregl.Map({
         tileSize: 256,
         attribution: "© OpenStreetMap © CARTO",
       },
-      buildings: { type: "geojson", data: BUILDINGS_URL },
+      buildings: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
       parks: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
       "radius-circle": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
       "selected-building": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
