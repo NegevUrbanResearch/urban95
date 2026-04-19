@@ -3,6 +3,7 @@ import os
 import warnings
 import math
 import re
+import gzip
 from pathlib import Path
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -420,6 +421,16 @@ def write_minimal_geojson(gdf: gpd.GeoDataFrame, path: Path, precision: int = 5)
     
     with open(path, "w", encoding="utf-8") as f:
         json.dump(geojson, f, separators=(",", ":"), allow_nan=False)
+
+
+def write_gzip_copy(path: Path, compresslevel: int = 6) -> Path | None:
+    """Writes a .gz compressed sibling file for a GeoJSON/JSON payload."""
+    if not path.exists() or path.suffix.lower() not in {".geojson", ".json"}:
+        return None
+    gz_path = path.with_suffix(path.suffix + ".gz")
+    with open(path, "rb") as src, gzip.open(gz_path, "wb", compresslevel=compresslevel) as dst:
+        dst.write(src.read())
+    return gz_path
 
 
 def reduce_coordinate_precision(gdf: gpd.GeoDataFrame, precision: int = 6) -> gpd.GeoDataFrame:
@@ -1150,6 +1161,21 @@ def compute_building_accessibility(
         write_minimal_geojson(parks_web, DOCS_DATA_DIR / "parks.geojson", precision=5)
         parks_file_size = (DOCS_DATA_DIR / "parks.geojson").stat().st_size
         logging.info("Parks: %.1fMB (%d features)", parks_file_size / 1e6, len(parks_web))
+
+    buildings_web_path = DOCS_DATA_DIR / "buildings_accessibility.geojson"
+    buildings_gz_path = write_gzip_copy(buildings_web_path)
+    if buildings_gz_path is not None:
+        raw_size = buildings_web_path.stat().st_size
+        gz_size = buildings_gz_path.stat().st_size
+        ratio = (gz_size / raw_size * 100.0) if raw_size else 0.0
+        logging.info(
+            "Compressed %s -> %s (%.1fMB -> %.1fMB, %.1f%%)",
+            buildings_web_path.name,
+            buildings_gz_path.name,
+            raw_size / 1e6,
+            gz_size / 1e6,
+            ratio,
+        )
     
     logging.info("Accessibility preprocessing complete.")
 

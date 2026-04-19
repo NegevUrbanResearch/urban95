@@ -14,6 +14,47 @@ const NEIGHBORHOOD_SURFACE_URL = BASE + "/neighborhood_surface.geojson";
 const NEIGHBORHOOD_CHARTS_URL = BASE + "/neighborhood_charts.json";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
 
+function shouldTryGzip(url) {
+  return url === BUILDINGS_URL;
+}
+
+async function parseGzipJsonResponse(response) {
+  if (!response.ok) throw new Error("HTTP " + response.status);
+  const compressedBuffer = await response.arrayBuffer();
+
+  if (typeof DecompressionStream === "function") {
+    const compressedStream = new Blob([compressedBuffer]).stream();
+    const decompressedStream = compressedStream.pipeThrough(new DecompressionStream("gzip"));
+    const text = await new Response(decompressedStream).text();
+    return JSON.parse(text);
+  }
+
+  // Fallback for environments without DecompressionStream support.
+  const text = new TextDecoder("utf-8").decode(new Uint8Array(compressedBuffer));
+  return JSON.parse(text);
+}
+
+async function fetchJsonWithGzipFallback(url, options) {
+  const opts = options || {};
+  const required = opts.required !== false;
+  if (shouldTryGzip(url)) {
+    const gzipUrl = url + ".gz";
+    try {
+      const gzResponse = await fetch(gzipUrl);
+      return await parseGzipJsonResponse(gzResponse);
+    } catch (gzipErr) {
+      console.warn("Compressed fetch failed, falling back to plain file:", gzipUrl, gzipErr);
+    }
+  }
+
+  const plainResponse = await fetch(url);
+  if (!plainResponse.ok) {
+    if (required) throw new Error("HTTP " + plainResponse.status + " " + url);
+    return null;
+  }
+  return plainResponse.json();
+}
+
 const EXCLUDED_CLEAN_POINT_AMENITY_TYPES = new Set(["bicycle_track"]);
 
 function filterCleanManifestPointFeatures(fc) {
@@ -734,11 +775,7 @@ function loadTreesIfNeeded() {
   if (treesLoadStarted || allTreesData) return;
   treesLoadStarted = true;
   
-  fetch(TREES_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  fetchJsonWithGzipFallback(TREES_URL)
     .then(function (treesData) {
       if (!treesData) throw new Error("Empty tree data");
       allTreesData = treesData;
@@ -765,11 +802,7 @@ function loadStreetLightsIfNeeded() {
   if (streetLightsLoadStarted || allStreetLightsData) return;
   streetLightsLoadStarted = true;
 
-  fetch(STREET_LIGHTS_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  fetchJsonWithGzipFallback(STREET_LIGHTS_URL)
     .then(function (data) {
       if (!data) throw new Error("Empty street light data");
       allStreetLightsData = data;
@@ -2458,11 +2491,7 @@ function loadIsochrones() {
 
   setLoadingStatus("Loading walking areas\u2026");
 
-  fetch(ISOCHRONES_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  fetchJsonWithGzipFallback(ISOCHRONES_URL)
     .then(function (data) {
       if (!data || !data.features) throw new Error("Invalid isochrone data");
       data.features.forEach(function (f) {
@@ -2842,8 +2871,7 @@ map.on("load", async function () {
   setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
 
   setLoadingStatus("Loading buildings...");
-  fetch(BUILDINGS_URL)
-    .then(function (r) { return r.json(); })
+  fetchJsonWithGzipFallback(BUILDINGS_URL)
     .then(function (fc) {
       buildingsData = fc;
       warnIfBuildingScoresIncomplete(fc);
@@ -2873,7 +2901,7 @@ map.on("load", async function () {
     });
 
   setLoadingStatus("Loading parks...");
-  fetch(PARKS_URL).then(function (r) { return r.ok ? r.json() : null; }).then(function (fc) {
+  fetchJsonWithGzipFallback(PARKS_URL, { required: false }).then(function (fc) {
     if (fc && map.getSource("parks")) map.getSource("parks").setData(fc);
     loadingState.parks = true;
     updateLoadingProgress();
@@ -2885,17 +2913,8 @@ map.on("load", async function () {
   
   setLoadingStatus("Loading amenities...");
   Promise.all([
-    fetch(AMENITIES_CLEAN_URL).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status + " " + AMENITIES_CLEAN_URL);
-      return r.json();
-    }),
-    fetch(AMENITIES_LEGACY_URL).then(function (r) {
-      if (!r.ok) {
-        console.warn("Legacy amenities not available:", r.status, AMENITIES_LEGACY_URL);
-        return null;
-      }
-      return r.json();
-    })
+    fetchJsonWithGzipFallback(AMENITIES_CLEAN_URL, { required: true }),
+    fetchJsonWithGzipFallback(AMENITIES_LEGACY_URL, { required: false })
   ])
     .then(function (results) {
       const cleanFc = filterCleanManifestPointFeatures(results[0]);
@@ -3058,11 +3077,7 @@ const modeHint = document.getElementById("mode-hint");
 
 function loadNeighborhoodChartsPayload() {
   if (neighborhoodChartsPayload) return Promise.resolve(neighborhoodChartsPayload);
-  return fetch(NEIGHBORHOOD_CHARTS_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  return fetchJsonWithGzipFallback(NEIGHBORHOOD_CHARTS_URL)
     .then(function (data) {
       neighborhoodChartsPayload = data;
       return data;
@@ -3099,11 +3114,7 @@ function pieSlicesFromInventoryCounts(invObj) {
 
 function loadNeighborhoods() {
   if (neighborhoodsData) return Promise.resolve(neighborhoodsData);
-  return fetch(NEIGHBORHOODS_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  return fetchJsonWithGzipFallback(NEIGHBORHOODS_URL)
     .then(function (data) {
       neighborhoodsData = data;
       return data;
@@ -3116,11 +3127,7 @@ function loadNeighborhoods() {
 
 function loadNeighborhoodSurfaceData() {
   if (neighborhoodSurfaceData) return Promise.resolve(neighborhoodSurfaceData);
-  return fetch(NEIGHBORHOOD_SURFACE_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  return fetchJsonWithGzipFallback(NEIGHBORHOOD_SURFACE_URL)
     .then(function (data) {
       neighborhoodSurfaceData = data;
       return data;
@@ -3134,11 +3141,7 @@ function loadNeighborhoodSurfaceData() {
 
 function loadCitywideStats() {
   if (citywideStats) return Promise.resolve(citywideStats);
-  return fetch(CITYWIDE_STATS_URL)
-    .then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
+  return fetchJsonWithGzipFallback(CITYWIDE_STATS_URL)
     .then(function (data) {
       citywideStats = data;
       return data;
