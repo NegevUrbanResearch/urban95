@@ -10,6 +10,7 @@ const AMENITIES_CLEAN_URL = BASE + "/amenities_new.geojson";
 const AMENITIES_LEGACY_URL = BASE + "/amenities_all.geojson";
 const ISOCHRONES_URL = BASE + "/isochrones.geojson";
 const NEIGHBORHOODS_URL = BASE + "/neighborhoods.geojson";
+const NEIGHBORHOOD_SURFACE_URL = BASE + "/neighborhood_surface.geojson";
 const NEIGHBORHOOD_CHARTS_URL = BASE + "/neighborhood_charts.json";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
 
@@ -86,6 +87,45 @@ const CLEAN_SCORE_COMPONENTS = [
   { key: "businesscenters", label: "Business hubs", shortTag: "business-hub POIs" },
   { key: "street-lights", label: "Street lights", shortTag: "street-light points" },
 ];
+
+const WEIGHTED_CATEGORY_COMPONENTS = [
+  { stem: "environmental_quality", label: "Environmental Quality", weight: 0.2 },
+  { stem: "nature", label: "Nature", weight: 0.15 },
+  { stem: "play", label: "Play", weight: 0.15 },
+  { stem: "safety_mobility", label: "Safety & Mobility", weight: 0.25 },
+  { stem: "family_services", label: "Family Services", weight: 0.25 },
+];
+
+const WEIGHTED_SUBCATEGORY_COMPONENTS = {
+  environmental_quality: [
+    { stem: "shade", label: "Shade", weight: 0.4 },
+    { stem: "trees", label: "Trees", weight: 0.2 },
+    { stem: "roads", label: "Distance from fast roads", weight: 0.4 },
+  ],
+  nature: [
+    { stem: "parks", label: "Parks", weight: 1.0 },
+  ],
+  play: [
+    { stem: "playgrounds", label: "Playgrounds", weight: 1.0 },
+  ],
+  safety_mobility: [
+    { stem: "street_lights", label: "Street lights", weight: 0.15 },
+    { stem: "bicycle_access", label: "Bicycle access", weight: 0.15 },
+    { stem: "bus_stops", label: "Bus stops", weight: 0.3 },
+    { stem: "shelters", label: "Shelters", weight: 0.4 },
+  ],
+  family_services: [
+    { stem: "education", label: "Education", weight: 0.3 },
+    { stem: "community", label: "Community centers", weight: 0.2 },
+    { stem: "business", label: "Business centers", weight: 0.2 },
+    { stem: "health", label: "Health", weight: 0.3 },
+  ],
+};
+
+const WEIGHTED_CATEGORY_LABEL_BY_STEM = WEIGHTED_CATEGORY_COMPONENTS.reduce(function (acc, comp) {
+  acc[comp.stem] = comp.label;
+  return acc;
+}, {});
 
 function cleanPtsPropertyName(weightKey, minutes) {
   return "clean_pts_" + String(weightKey).replace(/-/g, "_") + "_" + minutes + "min";
@@ -223,6 +263,12 @@ function fillExplainSeries(series, feats, minutes) {
     explain[id] = arr;
   };
 
+  if (scoreMode === "weighted") {
+    series.explain = explain;
+    series.explainAmenity = explainAmenity;
+    return;
+  }
+
   if (scoreMode === "clean") {
     if (useAll) {
       const sample = feats.length > 0 ? feats[0].properties || {} : {};
@@ -343,6 +389,10 @@ const map = new maplibregl.Map({
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
+      "neighborhood-score-surface": {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      },
     },
     layers: [
       { id: "osm", type: "raster", source: "osm" },
@@ -408,6 +458,8 @@ const filterPopup = document.getElementById("filter-popup");
 const filterLabel = document.getElementById("filter-label");
 const filterItems = document.getElementById("filter-items");
 const filterBackdrop = document.getElementById("filter-backdrop");
+const amenityFilterSection = document.getElementById("amenity-filter-section");
+const radiusSection = document.getElementById("radius-section");
 const legendLabels = document.getElementById("legend-labels");
 
 const SYM_PCT_KEY = "_u95_symb_pct";
@@ -424,6 +476,7 @@ const AMENITY_CLUSTER_MIN_ZOOM = 13;
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
 const AMENITY_CLUSTER_MAX_COUNT = 50;
+const URBAN95_DETAIL_POINTS_MIN_ZOOM = 15;
 
 // Check if we're on a touch device
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
@@ -458,16 +511,108 @@ let isochronesLoaded = false;
 let isochroneIndex = {};
 let visibleAmenityFeatures = [];
 let deckAmenityOverlay = null;
-let scoreMode = "clean";
+let scoreMode = "weighted";
 let _deckUpdateTimer = null;
 let _deckHovering = false;
 let _lastDeckClickTime = 0;
 let latestRadiusCounts = {};
 const percentileSeriesCache = new Map();
+const URBAN95_FIXED_MINUTES = 10;
+
+function getScoreModeLabel(mode) {
+  const m = mode || scoreMode;
+  if (m === "weighted") return "Urban95";
+  return "Amenities focus";
+}
+
+function forceAllAmenityTypesSelected() {
+  selectedAmenityTypes.clear();
+  allFilterTypes.forEach(function (type) {
+    selectedAmenityTypes.add(type);
+  });
+}
+
+function syncFilterUiForScoreMode() {
+  const isUrban95 = scoreMode === "weighted";
+  if (amenityFilterSection) {
+    amenityFilterSection.style.display = isUrban95 ? "none" : "";
+  }
+  if (radiusSection) {
+    radiusSection.style.display = isUrban95 ? "none" : "";
+  }
+  if (filterBtn) {
+    filterBtn.disabled = isUrban95;
+    filterBtn.setAttribute("aria-disabled", isUrban95 ? "true" : "false");
+  }
+  if (isUrban95) {
+    closeFilterPopup();
+    forceAllAmenityTypesSelected();
+  }
+}
+
+function getNeighborhoodAverageKey(sfx) {
+  if (scoreMode === "weighted") return "avg_score_weighted_" + URBAN95_FIXED_MINUTES + "min";
+  return "avg_overall" + sfx;
+}
+
+function getNeighborhoodPercentileKey(sfx) {
+  if (scoreMode === "weighted") return "pct_weighted_overall_" + URBAN95_FIXED_MINUTES + "min";
+  return "pct_overall" + sfx;
+}
+
+function getScoreMinutes() {
+  if (scoreMode === "weighted") return URBAN95_FIXED_MINUTES;
+  return walkMinutes;
+}
+
+function normalizeSurfaceFilterKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^0-9a-z]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "") || "other";
+}
+
+function getNeighborhoodSurfaceScorePropertyKey() {
+  if (scoreMode === "weighted") return "score_weighted";
+  const sfx = "_" + getScoreMinutes() + "min";
+  if (scoreMode === "expanded") {
+    if (selectedAmenityTypes.size === allFilterTypes.length) {
+      return "score_expanded" + sfx;
+    }
+    if (selectedAmenityTypes.size === 1) {
+      const selectedType = Array.from(selectedAmenityTypes)[0] || "";
+      const scenarioType = selectedType === "health" ? "healthcare" : selectedType;
+      return "score_filter_" + normalizeSurfaceFilterKey(scenarioType) + sfx;
+    }
+  }
+  return null;
+}
+
+function getNeighborhoodSurfaceColorExpression(scoreProperty) {
+  const scoreKey = scoreProperty || "score";
+  return [
+    "case",
+    ["==", ["to-number", ["get", "has_buildings"], 0], 0],
+    "#9ca3af",
+    [
+      "interpolate",
+      ["linear"],
+      ["to-number", ["get", scoreKey], 0],
+      0, "#ef4444",
+      25, "#f97316",
+      50, "#eab308",
+      75, "#84cc16",
+      100, "#22c55e",
+    ],
+  ];
+}
 
 // Analysis mode state
 let currentMode = "house"; // "house" | "neighborhood" | "citywide"
 let neighborhoodsData = null;
+let neighborhoodSurfaceData = null;
 let neighborhoodChartsPayload = null;
 let citywideStats = null;
 let selectedNeighborhood = null;
@@ -486,7 +631,7 @@ const loadingState = {
   parks: false,
   trees: false,
   amenities: false,
-  isochrones: false,
+  isochrones: scoreMode === "weighted",
   mapReady: false
 };
 
@@ -650,17 +795,23 @@ function warnIfBuildingScoresIncomplete(fc) {
   if (!fc || !fc.features || fc.features.length === 0) return;
   const p = fc.features[0].properties || {};
   const keys = Object.keys(p);
-  const hasClean = keys.some(k => k.indexOf("score_clean_") === 0);
   const hasStreet = keys.some(k => k.indexOf("num_street_lights_") === 0);
   const hasExpanded = keys.some(k => k.indexOf("score_expanded_") === 0);
-  if (!hasClean) {
-    console.warn(
-      "[urban95] buildings_accessibility.geojson has no score_clean_* properties. Default (manifest) choropleth will be 0 until you regenerate outputs with src/preprocess_accessibility.py."
-    );
-  }
+  const hasWeighted = keys.some(k => k.indexOf("score_weighted_") === 0);
+  const hasWeightedSubscores = keys.some(k => k.indexOf("score_weighted_sub_") === 0);
   if (!hasStreet || !hasExpanded) {
     console.warn(
       "[urban95] buildings_accessibility.geojson is missing num_street_lights_* or score_expanded_*. Legacy expanded scores and street-light percentiles need a fresh preprocess run."
+    );
+  }
+  if (!hasWeighted) {
+    console.warn(
+      "[urban95] buildings_accessibility.geojson has no score_weighted_* properties. Urban95 mode needs a fresh preprocess run."
+    );
+  }
+  if (!hasWeightedSubscores) {
+    console.warn(
+      "[urban95] buildings_accessibility.geojson has no score_weighted_sub_* properties. Urban95 explain details will be partial until you regenerate outputs with src/preprocess_accessibility.py."
     );
   }
 }
@@ -686,7 +837,7 @@ function scanAmenityTypesFromFeatures(fc) {
 function applyScoreModeAmenities() {
   const useLegacy = scoreMode === "expanded" && allAmenitiesDataLegacy && (allAmenitiesDataLegacy.features || []).length > 0;
   if (scoreMode === "expanded" && !useLegacy) {
-    console.warn("amenities_all.geojson missing or empty; showing default manifest points in legacy mode.");
+    console.warn("amenities_all.geojson missing or empty; Amenities focus mode may be incomplete.");
   }
   if (useLegacy) {
     allAmenitiesData = allAmenitiesDataLegacy;
@@ -699,6 +850,7 @@ function applyScoreModeAmenities() {
   }
   amenitiesInRadiusIds.clear();
   buildFilterItems(allAmenityTypes);
+  syncFilterUiForScoreMode();
   updateAmenitiesSource();
   updateTreesSource();
   updateStreetLightsSource();
@@ -765,12 +917,22 @@ function isFilterOnlyStreetLights() {
   );
 }
 
-// Update trees source — by default only trees within the selected building's isochrone; filter-only Trees shows all
+// Update trees source — Urban95 shows all trees at detail zoom, Amenities focus keeps isochrone clipping
 function updateTreesSource() {
   if (!allTreesData) return;
 
   const source = map.getSource("trees");
   if (!source) return;
+
+  if (scoreMode === "weighted") {
+    const zoom = map.getZoom();
+    if (zoom >= URBAN95_DETAIL_POINTS_MIN_ZOOM) {
+      source.setData(allTreesData);
+    } else {
+      source.setData({ type: "FeatureCollection", features: [] });
+    }
+    return;
+  }
 
   if (selectedAmenityTypes.size === 0) {
     source.setData({ type: "FeatureCollection", features: [] });
@@ -805,6 +967,16 @@ function updateStreetLightsSource() {
 
   const source = map.getSource("street-lights");
   if (!source) return;
+
+  if (scoreMode === "weighted") {
+    const zoom = map.getZoom();
+    if (zoom >= URBAN95_DETAIL_POINTS_MIN_ZOOM) {
+      source.setData(allStreetLightsData);
+    } else {
+      source.setData({ type: "FeatureCollection", features: [] });
+    }
+    return;
+  }
 
   if (selectedAmenityTypes.size === 0) {
     source.setData({ type: "FeatureCollection", features: [] });
@@ -1325,10 +1497,15 @@ function updateBuildingColors() {
     });
   } else {
     const scores = collectBuildingScores();
-    const ranks = bulkPercentileRanks(scores);
+    const ranks = scoreMode === "weighted" ? null : bulkPercentileRanks(scores);
     feats.forEach((f, i) => {
       const p = f.properties || {};
-      p[SYM_PCT_KEY] = ranks[i] != null ? ranks[i] : 0;
+      if (scoreMode === "weighted") {
+        const rawScore = scores[i];
+        p[SYM_PCT_KEY] = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0;
+      } else {
+        p[SYM_PCT_KEY] = ranks[i] != null ? ranks[i] : 0;
+      }
     });
   }
 
@@ -1342,8 +1519,15 @@ function updateBuildingColors() {
 }
 
 function getBuildingOverallScore(props, minutes) {
-  const suffix = "_" + minutes + "min";
+  const suffix = "_" + (scoreMode === "weighted" ? URBAN95_FIXED_MINUTES : minutes) + "min";
   const p = props || {};
+  if (scoreMode === "weighted") {
+    const weighted = p["score_weighted" + suffix];
+    if (weighted !== undefined && weighted !== null && weighted !== "") {
+      return Number(weighted) || 0;
+    }
+    return Number(p.score_weighted) || 0;
+  }
   if (scoreMode === "clean") {
     return getBuildingCleanFilteredScore(p, minutes);
   }
@@ -1419,6 +1603,100 @@ function formatMetricNumber(value) {
   return value.toFixed(1);
 }
 
+function weightedCategoryHighlightsFromSource(source, sfx) {
+  return WEIGHTED_CATEGORY_COMPONENTS.map(function (comp) {
+    const key = "avg_score_weighted_" + comp.stem + sfx;
+    return {
+      stem: comp.stem,
+      label: comp.label,
+      weight: comp.weight,
+      score: Number((source && source[key]) || 0),
+    };
+  });
+}
+
+function weightedSubcategoryComparisonRows(neighborhoodProps, cityStats, sfx) {
+  const rows = [];
+  WEIGHTED_CATEGORY_COMPONENTS.forEach(function (cat) {
+    const subs = WEIGHTED_SUBCATEGORY_COMPONENTS[cat.stem] || [];
+    subs.forEach(function (sub) {
+      const nKey = "avg_score_weighted_sub_" + cat.stem + "_" + sub.stem + sfx;
+      const cKey = "avg_score_weighted_sub_" + cat.stem + "_" + sub.stem + sfx;
+      rows.push({
+        label: cat.label + " · " + sub.label,
+        neighborhood: Number((neighborhoodProps && neighborhoodProps[nKey]) || 0),
+        city: Number((cityStats && cityStats[cKey]) || 0),
+      });
+    });
+  });
+  return rows;
+}
+
+function weightedNeighborhoodRankingRows(stats, sfx) {
+  const rows = ((stats && stats.neighborhood_ranking_weighted) || []).slice();
+  rows.sort(function (a, b) {
+    return (Number(b["avg_score_weighted" + sfx]) || 0) - (Number(a["avg_score_weighted" + sfx]) || 0);
+  });
+  return rows;
+}
+
+function getCitywideWeightedAverageScore(stats, sfx) {
+  if (!stats) return 0;
+  const direct = Number(stats["avg_score_weighted" + sfx]);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const rankingVals = ((stats.neighborhood_ranking_weighted || []).map(function (r) {
+    return Number(r["avg_score_weighted" + sfx]);
+  })).filter(function (v) {
+    return Number.isFinite(v);
+  });
+  if (rankingVals.length > 0) {
+    const mean = rankingVals.reduce(function (sum, v) { return sum + v; }, 0) / rankingVals.length;
+    if (Number.isFinite(mean) && mean > 0) return mean;
+  }
+
+  const m = Number(String(sfx || "").replace(/[^0-9]/g, ""));
+  if (Number.isFinite(m) && m > 0 && buildingsData && Array.isArray(buildingsData.features)) {
+    const vals = buildingsData.features.map(function (f) {
+      return getBuildingOverallScore((f && f.properties) || {}, m);
+    }).filter(function (v) {
+      return Number.isFinite(v);
+    });
+    if (vals.length > 0) {
+      return vals.reduce(function (sum, v) { return sum + v; }, 0) / vals.length;
+    }
+  }
+  return Number.isFinite(direct) ? direct : 0;
+}
+
+function renderWeightedSubcategoryComparisonList(container, rows) {
+  if (!container) return;
+  const ordered = (rows || []).slice().sort(function (a, b) {
+    return b.neighborhood - a.neighborhood;
+  });
+  if (ordered.length === 0) {
+    container.innerHTML = '<p class="score-explain-empty">Subcategory comparison data unavailable.</p>';
+    return;
+  }
+  let html = '<div class="u95-compare-legend"><span class="u95-compare-legend-bar">Neighborhood</span><span class="u95-compare-legend-line">City avg</span></div>';
+  html += '<div class="u95-compare-list">';
+  ordered.forEach(function (row) {
+    const n = Math.max(0, Math.min(100, Number(row.neighborhood) || 0));
+    const c = Math.max(0, Math.min(100, Number(row.city) || 0));
+    const color = n >= 70 ? "#22c55e" : n >= 40 ? "#eab308" : "#ef4444";
+    html += '<div class="u95-compare-item">';
+    html += `<div class="u95-compare-name">${escapeHtml(row.label)}</div>`;
+    html += '<div class="u95-compare-bar-wrap">';
+    html += `<div class="u95-compare-city-marker" style="left:${c}%"></div>`;
+    html += `<div class="u95-compare-bar" style="width:${n}%;background:${color}"></div>`;
+    html += '</div>';
+    html += `<div class="u95-compare-score"><strong>${formatMetricNumber(n)}</strong><span>city avg ${formatMetricNumber(c)}</span></div>`;
+    html += '</div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
 function getPercentileSeriesCacheKey(minutes) {
   const m = String(minutes);
   if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) {
@@ -1454,10 +1732,12 @@ function getPercentileSeriesForMinutes(minutes) {
 function buildPercentileMetrics(buildingProps) {
   if (!buildingProps) return null;
   if (selectedAmenityTypes.size === 0) return null;
+  const overallScore = getBuildingOverallScore(buildingProps, walkMinutes);
+  if (scoreMode === "weighted") {
+    return { overallPercentile: null, overallScore };
+  }
   const series = getPercentileSeriesForMinutes(walkMinutes);
   if (!series || series.overall.length === 0) return null;
-
-  const overallScore = getBuildingOverallScore(buildingProps, walkMinutes);
   const overallPercentile = computePercentileRank(series.overall, overallScore);
   return { overallPercentile, overallScore };
 }
@@ -1483,17 +1763,56 @@ function explainRankBarColor(pct) {
 }
 
 function buildExplainScoreBreakdown(buildingProps) {
-  const series = getPercentileSeriesForMinutes(walkMinutes);
-  if (!series || !series.explain || series.overall.length === 0) return null;
-
   const p = buildingProps || {};
   const m = walkMinutes;
   const sfx = "_" + m + "min";
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   const overallScore = getBuildingOverallScore(p, m);
-  const overallPct = percentileForSeries(series.overall, overallScore);
   const rows = [];
+  const isWeighted = scoreMode === "weighted";
   const isClean = scoreMode === "clean";
+
+  if (isWeighted) {
+    const weightedCategories = [];
+    WEIGHTED_CATEGORY_COMPONENTS.forEach(function (comp) {
+      const col = "score_weighted_" + comp.stem + sfx;
+      const v = Number(p[col]) || 0;
+      const group = {
+        stem: comp.stem,
+        label: comp.label,
+        weight: comp.weight,
+        value: v,
+        valueLabel: formatMetricNumber(v) + " / 100",
+        subrows: [],
+      };
+      const subcomponents = WEIGHTED_SUBCATEGORY_COMPONENTS[comp.stem] || [];
+      subcomponents.forEach(function (sub) {
+        const subCol = "score_weighted_sub_" + comp.stem + "_" + sub.stem + sfx;
+        const raw = p[subCol];
+        const hasValue = raw !== undefined && raw !== null && raw !== "";
+        const subVal = hasValue ? Number(raw) || 0 : null;
+        group.subrows.push({
+          label: sub.label,
+          weight: sub.weight,
+          totalWeight: sub.weight * comp.weight,
+          valueLabel: subVal != null ? formatMetricNumber(subVal) + " / 100" : "Missing (re-run preprocess)",
+        });
+      });
+      weightedCategories.push(group);
+    });
+    return {
+      formulaLine:
+        "Urban95 score = (0.20×Environmental Quality) + (0.15×Nature) + (0.15×Play) + (0.25×Safety & Mobility) + (0.25×Family Services).",
+      overallScoreLabel: formatMetricNumber(overallScore),
+      overallPercentile: null,
+      rows: [],
+      weightedCategories: weightedCategories,
+    };
+  }
+
+  const series = getPercentileSeriesForMinutes(walkMinutes);
+  if (!series || !series.explain || series.overall.length === 0) return null;
+  const overallPct = percentileForSeries(series.overall, overallScore);
 
   if (isClean) {
     if (useAll) {
@@ -1637,8 +1956,8 @@ function buildExplainScoreBreakdown(buildingProps) {
     formulaLine: isClean
       ? buildFilteredFormulaLine(useAll)
       : useAll
-        ? "Expanded index = POI count + ¼× trees + ¼× street lights."
-        : "Partial expanded index = sum of selected POI counts plus ¼× trees and ¼× lights when selected. ",
+        ? "Amenities focus index = POI count + ¼× trees + ¼× street lights."
+        : "Partial amenities focus index = sum of selected POI counts plus ¼× trees and ¼× lights when selected. ",
     overallScoreLabel: formatMetricNumber(overallScore),
     overallPercentile: overallPct,
     rows: rows,
@@ -1646,10 +1965,65 @@ function buildExplainScoreBreakdown(buildingProps) {
 }
 
 function renderScoreExplainCategoryList(breakdown) {
-  if (!breakdown || !breakdown.rows) return "";
+  if (!breakdown) return "";
+  const showPercentile = scoreMode !== "weighted";
+
+  if (scoreMode === "weighted" && Array.isArray(breakdown.weightedCategories)) {
+    let weightedHtml = '<div class="score-explain-list score-explain-list-weighted">';
+    weightedHtml += '<div class="score-explain-equation-card">';
+    weightedHtml += '<div class="score-explain-equation-label">Urban95 equation</div>';
+    weightedHtml += '<div class="score-explain-equation-text">' + escapeHtml(breakdown.formulaLine || "") + "</div>";
+    weightedHtml += "</div>";
+    weightedHtml += '<h3 class="score-explain-section-h">Main category scores</h3>';
+    breakdown.weightedCategories.forEach(function (cat, idx) {
+      const targetId = "score-explain-sub-" + idx;
+      weightedHtml += '<div class="score-explain-card score-explain-category-card">';
+      weightedHtml += '<div class="score-explain-card-main">';
+      weightedHtml += '<div class="score-explain-card-title">';
+      weightedHtml += '<span class="score-explain-card-name">' + escapeHtml(cat.label) + "</span>";
+      weightedHtml +=
+        '<span class="score-explain-card-hint">' +
+        escapeHtml((cat.weight * 100).toFixed(0) + "% of total index") +
+        "</span>";
+      weightedHtml += "</div>";
+      weightedHtml += '<div class="score-explain-card-values">';
+      weightedHtml += '<div class="score-explain-card-metric">';
+      weightedHtml += '<span class="score-explain-metric-label">Category score</span>';
+      weightedHtml += '<span class="score-explain-metric-val">' + escapeHtml(cat.valueLabel) + "</span>";
+      weightedHtml += "</div>";
+      weightedHtml += '<div class="score-explain-card-metric">';
+      weightedHtml +=
+        '<button type="button" class="score-explain-toggle-btn" data-target="' +
+        targetId +
+        '" aria-expanded="false">Show subcategories</button>';
+      weightedHtml += "</div>";
+      weightedHtml += "</div>";
+      weightedHtml += "</div>";
+      weightedHtml +=
+        '<div class="score-explain-sublist" id="' +
+        targetId +
+        '" hidden>';
+      (cat.subrows || []).forEach(function (sub) {
+        weightedHtml += '<div class="score-explain-subitem">';
+        weightedHtml += '<div class="score-explain-subitem-head">';
+        weightedHtml += '<span class="score-explain-subitem-name">' + escapeHtml(sub.label) + "</span>";
+        weightedHtml +=
+          '<span class="score-explain-subitem-weight">' +
+          escapeHtml((sub.weight * 100).toFixed(0) + "% of category • " + (sub.totalWeight * 100).toFixed(1) + "% of total") +
+          "</span>";
+        weightedHtml += "</div>";
+        weightedHtml += '<div class="score-explain-subitem-score">' + escapeHtml(sub.valueLabel) + "</div>";
+        weightedHtml += "</div>";
+      });
+      weightedHtml += "</div>";
+      weightedHtml += "</div>";
+    });
+    weightedHtml += "</div>";
+    return weightedHtml;
+  }
 
   let html = '<div class="score-explain-list">';
-  breakdown.rows.forEach(function (row) {
+  (breakdown.rows || []).forEach(function (row) {
     if (row.sectionTitle) {
       html += '<h3 class="score-explain-section-h">' + escapeHtml(row.sectionTitle) + "</h3>";
       return;
@@ -1673,14 +2047,16 @@ function renderScoreExplainCategoryList(breakdown) {
     html += '<span class="score-explain-metric-label">Score</span>';
     html += '<span class="score-explain-metric-val">' + escapeHtml(row.valueLabel) + "</span>";
     html += "</div>";
-    html += '<div class="score-explain-card-metric">';
-    html += '<span class="score-explain-metric-label">Percentile</span>';
-    html += '<span class="score-explain-metric-pct">' + escapeHtml(pctDisplay) + "</span>";
-    html += "</div>";
+    if (showPercentile) {
+      html += '<div class="score-explain-card-metric">';
+      html += '<span class="score-explain-metric-label">Percentile</span>';
+      html += '<span class="score-explain-metric-pct">' + escapeHtml(pctDisplay) + "</span>";
+      html += "</div>";
+    }
     html += "</div>";
     html += "</div>";
     html += '<div class="score-explain-card-bar">';
-    if (pct != null) {
+    if (showPercentile && pct != null) {
       html +=
         '<div class="score-explain-card-bar-fill" style="width:' +
         barW +
@@ -1707,22 +2083,27 @@ function openScoreExplainModal() {
   if (!modal || !scrollEl) return;
 
   const breakdown = buildExplainScoreBreakdown(selectedBuildingCentroid.feature.properties || {});
-  const scoreKind = scoreMode === "clean" ? "Default" : "Expanded";
+  const scoreKind = getScoreModeLabel();
   const eyebrow = document.getElementById("score-explain-eyebrow");
   const note = document.getElementById("score-explain-hero-note");
   const numEl = document.getElementById("score-explain-hero-num");
   const pctEl = document.getElementById("score-explain-hero-pct");
   const meterFill = document.getElementById("score-explain-hero-meter-fill");
+  const pctBlock = document.querySelector(".score-explain-hero-block-pct");
+  const weightedMode = scoreMode === "weighted";
 
   if (eyebrow) {
-    eyebrow.textContent = scoreKind + " · " + walkMinutes + " min walk · vs all buildings";
+    eyebrow.textContent = weightedMode
+      ? scoreKind + " · citywide comparison"
+      : scoreKind + " · " + walkMinutes + " min walk · vs all buildings";
   }
 
   if (!breakdown) {
     if (numEl) numEl.textContent = "—";
-    if (pctEl) pctEl.textContent = "—";
-    if (meterFill) meterFill.style.width = "0%";
+    if (pctEl) pctEl.textContent = weightedMode ? "0-100 scale" : "—";
+    if (meterFill) meterFill.style.width = weightedMode ? "100%" : "0%";
     if (note) note.textContent = "";
+    if (pctBlock) pctBlock.style.display = weightedMode ? "none" : "";
     scrollEl.innerHTML =
       '<p class="score-explain-empty">Score breakdown is unavailable for the current selection.</p>';
     scrollEl.scrollTop = 0;
@@ -1731,26 +2112,53 @@ function openScoreExplainModal() {
   }
 
   if (numEl) numEl.textContent = breakdown.overallScoreLabel;
-  if (pctEl) {
+  if (pctBlock) pctBlock.style.display = weightedMode ? "none" : "";
+  if (!weightedMode && pctEl) {
     pctEl.textContent =
       breakdown.overallPercentile != null
         ? breakdown.overallPercentile + getOrdinalSuffix(breakdown.overallPercentile)
         : "—";
   }
-  if (meterFill) {
+  if (!weightedMode && meterFill) {
     meterFill.style.width =
       breakdown.overallPercentile != null
         ? Math.min(100, Math.max(0, breakdown.overallPercentile)) + "%"
         : "0%";
   }
-  if (note) note.textContent = breakdown.formulaLine;
+  if (note) {
+    note.textContent = weightedMode
+      ? "Expand each category to inspect subcategory scores and weights."
+      : breakdown.formulaLine;
+  }
 
   scrollEl.innerHTML = renderScoreExplainCategoryList(breakdown);
+  scrollEl.querySelectorAll(".score-explain-toggle-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const targetId = btn.getAttribute("data-target");
+      if (!targetId) return;
+      const target = scrollEl.querySelector("#" + targetId);
+      if (!target) return;
+      const isHidden = target.hasAttribute("hidden");
+      if (isHidden) {
+        target.removeAttribute("hidden");
+        btn.setAttribute("aria-expanded", "true");
+        btn.textContent = "Hide subcategories";
+      } else {
+        target.setAttribute("hidden", "");
+        btn.setAttribute("aria-expanded", "false");
+        btn.textContent = "Show subcategories";
+      }
+    });
+  });
   scrollEl.scrollTop = 0;
   modal.classList.add("show");
 }
 
 function updateFilterLabel() {
+  if (scoreMode === "weighted") {
+    filterLabel.textContent = "Not used in Urban95";
+    return;
+  }
   const total = allFilterTypes.length;
   const selected = selectedAmenityTypes.size;
 
@@ -1766,6 +2174,11 @@ function updateFilterLabel() {
 }
 
 function handleFilterRadioChange(e) {
+  if (scoreMode === "weighted") {
+    forceAllAmenityTypesSelected();
+    updateFilterLabel();
+    return;
+  }
   const input = e.target;
   const value = input.value;
   lastFilterRadioSelection = value;
@@ -1878,7 +2291,9 @@ function buildFilterItems(types) {
     selectedAmenityTypes.add(type);
   });
 
+  const urban95NoFilter = scoreMode === "weighted";
   const wantAll =
+    urban95NoFilter ||
     !lastFilterRadioSelection ||
     lastFilterRadioSelection === "all" ||
     !allFilterTypes.includes(lastFilterRadioSelection);
@@ -1892,6 +2307,7 @@ function buildFilterItems(types) {
     inp.checked = wantAll ? inp.value === "all" : inp.value === lastFilterRadioSelection;
   });
 
+  syncFilterUiForScoreMode();
   updateFilterLabel();
   percentileSeriesCache.clear();
 }
@@ -1900,6 +2316,7 @@ function buildFilterItems(types) {
 let popupJustOpened = false;
 
 function openFilterPopup() {
+  if (scoreMode === "weighted") return;
   filterPopup.classList.add("show");
   filterBtn.classList.add("open");
   if (isTouchDevice && filterBackdrop) {
@@ -1919,6 +2336,7 @@ function closeFilterPopup() {
 
 // Toggle filter popup - works for both mouse and touch
 function toggleFilterPopup() {
+  if (scoreMode === "weighted") return;
   const isOpen = filterPopup.classList.contains("show");
   if (isOpen) {
     closeFilterPopup();
@@ -2126,7 +2544,7 @@ function easeInOutQuad(t) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 }
 
-// Select a building and show its walking isochrone with items
+// Select a building and show contextual detail for the active score mode
 function selectBuilding(building, doFly = true) {
   selectedBuildingCentroid = building;
 
@@ -2134,6 +2552,34 @@ function selectBuilding(building, doFly = true) {
   const buildingSource = map.getSource("selected-building");
   if (buildingSource && building.feature) {
     buildingSource.setData({ type: "FeatureCollection", features: [building.feature] });
+  }
+
+  if (scoreMode === "weighted") {
+    amenitiesInRadiusIds.clear();
+    treesInRadiusIds.clear();
+    streetLightsInRadiusIds.clear();
+    latestRadiusCounts = {};
+
+    const radiusSource = map.getSource("radius-circle");
+    if (radiusSource) {
+      radiusSource.setData({ type: "FeatureCollection", features: [] });
+    }
+
+    updateAmenitiesSource();
+    updateTreesSource();
+    updateStreetLightsSource();
+    updateRadiusInfo();
+
+    if (doFly) {
+      map.easeTo({
+        center: [building.lng, building.lat],
+        zoom: Math.max(map.getZoom(), 16),
+        duration: 1400,
+        easing: easeInOutQuad,
+        essential: true
+      });
+    }
+    return;
   }
 
   // Look up precomputed isochrone polygon
@@ -2221,19 +2667,27 @@ function updateRadiusInfo() {
   }
 
   const metrics = buildPercentileMetrics(selectedBuildingCentroid.feature.properties || {});
-  if (!metrics || metrics.overallPercentile == null) {
-    infoPanel.innerHTML = '<div class="radius-count">Percentile data unavailable</div>';
+  if (!metrics) {
+    infoPanel.innerHTML = '<div class="radius-count">Score data unavailable</div>';
     infoPanel.style.display = "block";
     return;
   }
 
-  const scoreKind = scoreMode === "clean" ? "Default" : "Expanded";
+  const scoreKind = getScoreModeLabel();
+  const weightedMode = scoreMode === "weighted";
 
   let html = '<div class="percentile-popup-inner">';
   html += '<div class="percentile-summary">';
-  html += `<div class="percentile-label">${scoreKind} accessibility — citywide percentile</div>`;
-  html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
-  html += `<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="width:${metrics.overallPercentile}%"></div></div>`;
+  if (weightedMode) {
+    const scoreVal = Math.min(100, Math.max(0, Number(metrics.overallScore) || 0));
+    html += `<div class="percentile-label">${scoreKind} accessibility — weighted score</div>`;
+    html += `<div class="percentile-value">${formatMetricNumber(scoreVal)}<em>/100</em></div>`;
+    html += `<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="width:${scoreVal}%"></div></div>`;
+  } else {
+    html += `<div class="percentile-label">${scoreKind} accessibility — citywide percentile</div>`;
+    html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
+    html += `<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="width:${metrics.overallPercentile}%"></div></div>`;
+  }
   html += "</div>";
 
   html += '<div class="percentile-actions">';
@@ -2280,8 +2734,18 @@ if (scoreModelToggle) {
   scoreModelToggle.addEventListener("change", function (e) {
     const input = e.target;
     if (!input || input.name !== "score-model") return;
-    scoreMode = input.value === "expanded" ? "expanded" : "clean";
+    if (input.value === "expanded" || input.value === "weighted") {
+      scoreMode = input.value;
+    } else {
+      scoreMode = "weighted";
+    }
     percentileSeriesCache.clear();
+    if (scoreMode !== "weighted") {
+      loadIsochrones();
+    } else {
+      loadingState.isochrones = true;
+      updateLoadingProgress();
+    }
     applyScoreModeAmenities();
     if (selectedBuildingCentroid) {
       updateRadiusInfo();
@@ -2472,8 +2936,13 @@ map.on("load", async function () {
   loadingState.trees = true;
   updateLoadingProgress();
 
-  // Load isochrones eagerly so they're ready when a building is clicked
-  loadIsochrones();
+  // Isochrones are only needed for Amenities focus mode.
+  if (scoreMode !== "weighted") {
+    loadIsochrones();
+  } else {
+    loadingState.isochrones = true;
+    updateLoadingProgress();
+  }
 
   map.getCanvas().style.cursor = "";
 });
@@ -2576,6 +3045,10 @@ map.on("zoomend", function() {
     loadTreesIfNeeded();
     loadStreetLightsIfNeeded();
   }
+  if (scoreMode === "weighted") {
+    updateTreesSource();
+    updateStreetLightsSource();
+  }
 });
 
 // ─── Analysis Mode Management ───────────────────────────────────────
@@ -2641,6 +3114,24 @@ function loadNeighborhoods() {
     });
 }
 
+function loadNeighborhoodSurfaceData() {
+  if (neighborhoodSurfaceData) return Promise.resolve(neighborhoodSurfaceData);
+  return fetch(NEIGHBORHOOD_SURFACE_URL)
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      neighborhoodSurfaceData = data;
+      return data;
+    })
+    .catch(function (err) {
+      console.warn("Failed to load neighborhood_surface.geojson:", err);
+      neighborhoodSurfaceData = { type: "FeatureCollection", features: [] };
+      return neighborhoodSurfaceData;
+    });
+}
+
 function loadCitywideStats() {
   if (citywideStats) return Promise.resolve(citywideStats);
   return fetch(CITYWIDE_STATS_URL)
@@ -2663,6 +3154,19 @@ function addNeighborhoodLayers() {
   console.log("[Neighborhood] Adding layers dynamically");
 
   map.addLayer({
+    id: "neighborhoods-surface",
+    type: "fill",
+    source: "neighborhood-score-surface",
+    paint: {
+      "fill-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
+      "fill-outline-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
+      "fill-opacity": 1,
+      "fill-antialias": true,
+    },
+    layout: { visibility: "none" },
+  });
+
+  map.addLayer({
     id: "neighborhoods-fill",
     type: "fill",
     source: "neighborhoods",
@@ -2680,18 +3184,211 @@ function addNeighborhoodLayers() {
 }
 
 
+function extractNeighborhoodPolygonFeatures() {
+  const polygons = [];
+  (neighborhoodsData && neighborhoodsData.features ? neighborhoodsData.features : []).forEach(function (f) {
+    const g = f && f.geometry;
+    if (!g || !g.type) return;
+    if ((g.type === "Polygon" || g.type === "MultiPolygon") && g.coordinates) {
+      polygons.push({
+        type: "Feature",
+        properties: f.properties || {},
+        geometry: g,
+      });
+      return;
+    }
+    if (g.type === "GeometryCollection" && Array.isArray(g.geometries)) {
+      g.geometries.forEach(function (subGeom) {
+        if (!subGeom || !subGeom.type || !subGeom.coordinates) return;
+        if (subGeom.type === "Polygon" || subGeom.type === "MultiPolygon") {
+          polygons.push({
+            type: "Feature",
+            properties: f.properties || {},
+            geometry: subGeom,
+          });
+        }
+      });
+    }
+  });
+  return polygons;
+}
+
+function scoreFromSamplesIDW(lng, lat, samples) {
+  if (!samples || samples.length === 0) return 0;
+  if (samples.length === 1) return samples[0].score;
+  const power = 3.1;
+  const maxDistanceDeg = 0.0042;
+  const maxDistance2 = maxDistanceDeg * maxDistanceDeg;
+  let num = 0;
+  let den = 0;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  let nearestScore = samples[0].score;
+  let nearestD2 = Infinity;
+  for (let i = 0; i < samples.length; i += 1) {
+    const s = samples[i];
+    const dx = (s.lng - lng) * cosLat;
+    const dy = s.lat - lat;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < 1e-12) return s.score;
+    if (d2 < nearestD2) {
+      nearestD2 = d2;
+      nearestScore = s.score;
+    }
+    if (d2 > maxDistance2) continue;
+    const w = 1 / Math.pow(d2, power / 2);
+    num += s.score * w;
+    den += w;
+  }
+  if (den <= 0) return nearestScore;
+  return num / den;
+}
+
+function hasNearbySample(lng, lat, samples, maxDistanceDeg) {
+  if (!samples || samples.length === 0) return false;
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  const maxDistance2 = maxDistanceDeg * maxDistanceDeg;
+  for (let i = 0; i < samples.length; i += 1) {
+    const s = samples[i];
+    const dx = (s.lng - lng) * cosLat;
+    const dy = s.lat - lat;
+    const d2 = dx * dx + dy * dy;
+    if (d2 <= maxDistance2) return true;
+  }
+  return false;
+}
+
+function updateNeighborhoodSurfaceData() {
+  const surfaceSrc = map.getSource("neighborhood-score-surface");
+  if (!surfaceSrc) return;
+  const precomputedScoreKey = getNeighborhoodSurfaceScorePropertyKey();
+
+  if (
+    precomputedScoreKey &&
+    neighborhoodSurfaceData &&
+    Array.isArray(neighborhoodSurfaceData.features) &&
+    neighborhoodSurfaceData.features.length > 0
+  ) {
+    surfaceSrc.setData(neighborhoodSurfaceData);
+    if (map.getLayer("neighborhoods-surface")) {
+      const colorExpr = getNeighborhoodSurfaceColorExpression(precomputedScoreKey);
+      map.setPaintProperty("neighborhoods-surface", "fill-color", colorExpr);
+      map.setPaintProperty("neighborhoods-surface", "fill-outline-color", colorExpr);
+    }
+    return;
+  }
+
+  if (!buildingsData || !neighborhoodsData) return;
+
+  const polygons = extractNeighborhoodPolygonFeatures();
+  if (polygons.length === 0 || !Array.isArray(buildingCentroids) || buildingCentroids.length === 0) {
+    surfaceSrc.setData({ type: "FeatureCollection", features: [] });
+    return;
+  }
+
+  const scores = buildingCentroids.map(function (b) {
+    return getBuildingOverallScore(b.properties || {}, walkMinutes);
+  });
+  const ranks = scoreMode === "weighted" ? null : bulkPercentileRanks(scores);
+
+  const citySamples = [];
+  const neighborhoodSamples = polygons.map(function () { return []; });
+
+  buildingCentroids.forEach(function (b, i) {
+    const lng = Number(b.lng);
+    const lat = Number(b.lat);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    const raw = scoreMode === "weighted" ? scores[i] : ranks[i];
+    const val = Math.max(0, Math.min(100, Number(raw) || 0));
+    citySamples.push({ lng: lng, lat: lat, score: val });
+
+    const pt = turf.point([lng, lat]);
+    let insideIdx = -1;
+    for (let j = 0; j < polygons.length; j++) {
+      try {
+        if (turf.booleanPointInPolygon(pt, polygons[j])) {
+          insideIdx = j;
+          break;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    if (insideIdx >= 0) neighborhoodSamples[insideIdx].push({ lng: lng, lat: lat, score: val });
+  });
+
+  const surfaceFeatures = [];
+  const cellSideKm = 0.05;
+  const localDataRadiusDeg = 0.0042;
+
+  polygons.forEach(function (poly, idx) {
+    let polyBbox = null;
+    try {
+      const gridSeed = turf.buffer(poly, cellSideKm * 1.6, { units: "kilometers" });
+      polyBbox = turf.bbox(gridSeed && gridSeed.geometry ? gridSeed : poly);
+    } catch (_) {
+      return;
+    }
+    const grid = turf.hexGrid(polyBbox, cellSideKm, { units: "kilometers" });
+    let hexCounter = 1;
+    const neighborhoodName = (poly.properties && (poly.properties.Name || poly.properties.name)) || "Unknown neighborhood";
+    (grid.features || []).forEach(function (cell) {
+      let clipped = null;
+      try {
+        clipped = turf.intersect(cell, poly);
+      } catch (_) {
+        clipped = null;
+      }
+      if (!clipped || !clipped.geometry) return;
+      const gType = clipped.geometry.type;
+      if (gType !== "Polygon" && gType !== "MultiPolygon") return;
+
+      const geomCenter = turf.centroid(clipped);
+      const lng = geomCenter.geometry.coordinates[0];
+      const lat = geomCenter.geometry.coordinates[1];
+      const localSamples = neighborhoodSamples[idx];
+      const hasLocalData = hasNearbySample(lng, lat, localSamples, localDataRadiusDeg);
+      const samples = hasLocalData ? localSamples : citySamples;
+      const score = hasLocalData ? scoreFromSamplesIDW(lng, lat, samples) : 0;
+      const clampedScore = Math.max(0, Math.min(100, Number(score) || 0));
+      clipped.properties = Object.assign({}, clipped.properties || {}, {
+        score: clampedScore,
+        hex_id: "H" + String(hexCounter),
+        neighborhood_name: neighborhoodName,
+        has_buildings: hasLocalData ? 1 : 0,
+      });
+      hexCounter += 1;
+      surfaceFeatures.push(clipped);
+    });
+  });
+
+  surfaceSrc.setData({
+    type: "FeatureCollection",
+    features: surfaceFeatures,
+  });
+  if (map.getLayer("neighborhoods-surface")) {
+    const fallbackExpr = getNeighborhoodSurfaceColorExpression("score");
+    map.setPaintProperty("neighborhoods-surface", "fill-color", fallbackExpr);
+    map.setPaintProperty("neighborhoods-surface", "fill-outline-color", fallbackExpr);
+  }
+}
+
+
 function updateNeighborhoodColors() {
   if (!neighborhoodsData || !map.getLayer("neighborhoods-fill")) return;
 
-  const sfx = "_" + walkMinutes + "min";
-  const avgKey = scoreMode === "clean" ? "avg_score_clean" + sfx : "avg_overall" + sfx;
+  const sfx = "_" + getScoreMinutes() + "min";
+  const avgKey = getNeighborhoodAverageKey(sfx);
 
   const feats = neighborhoodsData.features;
   const values = feats.map((f) => (f.properties || {})[avgKey] || 0);
-  const ranks = bulkPercentileRanks(values);
+  const ranks = scoreMode === "weighted" ? null : bulkPercentileRanks(values);
   feats.forEach((f, i) => {
     const p = f.properties || {};
-    p[SYM_PCT_KEY] = ranks[i] != null ? ranks[i] : 0;
+    if (scoreMode === "weighted") {
+      p[SYM_PCT_KEY] = Math.max(0, Math.min(100, Number(values[i]) || 0));
+    } else {
+      p[SYM_PCT_KEY] = ranks[i] != null ? ranks[i] : 0;
+    }
   });
 
   const nhSrc = map.getSource("neighborhoods");
@@ -2708,7 +3405,14 @@ function updateNeighborhoodColors() {
     100, "#22c55e",
   ];
 
-  map.setPaintProperty("neighborhoods-fill", "fill-color", colorExpr);
+  if (currentMode === "neighborhood") {
+    map.setPaintProperty("neighborhoods-fill", "fill-color", "#0f172a");
+    map.setPaintProperty("neighborhoods-fill", "fill-opacity", 0.01);
+    updateNeighborhoodSurfaceData();
+  } else {
+    map.setPaintProperty("neighborhoods-fill", "fill-color", colorExpr);
+    map.setPaintProperty("neighborhoods-fill", "fill-opacity", 0.6);
+  }
   updateAccessibilityLegendLabels();
 }
 
@@ -2771,6 +3475,7 @@ function enterHouseMode() {
     map.setLayoutProperty("buildings-fill", "visibility", "visible");
     map.setPaintProperty("buildings-fill", "fill-opacity", 0.85);
   }
+  if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
   if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "none");
   if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "none");
   if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "none");
@@ -2786,7 +3491,7 @@ function enterNeighborhoodMode() {
   const radiusInfo = document.getElementById("radius-info");
   if (radiusInfo) radiusInfo.style.display = "none";
 
-  // Hide buildings and parks entirely — neighborhood mode shows only polygons
+  // Hide building polygons and render a smooth aggregated heat layer.
   if (map.getLayer("buildings-fill")) {
     map.setLayoutProperty("buildings-fill", "visibility", "none");
   }
@@ -2797,12 +3502,13 @@ function enterNeighborhoodMode() {
 
   // Load and show neighborhoods
   loadNeighborhoods().then(function (data) {
-    loadNeighborhoodChartsPayload().then(function () {
+    Promise.all([loadNeighborhoodChartsPayload(), loadNeighborhoodSurfaceData()]).then(function () {
       const src = map.getSource("neighborhoods");
       if (src) src.setData(data);
       addNeighborhoodLayers();
       updateNeighborhoodColors();
 
+      if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "visible");
       if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
       if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
       if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
@@ -2821,6 +3527,9 @@ function exitNeighborhoodMode() {
     map.setLayoutProperty("buildings-fill", "visibility", "visible");
     map.setPaintProperty("buildings-fill", "fill-opacity", 0.85);
   }
+  if (map.getLayer("neighborhoods-surface")) {
+    map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
+  }
   if (map.getLayer("parks-fill")) {
     map.setLayoutProperty("parks-fill", "visibility", "visible");
   }
@@ -2837,6 +3546,7 @@ function enterCitywideMode() {
       if (src) src.setData(data);
       addNeighborhoodLayers();
       updateNeighborhoodColors();
+      if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
       if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
       if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
       if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
@@ -2865,53 +3575,93 @@ function showNeighborhoodModal(feature) {
   if (!feature || !feature.properties) return;
   selectedNeighborhood = feature;
   const props = feature.properties;
-  const sfx = "_" + walkMinutes + "min";
-  const isClean = scoreMode === "clean";
+  const scoreMinutes = getScoreMinutes();
+  const sfx = "_" + scoreMinutes + "min";
+  const isWeighted = scoreMode === "weighted";
+
+  if (isWeighted) {
+    loadCitywideStats().then(function () {
+      const avgScore = Number(props["avg_score_weighted" + sfx]) || 0;
+      const cityAvgScore = getCitywideWeightedAverageScore(citywideStats, sfx);
+      document.getElementById("neighborhood-modal-title").textContent = props.Name || "Unknown";
+      document.getElementById("neighborhood-modal-subtitle").textContent =
+        `${formatMetricNumber(avgScore)}/100 weighted score • Urban95`;
+
+      const body = document.getElementById("neighborhood-modal-body");
+      neighborhoodCharts.forEach(c => c.destroy());
+      neighborhoodCharts = [];
+
+      let html = "";
+      html += '<div class="cw-summary">';
+      html += `<div class="cw-stat-card"><div class="cw-stat-value">${props.building_count || 0}</div><div class="cw-stat-label">Buildings</div></div>`;
+      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(avgScore)}</div><div class="cw-stat-label">Neighborhood avg score</div></div>`;
+      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(cityAvgScore)}</div><div class="cw-stat-label">City avg score</div></div>`;
+      html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage_weighted" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
+      html += "</div>";
+
+      const highlights = weightedCategoryHighlightsFromSource(props, sfx);
+      html += '<div class="cw-section">';
+      html += '<div class="cw-section-title">Urban95 category highlights</div>';
+      html += '<div class="u95-highlight-grid">';
+      highlights.forEach(function (item) {
+        html += '<div class="u95-highlight-card">';
+        html += `<div class="u95-highlight-name">${item.label}</div>`;
+        html += `<div class="u95-highlight-score">${formatMetricNumber(item.score)}</div>`;
+        html += `<div class="u95-highlight-meta">${Math.round(item.weight * 100)}% weight</div>`;
+        html += "</div>";
+      });
+      html += '</div></div>';
+
+      html += '<div class="cw-section">';
+      html += '<div class="cw-section-title">Building score distribution (citywide)</div>';
+      html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Histogram of Urban95 scores across all buildings</p>';
+      html += '<div class="cw-chart-container"><canvas id="hood-score-hist"></canvas></div>';
+      html += '</div>';
+
+      html += '<div class="cw-section">';
+      html += '<div class="cw-section-title">Subcategory score comparison</div>';
+      html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Horizontal bars = neighborhood average, dashed marker = city average</p>';
+      html += '<div class="u95-compare-container" id="hood-subcategory-compare-list"></div>';
+      html += '</div>';
+
+      body.innerHTML = html;
+      document.getElementById("neighborhood-modal").classList.add("show");
+      requestAnimationFrame(function () {
+        renderNeighborhoodCharts({
+          weighted: true,
+          sfx: sfx,
+          neighborhoodProps: props,
+        });
+      });
+    });
+    return;
+  }
 
   loadNeighborhoodChartsPayload().then(function (invPayload) {
-    const invClean = (invPayload.inventory_clean && invPayload.inventory_clean[props.Name]) || {};
     const invLegacy = (invPayload.inventory_legacy && invPayload.inventory_legacy[props.Name]) || {};
-
-    const pct = isClean
-      ? (props["pct_clean_overall" + sfx] || 0)
-      : (props["pct_overall" + sfx] || 0);
-    console.log("[Neighborhood] Showing modal for", props.Name, "pct:", pct, "clean:", isClean);
+    const pct = props[getNeighborhoodPercentileKey(sfx)] || 0;
 
     document.getElementById("neighborhood-modal-title").textContent = props.Name || "Unknown";
     document.getElementById("neighborhood-modal-subtitle").textContent =
-      `${pct}${getOrdinalSuffix(pct)} percentile • ${walkMinutes}-min walk • ${isClean ? "Default" : "Expanded"}`;
+      `${pct}${getOrdinalSuffix(pct)} percentile • ${scoreMinutes}-min walk • ${getScoreModeLabel()}`;
 
     const body = document.getElementById("neighborhood-modal-body");
     neighborhoodCharts.forEach(c => c.destroy());
     neighborhoodCharts = [];
 
     let html = "";
-
-    const avgWeighted = isClean
-      ? formatMetricNumber(props["avg_score_clean" + sfx] || 0)
-      : formatMetricNumber(props["avg_overall" + sfx] || props["avg_amenities" + sfx] || 0);
     html += '<div class="cw-summary">';
     html += `<div class="cw-stat-card"><div class="cw-stat-value">${props.building_count || 0}</div><div class="cw-stat-label">Buildings</div></div>`;
     html += `<div class="cw-stat-card"><div class="cw-stat-value">${pct}%</div><div class="cw-stat-label">Citywide percentile</div></div>`;
-    if (isClean) {
-      html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage_clean" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
-    } else {
-      html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
-    }
-    html += `<div class="cw-stat-card cw-stat-footnote-card"><div class="cw-stat-value cw-stat-footnote">Weighted avg: ${avgWeighted}</div><div class="cw-stat-label">Index (same walk time)</div></div>`;
+    html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
     html += "</div>";
-
     html += '<div class="cw-section">';
     html += '<div class="cw-section-title">Amenity breakdown</div>';
-    html += isClean
-      ? '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts in this area (default manifest taxonomy)</p>'
-      : '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts in this area (legacy taxonomy)</p>';
+    html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts in this area (legacy taxonomy)</p>';
     html += '<div class="cw-chart-container cw-pie-chart"><canvas id="hood-amenity-pie"></canvas></div>';
     html += "</div>";
 
-    const invForCharts = isClean ? invClean : invLegacy;
-    const barSlices = pieSlicesFromInventoryCounts(invForCharts);
-
+    const barSlices = pieSlicesFromInventoryCounts(invLegacy);
     if (barSlices.values.length > 0) {
       html += '<div class="cw-section">';
       html += '<div class="cw-section-title">Counts by type</div>';
@@ -2919,47 +3669,10 @@ function showNeighborhoodModal(feature) {
       html += "</div>";
     }
 
-    const invRank = isClean ? invClean : invLegacy;
-    const pctPrefix = isClean ? "pct_inv_clean_" : "pct_inv_legacy_";
-    const typeKeys = Object.keys(invRank).filter(function (t) {
-      return t !== "trees" && t !== "street-lights";
-    });
-    const typePercentiles = typeKeys
-      .map(function (t) {
-        const config = getAmenityConfig(t);
-        const pctT = props[pctPrefix + t];
-        if (pctT === undefined || pctT === null) return null;
-        return { label: config.label, color: config.color, pct: pctT };
-      })
-      .filter(Boolean)
-      .sort(function (a, b) {
-        return b.pct - a.pct;
-      });
-
-    if (typePercentiles.length > 0) {
-      html += '<div class="cw-section">';
-      html += '<div class="cw-section-title">Percentile ranking by type</div>';
-      html += '<ul class="cw-ranking-list">';
-      typePercentiles.forEach(function (item, i) {
-        let barColor;
-        if (item.pct >= 70) barColor = "#22c55e";
-        else if (item.pct >= 40) barColor = "#eab308";
-        else barColor = "#ef4444";
-
-        html += '<div class="cw-ranking-item">';
-        html += `<div class="cw-rank-num" style="background:${item.color};color:#fff">${i + 1}</div>`;
-        html += `<div class="cw-rank-name">${item.label}</div>`;
-        html += `<div class="cw-rank-bar-wrap"><div class="cw-rank-bar" style="width:${item.pct}%;background:${barColor}"></div></div>`;
-        html += `<div class="cw-rank-score">${item.pct}%</div>`;
-        html += "</div>";
-      });
-      html += "</ul></div>";
-    }
-
     body.innerHTML = html;
     document.getElementById("neighborhood-modal").classList.add("show");
     requestAnimationFrame(function () {
-      renderNeighborhoodCharts(invForCharts);
+      renderNeighborhoodCharts({ weighted: false, invObj: invLegacy });
     });
   });
 }
@@ -2971,10 +3684,52 @@ function hideNeighborhoodModal() {
   neighborhoodCharts = [];
 }
 
-function renderNeighborhoodCharts(invObj) {
+function renderNeighborhoodCharts(context) {
   if (typeof Chart === "undefined") return;
   Chart.defaults.font.family = "Inter, system-ui, sans-serif";
 
+  if (context && context.weighted) {
+    const sfx = context.sfx;
+    const neighborhoodProps = context.neighborhoodProps || {};
+    const histCanvas = document.getElementById("hood-score-hist");
+    if (histCanvas && citywideStats && citywideStats["distribution_weighted" + sfx]) {
+      const dist = citywideStats["distribution_weighted" + sfx];
+      const labels = dist.edges.slice(0, -1).map((e, i) => `${e}-${dist.edges[i + 1]}`);
+      const breakpoints = [0, 25, 50, 75, 100];
+      neighborhoodCharts.push(new Chart(histCanvas, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            data: dist.counts,
+            backgroundColor: dist.edges.slice(0, -1).map((edge, i) => {
+              const midpoint = (edge + dist.edges[i + 1]) / 2;
+              return getColorForValue(midpoint, breakpoints);
+            }),
+            borderRadius: 3,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 9 } } },
+            y: { grid: { color: "#f3f4f6" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Buildings", font: { size: 11 } } },
+          },
+        },
+      }));
+    }
+
+    const subList = document.getElementById("hood-subcategory-compare-list");
+    if (subList && citywideStats) {
+      const rows = weightedSubcategoryComparisonRows(neighborhoodProps, citywideStats, sfx);
+      renderWeightedSubcategoryComparisonList(subList, rows);
+    }
+    return;
+  }
+
+  const invObj = (context && context.invObj) || {};
   const pieCanvas = document.getElementById("hood-amenity-pie");
   const pie = pieSlicesFromInventoryCounts(invObj);
   if (pieCanvas && pie.values.length > 0) {
@@ -3017,17 +3772,58 @@ function renderNeighborhoodCharts(invObj) {
   }
 }
 
-// Neighborhood click handler
+function getNeighborhoodFeatureAtPoint(point) {
+  const hits = map.queryRenderedFeatures(point, { layers: ["neighborhoods-fill"] });
+  if (!hits || hits.length === 0) return null;
+  return hits[0];
+}
+
+function showNeighborhoodAreaTooltip(point, feature) {
+  if (!feature || !feature.properties) {
+    tooltip.style.display = "none";
+    return;
+  }
+  const props = feature.properties || {};
+  const hexId = props.hex_id || "Hex";
+  const neighborhoodName = props.neighborhood_name || "Unknown neighborhood";
+  const hasBuildings = Number(props.has_buildings) === 1;
+  if (!hasBuildings) {
+    tooltip.textContent = `Hexagon ${hexId} in ${neighborhoodName}\nNo residential buildings`;
+  } else {
+    const scoreKey = getNeighborhoodSurfaceScorePropertyKey() || "score";
+    const score = Math.max(0, Math.min(100, Number(props[scoreKey]) || 0));
+    if (scoreMode === "weighted") {
+      tooltip.textContent = `${hexId} in ${neighborhoodName}\nArea score ${formatMetricNumber(score)}/100`;
+    } else {
+      const pct = Math.round(score);
+      tooltip.textContent = `${hexId} in ${neighborhoodName}\nArea score ${pct}${getOrdinalSuffix(pct)} percentile`;
+    }
+  }
+  tooltip.style.display = "block";
+  tooltip.style.left = (point.x + 12) + "px";
+  tooltip.style.top = (point.y + 12) + "px";
+}
+
+// Neighborhood click handlers
 map.on("click", "neighborhoods-fill", function(e) {
   if (currentMode !== "neighborhood") return;
-  if (!e.features || e.features.length === 0) return;
-
-  const feature = e.features[0];
-  console.log("[Neighborhood] Clicked:", feature.properties.Name);
+  const feature = e.features && e.features.length > 0 ? e.features[0] : null;
+  if (!feature) return;
   showNeighborhoodModal(feature);
 });
 
+map.on("click", "neighborhoods-surface", function(e) {
+  if (currentMode !== "neighborhood") return;
+  const neighborhoodFeature = getNeighborhoodFeatureAtPoint(e.point);
+  if (!neighborhoodFeature) return;
+  showNeighborhoodModal(neighborhoodFeature);
+});
+
 map.on("mouseenter", "neighborhoods-fill", function() {
+  if (currentMode === "neighborhood") map.getCanvas().style.cursor = "pointer";
+});
+
+map.on("mouseenter", "neighborhoods-surface", function() {
   if (currentMode === "neighborhood") map.getCanvas().style.cursor = "pointer";
 });
 
@@ -3038,21 +3834,22 @@ map.on("mouseleave", "neighborhoods-fill", function() {
   }
 });
 
+map.on("mouseleave", "neighborhoods-surface", function() {
+  if (currentMode === "neighborhood") {
+    map.getCanvas().style.cursor = "";
+    tooltip.style.display = "none";
+  }
+});
+
 map.on("mousemove", "neighborhoods-fill", function(e) {
+  if (currentMode !== "neighborhood") return;
+  const areaFeature = map.queryRenderedFeatures(e.point, { layers: ["neighborhoods-surface"] })[0];
+  showNeighborhoodAreaTooltip(e.point, areaFeature || null);
+});
+
+map.on("mousemove", "neighborhoods-surface", function(e) {
   if (currentMode !== "neighborhood" || !e.features || e.features.length === 0) return;
-  const props = e.features[0].properties;
-  const sfx = "_" + walkMinutes + "min";
-  const avgKey = scoreMode === "clean" ? "avg_score_clean" + sfx : "avg_overall" + sfx;
-  const avg = props[avgKey] || 0;
-  const pctVal = props[SYM_PCT_KEY];
-  const pctOverall = scoreMode === "clean"
-    ? (props["pct_clean_overall" + sfx] || 0)
-    : (props["pct_overall" + sfx] || 0);
-  const pctDisplay = pctVal != null && pctVal !== "" ? Number(pctVal) : Number(pctOverall) || 0;
-  tooltip.textContent = `${props.Name || "?"}\n${pctDisplay}${getOrdinalSuffix(pctDisplay)} percentile\nIndex ${formatMetricNumber(avg)}`;
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.point.x + 12) + "px";
-  tooltip.style.top = (e.point.y + 12) + "px";
+  showNeighborhoodAreaTooltip(e.point, e.features[0]);
 });
 
 // ─── Citywide Modal ─────────────────────────────────────────────────
@@ -3105,76 +3902,87 @@ function renderCitywideModal() {
   citywideCharts.forEach(c => c.destroy());
   citywideCharts = [];
 
-  const sfx = "_" + walkMinutes + "min";
+  const scoreMinutes = getScoreMinutes();
+  const sfx = "_" + scoreMinutes + "min";
   const stats = citywideStats;
-  const isClean = scoreMode === "clean";
-  const amenityTotal = isClean
-    ? (stats.total_amenities_clean != null ? stats.total_amenities_clean : Object.values(stats.amenity_counts_clean || {}).reduce(function (a, b) {
-      return a + b;
-    }, 0))
-    : (stats.total_amenities != null ? stats.total_amenities : Object.values(stats.amenity_counts || {}).reduce(function (a, b) {
-      return a + b;
-    }, 0));
+  const isWeighted = scoreMode === "weighted";
 
   let html = '';
 
-  // Summary cards
-  html += '<div class="cw-summary">';
-  html += `<div class="cw-stat-card"><div class="cw-stat-value">${(stats.total_buildings || 0).toLocaleString()}</div><div class="cw-stat-label">Buildings</div></div>`;
-  html += `<div class="cw-stat-card"><div class="cw-stat-value">${amenityTotal.toLocaleString()}</div><div class="cw-stat-label">Amenities</div></div>`;
-  html += '</div>';
+  if (isWeighted) {
+    const highlights = weightedCategoryHighlightsFromSource(stats, sfx);
+    html += '<div class="cw-summary">';
+    html += `<div class="cw-stat-card"><div class="cw-stat-value">${(stats.total_buildings || 0).toLocaleString()}</div><div class="cw-stat-label">Buildings</div></div>`;
+    html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(getCitywideWeightedAverageScore(stats, sfx))}</div><div class="cw-stat-label">City average score</div></div>`;
+    html += '</div>';
 
-  html += '<div class="cw-section">';
-  html += '<div class="cw-section-title">Amenity inventory</div>';
-  html += isClean
-    ? '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts by type (default manifest taxonomy)</p>'
-    : '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts by type (legacy taxonomy)</p>';
-  html += '<div class="cw-chart-container cw-pie-chart"><canvas id="cw-amenity-pie"></canvas></div>';
-  html += '</div>';
-
-  const histDist =
-    scoreMode === "clean" && stats["distribution_clean" + sfx]
-      ? "default"
-      : scoreMode === "expanded" && stats["distribution_expanded" + sfx]
-        ? "expanded"
-        : "reachability index";
-  html += '<div class="cw-section">';
-  html += `<div class="cw-section-title">Building score distribution — ${histDist}</div>`;
-  html += `<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">${walkMinutes}-min walk • Matches ${scoreMode === "clean" ? "Default" : "Expanded"} in Building mode</p>`;
-  html += '<div class="cw-chart-container"><canvas id="cw-score-hist"></canvas></div>';
-  html += '</div>';
-
-  const ranking = (isClean ? (stats.neighborhood_ranking_clean || []) : (stats.neighborhood_ranking || []))
-    .slice()
-    .sort(function (a, b) {
-      const pk = isClean ? ("pct_clean_overall" + sfx) : ("pct_overall" + sfx);
-      const dp = (Number(b[pk]) || 0) - (Number(a[pk]) || 0);
-      if (dp !== 0) return dp;
-      const rk = isClean ? ("avg_score_clean" + sfx) : ("avg_overall" + sfx);
-      return (Number(b[rk]) || 0) - (Number(a[rk]) || 0);
+    html += '<div class="cw-section">';
+    html += '<div class="cw-section-title">Urban95 category highlights</div>';
+    html += '<div class="u95-highlight-grid">';
+    highlights.forEach(function (item) {
+      html += '<div class="u95-highlight-card">';
+      html += `<div class="u95-highlight-name">${item.label}</div>`;
+      html += `<div class="u95-highlight-score">${formatMetricNumber(item.score)}</div>`;
+      html += `<div class="u95-highlight-meta">${Math.round(item.weight * 100)}% weight</div>`;
+      html += '</div>';
     });
+    html += '</div></div>';
 
-  html += '<div class="cw-section">';
-  html += '<div class="cw-section-title">Neighborhood ranking</div>';
-  const scoreKey = isClean ? ("avg_score_clean" + sfx) : ("avg_overall" + sfx);
-  const pctKey = isClean ? ("pct_clean_overall" + sfx) : ("pct_overall" + sfx);
-  html += '<ul class="cw-ranking-list">';
-  ranking.forEach((r, i) => {
-    const score = r[scoreKey] || 0;
-    const pct = Math.min(100, Math.max(0, Number(r[pctKey]) || 0));
-    let barColor;
-    if (pct >= 70) barColor = "#22c55e";
-    else if (pct >= 40) barColor = "#eab308";
-    else barColor = "#ef4444";
+    html += '<div class="cw-section">';
+    html += '<div class="cw-section-title">Building score distribution — Urban95</div>';
+    html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Citywide distribution</p>';
+    html += '<div class="cw-chart-container"><canvas id="cw-score-hist"></canvas></div>';
+    html += '</div>';
 
-    html += `<div class="cw-ranking-item">`;
-    html += `<div class="cw-rank-num">${i + 1}</div>`;
-    html += `<div class="cw-rank-name">${r.name}</div>`;
-    html += `<div class="cw-rank-bar-wrap"><div class="cw-rank-bar" style="width:${pct}%;background:${barColor}"></div></div>`;
-    html += `<div class="cw-rank-score"><strong>${pct}%</strong><span class="cw-rank-sub">${formatMetricNumber(score)} index</span></div>`;
-    html += `</div>`;
-  });
-  html += '</ul></div>';
+    html += '<div class="cw-section">';
+    html += '<div class="cw-section-title">Average score by neighborhood</div>';
+    html += '<div class="cw-chart-container" style="height:420px"><canvas id="cw-neighborhood-score-bar"></canvas></div>';
+    html += '</div>';
+  } else {
+    const amenityTotal = stats.total_amenities != null ? stats.total_amenities : Object.values(stats.amenity_counts || {}).reduce(function (a, b) {
+      return a + b;
+    }, 0);
+    html += '<div class="cw-summary">';
+    html += `<div class="cw-stat-card"><div class="cw-stat-value">${(stats.total_buildings || 0).toLocaleString()}</div><div class="cw-stat-label">Buildings</div></div>`;
+    html += `<div class="cw-stat-card"><div class="cw-stat-value">${amenityTotal.toLocaleString()}</div><div class="cw-stat-label">Amenities</div></div>`;
+    html += '</div>';
+
+    html += '<div class="cw-section">';
+    html += '<div class="cw-section-title">Amenity inventory</div>';
+    html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts by type (legacy taxonomy)</p>';
+    html += '<div class="cw-chart-container cw-pie-chart"><canvas id="cw-amenity-pie"></canvas></div>';
+    html += '</div>';
+
+    const histDist =
+      scoreMode === "expanded" && stats["distribution_expanded" + sfx]
+        ? "Amenities focus"
+        : "reachability index";
+    html += '<div class="cw-section">';
+    html += `<div class="cw-section-title">Building score distribution — ${histDist}</div>`;
+    html += `<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">${scoreMinutes}-min walk • Matches ${getScoreModeLabel()} in Building mode</p>`;
+    html += '<div class="cw-chart-container"><canvas id="cw-score-hist"></canvas></div>';
+    html += '</div>';
+
+    const ranking = (stats.neighborhood_ranking || [])
+      .slice()
+      .sort(function (a, b) {
+        return (Number(b["pct_overall" + sfx]) || 0) - (Number(a["pct_overall" + sfx]) || 0);
+      });
+    html += '<div class="cw-section">';
+    html += '<div class="cw-section-title">Neighborhood ranking</div>';
+    html += '<ul class="cw-ranking-list">';
+    ranking.forEach((r, i) => {
+      const score = Number(r["avg_overall" + sfx]) || 0;
+      const pct = Math.min(100, Math.max(0, Number(r["pct_overall" + sfx]) || 0));
+      html += `<div class="cw-ranking-item">`;
+      html += `<div class="cw-rank-num">${i + 1}</div>`;
+      html += `<div class="cw-rank-name">${r.name}</div>`;
+      html += `<div class="cw-rank-bar-wrap"><div class="cw-rank-bar" style="width:${pct}%;background:#22c55e"></div></div>`;
+      html += `<div class="cw-rank-score"><strong>${pct}%</strong><span class="cw-rank-sub">${formatMetricNumber(score)} index</span></div>`;
+      html += `</div>`;
+    });
+    html += '</ul></div>';
+  }
 
   body.innerHTML = html;
 
@@ -3188,54 +3996,53 @@ function renderCitywideCharts(sfx) {
   const chartFont = { family: "Inter, system-ui, sans-serif" };
   Chart.defaults.font.family = chartFont.family;
 
-  // Amenity inventory pie (legacy taxonomy counts from preprocess_neighborhoods)
-  const pieCanvas = document.getElementById("cw-amenity-pie");
-  if (pieCanvas) {
-    const counts = scoreMode === "clean"
-      ? (citywideStats.amenity_counts_clean || {})
-      : (citywideStats.amenity_counts || {});
-    const labels = [];
-    const values = [];
-    const colors = [];
-    Object.entries(counts)
-      .filter(([type]) => type !== "trees" && type !== "street-lights")
-      .sort((a, b) => b[1] - a[1])
-      .forEach(([type, count]) => {
-        const config = getAmenityConfig(type);
-        labels.push(config.label);
-        values.push(count);
-        colors.push(config.color);
-      });
+  if (scoreMode !== "weighted") {
+    const pieCanvas = document.getElementById("cw-amenity-pie");
+    if (pieCanvas) {
+      const counts = citywideStats.amenity_counts || {};
+      const labels = [];
+      const values = [];
+      const colors = [];
+      Object.entries(counts)
+        .filter(([type]) => type !== "trees" && type !== "street-lights")
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([type, count]) => {
+          const config = getAmenityConfig(type);
+          labels.push(config.label);
+          values.push(count);
+          colors.push(config.color);
+        });
 
-    const pieChart = new Chart(pieCanvas, {
-      type: "doughnut",
-      data: {
-        labels,
-        datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#fff" }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: "right", labels: { boxWidth: 12, padding: 8, font: { size: 11 } } }
+      const pieChart = new Chart(pieCanvas, {
+        type: "doughnut",
+        data: {
+          labels,
+          datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: "#fff" }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: "right", labels: { boxWidth: 12, padding: 8, font: { size: 11 } } }
+          }
         }
-      }
-    });
-    citywideCharts.push(pieChart);
+      });
+      citywideCharts.push(pieChart);
+    }
   }
 
   const histCanvas = document.getElementById("cw-score-hist");
   if (histCanvas) {
     let dist = null;
-    if (scoreMode === "clean" && citywideStats["distribution_clean" + sfx]) {
-      dist = citywideStats["distribution_clean" + sfx];
+    if (scoreMode === "weighted" && citywideStats["distribution_weighted" + sfx]) {
+      dist = citywideStats["distribution_weighted" + sfx];
     } else if (scoreMode === "expanded" && citywideStats["distribution_expanded" + sfx]) {
       dist = citywideStats["distribution_expanded" + sfx];
     } else {
       dist = citywideStats["distribution" + sfx];
     }
     if (dist) {
-      const bldBreakpoints = percentileBreakpoints(collectBuildingScores());
+      const bldBreakpoints = scoreMode === "weighted" ? [0, 25, 50, 75, 100] : percentileBreakpoints(collectBuildingScores());
       const labels = dist.edges.slice(0, -1).map((e, i) => `${e}-${dist.edges[i + 1]}`);
       const histChart = new Chart(histCanvas, {
         type: "bar",
@@ -3264,6 +4071,34 @@ function renderCitywideCharts(sfx) {
     }
   }
 
+  if (scoreMode === "weighted") {
+    const neighborhoodCanvas = document.getElementById("cw-neighborhood-score-bar");
+    if (neighborhoodCanvas) {
+      const ranking = weightedNeighborhoodRankingRows(citywideStats, sfx);
+      citywideCharts.push(new Chart(neighborhoodCanvas, {
+        type: "bar",
+        data: {
+          labels: ranking.map(r => r.name),
+          datasets: [{
+            label: "Average Urban95 score",
+            data: ranking.map(r => Number(r["avg_score_weighted" + sfx]) || 0),
+            backgroundColor: "#2563eb",
+            borderRadius: 3,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: "y",
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { min: 0, max: 100, title: { display: true, text: "Score (0-100)" } },
+            y: { ticks: { font: { size: 10 } } },
+          },
+        },
+      }));
+    }
+  }
 }
 
 // Mode toggle click handler
