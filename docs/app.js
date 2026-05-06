@@ -3365,6 +3365,38 @@ function loadNeighborhoodSurfaceData() {
     });
 }
 
+/**
+ * Neighborhood hex surface (Urban95 + Amenities score modes): opacity decreases as the user zooms in
+ * so streets and basemap stay readable, with a floor so cells never vanish entirely.
+ * Short plateau at 1 (matches legacy “solid” look briefly), then fade starts well before street-detail zoom.
+ * Zoom stops MUST be strictly ascending (MapLibre rejects out-of-order interpolate stops — layer will not draw).
+ */
+function getNeighborhoodHexSurfaceOpacityExpression() {
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    10,
+    1,
+    12,
+    1,
+    13,
+    0.88,
+    14.5,
+    0.68,
+    16.5,
+    0.5,
+    18.5,
+    0.32,
+    20,
+    0.2,
+    21,
+    0.12,
+    24,
+    0.12,
+  ];
+}
+
 function loadCitywideStats() {
   if (citywideStats) return Promise.resolve(citywideStats);
   return fetchJsonWithGzipFallback(CITYWIDE_STATS_URL)
@@ -3389,7 +3421,7 @@ function addNeighborhoodLayers() {
     paint: {
       "fill-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
       "fill-outline-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
-      "fill-opacity": 1,
+      "fill-opacity": getNeighborhoodHexSurfaceOpacityExpression(),
       "fill-antialias": true,
     },
     layout: { visibility: "none" },
