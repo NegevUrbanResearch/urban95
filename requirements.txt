@@ -9,3 +9,4 @@ python-dotenv>=1.0.0
 momepy>=0.7.0
 networkx>=3.0
 tqdm>=4.65.0
+pmtiles>=3.4.0
