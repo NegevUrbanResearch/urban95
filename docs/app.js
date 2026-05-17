@@ -2,6 +2,8 @@
 
 const BASE = "./data";
 const ICONS_BASE = "./icons";
+const DECK_GL_URL = "https://unpkg.com/deck.gl@9.0.31/dist.min.js";
+const CHART_JS_URL = "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js";
 const BUILDINGS_URL = BASE + "/buildings_accessibility.geojson";
 const PARKS_URL = BASE + "/parks.geojson";
 const TREES_URL = BASE + "/trees.geojson";
@@ -789,6 +791,134 @@ let latestRadiusCounts = {};
 const percentileSeriesCache = new Map();
 const buildingAmenityStatKeyCache = new Map();
 const URBAN95_FIXED_MINUTES = 10;
+const BUILDING_CENTROID_GRID_CELL_DEGREES = 0.002;
+const BUILDING_CENTROID_MAX_GRID_RING = 4;
+const BUILDING_CENTROID_MIN_CANDIDATES = 24;
+
+let _deckLoadPromise = null;
+let _chartLoadPromise = null;
+let buildingCentroidGridIndex = new Map();
+
+function loadExternalScriptOnce(src) {
+  return new Promise(function (resolve, reject) {
+    const existing = Array.from(document.getElementsByTagName("script")).find(function (script) {
+      return script.src === src;
+    });
+    if (existing) {
+      if (existing.dataset.loaded === "1") {
+        resolve();
+        return;
+      }
+      existing.addEventListener("load", function () {
+        existing.dataset.loaded = "1";
+        resolve();
+      }, { once: true });
+      existing.addEventListener("error", function () {
+        reject(new Error("Failed loading script: " + src));
+      }, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = function () {
+      script.dataset.loaded = "1";
+      resolve();
+    };
+    script.onerror = function () {
+      reject(new Error("Failed loading script: " + src));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+function ensureDeckGlLoaded() {
+  if (window.deck && window.deck.MapboxOverlay) return Promise.resolve(window.deck);
+  if (_deckLoadPromise) return _deckLoadPromise;
+  _deckLoadPromise = loadExternalScriptOnce(DECK_GL_URL)
+    .then(function () {
+      if (!window.deck || !window.deck.MapboxOverlay) {
+        throw new Error("deck.gl loaded without MapboxOverlay");
+      }
+      return window.deck;
+    })
+    .catch(function (err) {
+      _deckLoadPromise = null;
+      throw err;
+    });
+  return _deckLoadPromise;
+}
+
+function ensureChartJsLoaded() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  if (_chartLoadPromise) return _chartLoadPromise;
+  _chartLoadPromise = loadExternalScriptOnce(CHART_JS_URL)
+    .then(function () {
+      if (!window.Chart) {
+        throw new Error("Chart.js failed to initialize");
+      }
+      return window.Chart;
+    })
+    .catch(function (err) {
+      _chartLoadPromise = null;
+      throw err;
+    });
+  return _chartLoadPromise;
+}
+
+function getBuildingCentroidGridKey(lng, lat) {
+  const gx = Math.floor(lng / BUILDING_CENTROID_GRID_CELL_DEGREES);
+  const gy = Math.floor(lat / BUILDING_CENTROID_GRID_CELL_DEGREES);
+  return gx + ":" + gy;
+}
+
+function buildBuildingCentroidGridIndex() {
+  const grid = new Map();
+  buildingCentroids.forEach(function (b) {
+    const key = getBuildingCentroidGridKey(b.lng, b.lat);
+    if (!grid.has(key)) {
+      grid.set(key, []);
+    }
+    grid.get(key).push(b);
+  });
+  buildingCentroidGridIndex = grid;
+}
+
+function getClosestBuildingCandidates(lng, lat) {
+  if (buildingCentroids.length === 0) return [];
+  if (!buildingCentroidGridIndex || buildingCentroidGridIndex.size === 0) {
+    return buildingCentroids;
+  }
+
+  const baseX = Math.floor(lng / BUILDING_CENTROID_GRID_CELL_DEGREES);
+  const baseY = Math.floor(lat / BUILDING_CENTROID_GRID_CELL_DEGREES);
+  const candidates = [];
+  const seen = new Set();
+  for (let ring = 0; ring <= BUILDING_CENTROID_MAX_GRID_RING; ring++) {
+    for (let dx = -ring; dx <= ring; dx++) {
+      for (let dy = -ring; dy <= ring; dy++) {
+        if (ring > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+        const key = (baseX + dx) + ":" + (baseY + dy);
+        const bucket = buildingCentroidGridIndex.get(key);
+        if (!bucket || bucket.length === 0) continue;
+        bucket.forEach(function (item) {
+          const uid = item.properties && item.properties.building_id;
+          if (uid != null) {
+            if (seen.has(uid)) return;
+            seen.add(uid);
+          }
+          candidates.push(item);
+        });
+      }
+    }
+    if (candidates.length >= BUILDING_CENTROID_MIN_CANDIDATES) {
+      break;
+    }
+  }
+
+  return candidates.length > 0 ? candidates : buildingCentroids;
+}
 
 function getScoreModeLabel(mode) {
   const m = mode || scoreMode;
@@ -1656,14 +1786,26 @@ function clusterVisibleAmenities(features) {
 
 function updateDeckAmenityLayers() {
   return urban95Perf.phase("updateDeckAmenityLayers", function () {
-    if (!deckAmenityOverlay) return;
-
     const showPoints = showPointsToggle ? showPointsToggle.checked : true;
     const shouldRender = showPoints && map.getZoom() >= AMENITY_CLUSTER_MIN_ZOOM;
     if (!shouldRender) {
-      deckAmenityOverlay.setProps({ layers: [] });
+      if (deckAmenityOverlay) {
+        deckAmenityOverlay.setProps({ layers: [] });
+      }
       tooltip.style.display = "none";
       map.getCanvas().style.cursor = "";
+      return;
+    }
+
+    if (!deckAmenityOverlay) {
+      ensureDeckGlLoaded()
+        .then(function () {
+          initDeckAmenityOverlay();
+          updateDeckAmenityLayers();
+        })
+        .catch(function (err) {
+          console.error("Failed to initialize deck.gl overlay:", err);
+        });
       return;
     }
 
@@ -1675,7 +1817,10 @@ function updateDeckAmenityLayers() {
     return;
   }
 
-  const iconLayer = new deck.IconLayer({
+  const deckLib = window.deck;
+  if (!deckLib) return;
+
+  const iconLayer = new deckLib.IconLayer({
     id: "amenity-cluster-icons",
     data: clusteredAmenities,
     pickable: true,
@@ -1771,7 +1916,7 @@ function updateDeckAmenityLayers() {
     }
   });
 
-  const textLayer = new deck.TextLayer({
+  const textLayer = new deckLib.TextLayer({
     id: "amenity-cluster-counts",
     data: clusteredAmenities.filter(d => d.isCluster),
     pickable: false,
@@ -1797,8 +1942,9 @@ function scheduleDeckUpdate() {
 }
 
 function initDeckAmenityOverlay() {
-  if (deckAmenityOverlay || typeof deck === "undefined" || !deck.MapboxOverlay) return;
-  deckAmenityOverlay = new deck.MapboxOverlay({ interleaved: true, layers: [] });
+  const deckLib = window.deck;
+  if (deckAmenityOverlay || !deckLib || !deckLib.MapboxOverlay) return;
+  deckAmenityOverlay = new deckLib.MapboxOverlay({ interleaved: true, layers: [] });
   map.addControl(deckAmenityOverlay);
 
   map.on("moveend", scheduleDeckUpdate);
@@ -2814,8 +2960,9 @@ function findClosestBuilding(lngLat) {
   
   let closest = null;
   let minDist = Infinity;
-  
-  buildingCentroids.forEach(b => {
+
+  const candidates = getClosestBuildingCandidates(lngLat.lng, lngLat.lat);
+  candidates.forEach(b => {
     const dist = turf.distance(
       [lngLat.lng, lngLat.lat],
       [b.lng, b.lat],
@@ -2894,6 +3041,19 @@ function getIsochrone(buildingId, minutes) {
   return isochroneIndex[key] || null;
 }
 
+function isCoordinateInsidePolygon(coord, polygon, bbox) {
+  if (!coord || coord.length < 2) return false;
+  const lng = coord[0];
+  const lat = coord[1];
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return false;
+  if (bbox) {
+    if (lng < bbox[0] || lng > bbox[2] || lat < bbox[1] || lat > bbox[3]) {
+      return false;
+    }
+  }
+  return turf.booleanPointInPolygon(coord, polygon);
+}
+
 // Calculate which items are within an isochrone polygon (filtered by selection)
 function getItemsInPolygon(polygon) {
   const amenityIndices = new Set();
@@ -2906,13 +3066,14 @@ function getItemsInPolygon(polygon) {
   }
 
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
+  const polygonBbox = turf.bbox(polygon);
 
   if (allAmenitiesData && allAmenitiesData.features) {
     allAmenitiesData.features.forEach((f, index) => {
       const type = f.properties.amenity_type;
       if (!useAll && !selectedAmenityTypes.has(type)) return;
-      const pt = turf.point(f.geometry.coordinates);
-      if (turf.booleanPointInPolygon(pt, polygon)) {
+      const coords = f.geometry && f.geometry.coordinates;
+      if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
         amenityIndices.add(index);
         counts[type] = (counts[type] || 0) + 1;
       }
@@ -2921,8 +3082,8 @@ function getItemsInPolygon(polygon) {
 
   if (allTreesData && allTreesData.features && (useAll || selectedAmenityTypes.has("trees"))) {
     allTreesData.features.forEach((f, index) => {
-      const pt = turf.point(f.geometry.coordinates);
-      if (turf.booleanPointInPolygon(pt, polygon)) {
+      const coords = f.geometry && f.geometry.coordinates;
+      if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
         treeIndices.add(index);
         counts["trees"] = (counts["trees"] || 0) + 1;
       }
@@ -2931,8 +3092,8 @@ function getItemsInPolygon(polygon) {
 
   if (allStreetLightsData && allStreetLightsData.features && (useAll || selectedAmenityTypes.has("street-lights"))) {
     allStreetLightsData.features.forEach((f, index) => {
-      const pt = turf.point(f.geometry.coordinates);
-      if (turf.booleanPointInPolygon(pt, polygon)) {
+      const coords = f.geometry && f.geometry.coordinates;
+      if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
         streetLightIndices.add(index);
         counts["street-lights"] = (counts["street-lights"] || 0) + 1;
       }
@@ -3276,7 +3437,6 @@ map.on("load", async function () {
   // Add amenity layers after icons are loaded
   const layerInitStartedAt = performance.now();
   addAmenityLayers();
-  initDeckAmenityOverlay();
   setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
   console.log(
     "[Load] layer init: complete",
@@ -3297,15 +3457,22 @@ map.on("load", async function () {
       buildingCentroids = [];
       (fc.features || []).forEach(function (f) {
         if (f.geometry) {
-          const centroid = turf.centroid(f);
+          const props = f.properties || {};
+          const storedLng = Number(props.centroid_lng);
+          const storedLat = Number(props.centroid_lat);
+          const hasStoredCentroid = Number.isFinite(storedLng) && Number.isFinite(storedLat);
+          const centroid = hasStoredCentroid ? null : turf.centroid(f);
+          const lng = hasStoredCentroid ? storedLng : centroid.geometry.coordinates[0];
+          const lat = hasStoredCentroid ? storedLat : centroid.geometry.coordinates[1];
           buildingCentroids.push({
-            lng: centroid.geometry.coordinates[0],
-            lat: centroid.geometry.coordinates[1],
-            properties: f.properties,
+            lng: lng,
+            lat: lat,
+            properties: props,
             feature: f
           });
         }
       });
+      buildBuildingCentroidGridIndex();
       console.log(
         "[Load] buildings: centroid build",
         buildingCentroids.length,
@@ -3971,13 +4138,19 @@ function showNeighborhoodModal(feature) {
 
       body.innerHTML = html;
       document.getElementById("neighborhood-modal").classList.add("show");
-      requestAnimationFrame(function () {
-        renderNeighborhoodCharts({
-          weighted: true,
-          sfx: sfx,
-          neighborhoodProps: props,
+      ensureChartJsLoaded()
+        .then(function () {
+          requestAnimationFrame(function () {
+            renderNeighborhoodCharts({
+              weighted: true,
+              sfx: sfx,
+              neighborhoodProps: props,
+            });
+          });
+        })
+        .catch(function (err) {
+          console.error("Failed to load Chart.js:", err);
         });
-      });
     });
     return;
   }
@@ -4016,9 +4189,15 @@ function showNeighborhoodModal(feature) {
 
     body.innerHTML = html;
     document.getElementById("neighborhood-modal").classList.add("show");
-    requestAnimationFrame(function () {
-      renderNeighborhoodCharts({ weighted: false, invObj: invLegacy });
-    });
+    ensureChartJsLoaded()
+      .then(function () {
+        requestAnimationFrame(function () {
+          renderNeighborhoodCharts({ weighted: false, invObj: invLegacy });
+        });
+      })
+      .catch(function (err) {
+        console.error("Failed to load Chart.js:", err);
+      });
   });
 }
 
@@ -4332,7 +4511,15 @@ function renderCitywideModal() {
   body.innerHTML = html;
 
   // Render charts after DOM update
-  requestAnimationFrame(() => renderCitywideCharts(sfx));
+  ensureChartJsLoaded()
+    .then(function () {
+      requestAnimationFrame(function () {
+        renderCitywideCharts(sfx);
+      });
+    })
+    .catch(function (err) {
+      console.error("Failed to load Chart.js:", err);
+    });
 }
 
 function renderCitywideCharts(sfx) {

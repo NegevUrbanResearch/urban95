@@ -1072,6 +1072,9 @@ def compute_building_accessibility(
         to_export = to_export.drop(columns=[c])
     to_export = _unique_columns(to_export)
     buildings_wgs84 = to_export.to_crs(epsg=4326)
+    centroid_lookup = centroids_wgs84.set_index("building_id").geometry
+    buildings_wgs84["centroid_lng"] = buildings_wgs84["building_id"].map(lambda bid: centroid_lookup.loc[bid].x)
+    buildings_wgs84["centroid_lat"] = buildings_wgs84["building_id"].map(lambda bid: centroid_lookup.loc[bid].y)
     amenities_wgs84 = amenities_legacy.to_crs(epsg=4326) if len(amenities_legacy) > 0 else gpd.GeoDataFrame()
 
     buildings_out = OUTPUT_DIR / "buildings_accessibility.geojson"
