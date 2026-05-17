@@ -1317,6 +1317,13 @@ function updateAmenitiesSource() {
     const source = map.getSource("amenities");
     if (!source) return;
 
+    if (scoreMode === "weighted") {
+      source.setData({ type: "FeatureCollection", features: [] });
+      visibleAmenityFeatures = [];
+      updateDeckAmenityLayers();
+      return;
+    }
+
     if (selectedAmenityTypes.size === 0) {
       source.setData({ type: "FeatureCollection", features: [] });
       visibleAmenityFeatures = [];
