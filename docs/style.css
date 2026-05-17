@@ -93,7 +93,6 @@ body {
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-  overflow: hidden;
   z-index: 10;
 }
 
@@ -101,6 +100,7 @@ body {
   background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
   color: #fff;
   padding: 14px 16px;
+  border-radius: 12px 12px 0 0;
 }
 
 .panel-header h2 {
@@ -225,21 +225,34 @@ body {
 .filter-popup {
   display: none;
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   left: 0;
   right: 0;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  z-index: 100;
-  max-height: 200px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+  z-index: 200;
+  max-height: min(360px, calc(100vh - 240px));
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
   padding: 6px;
 }
 
 .filter-popup.show {
   display: block;
+}
+
+#filter-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter-items--weighted {
+  gap: 4px;
 }
 
 /* Backdrop for mobile filter popup */
@@ -259,30 +272,51 @@ body {
 }
 
 .filter-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 4px;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
   color: #374151;
-  transition: background 0.15s;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .filter-item:hover {
-  background: #f9fafb;
+  background: var(--row-accent-soft, #f9fafb);
+}
+
+.filter-item:has(input:checked) {
+  background: var(--row-accent-soft, rgba(59, 130, 246, 0.08));
+  border-color: var(--row-accent-strong, rgba(59, 130, 246, 0.45));
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.filter-items--weighted .filter-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+.filter-items--weighted .filter-item .filter-type-pill {
+  font-size: 12.5px;
+  padding: 4px 10px;
 }
 
 .filter-item input {
   width: 14px;
   height: 14px;
-  accent-color: #3b82f6;
+  accent-color: var(--row-accent, #3b82f6);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .filter-type-pill {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--pill-border, rgba(107, 114, 128, 0.3));
@@ -440,17 +474,27 @@ body {
   padding: 2px 6px;
 }
 
+.filter-popup {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+
 .filter-popup::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 
 .filter-popup::-webkit-scrollbar-track {
   background: transparent;
+  margin: 4px 0;
 }
 
 .filter-popup::-webkit-scrollbar-thumb {
   background: #d1d5db;
-  border-radius: 2px;
+  border-radius: 3px;
+}
+
+.filter-popup::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }
 
 .amenity-marker {
@@ -1886,27 +1930,44 @@ body {
 
   /* Filter popup - bottom sheet */
   .filter-popup {
-    max-height: 60vh;
+    display: none;
+    flex-direction: column;
+    max-height: 70vh;
     position: fixed;
     top: auto;
     bottom: 0;
     left: 0;
     right: 0;
     border-radius: 16px 16px 0 0;
-    padding: 0 16px 16px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    padding: 0;
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
     z-index: 200;
+    overflow: hidden;
+  }
+
+  .filter-popup.show {
+    display: flex;
   }
 
   .filter-popup::before {
     content: "";
     display: block;
+    flex-shrink: 0;
     width: 40px;
     height: 4px;
     background: #d1d5db;
     border-radius: 2px;
-    margin: 12px auto 16px;
+    margin: 12px auto 12px;
+  }
+
+  .filter-popup #filter-items {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 16px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
   }
 
   .filter-item {

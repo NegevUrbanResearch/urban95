@@ -300,6 +300,7 @@ def build_neighborhood_surface_geojson(
     weighted_by_minutes: dict[int, np.ndarray] = {}
     expanded_pct_by_minutes: dict[int, np.ndarray] = {}
     filter_pct_by_minutes: dict[int, dict[str, np.ndarray]] = {}
+    weighted_category_by_minutes: dict[int, dict[str, np.ndarray]] = {}
     for minutes in WALK_MINUTES:
         sfx = f"_{minutes}min"
 
@@ -325,11 +326,23 @@ def build_neighborhood_surface_geojson(
             pct_by_filter[f_type] = np.clip(bulk_percentile_ranks(filter_vals), 0.0, 100.0)
         filter_pct_by_minutes[minutes] = pct_by_filter
 
+        category_vals: dict[str, np.ndarray] = {}
+        for cat_stem in WEIGHTED_CATEGORY_STEMS:
+            cat_col = f"score_weighted_{cat_stem}{sfx}"
+            if cat_col in assigned.columns:
+                vals = as_numeric_series(assigned, cat_col, fallback=0.0)
+            else:
+                vals = np.zeros(len(assigned), dtype=float)
+            category_vals[cat_stem] = np.clip(vals, 0.0, 100.0)
+        weighted_category_by_minutes[minutes] = category_vals
+
     weighted_fixed = weighted_by_minutes.get(URBAN95_FIXED_MINUTES)
     if weighted_fixed is None:
         weighted_fixed = weighted_by_minutes.get(10) or weighted_by_minutes.get(5) or weighted_by_minutes.get(15)
     if weighted_fixed is None:
         weighted_fixed = np.zeros(len(assigned), dtype=float)
+
+    weighted_categories_fixed = weighted_category_by_minutes.get(URBAN95_FIXED_MINUTES, {})
 
     local_points_by_name: dict[str, list[tuple[float, float]]] = {}
     local_scores_by_name: dict[str, dict[str, list[tuple[float, float, float]]]] = {}
@@ -343,6 +356,11 @@ def build_neighborhood_surface_geojson(
         local_points_by_name.setdefault(name, []).append((x, y))
         score_bucket = local_scores_by_name.setdefault(name, {})
         score_bucket.setdefault("score_weighted", []).append((x, y, float(weighted_fixed[i])))
+        for cat_stem in WEIGHTED_CATEGORY_STEMS:
+            cat_key = f"score_weighted_{cat_stem}"
+            cat_arr = weighted_categories_fixed.get(cat_stem)
+            cat_val = float(cat_arr[i]) if cat_arr is not None else 0.0
+            score_bucket.setdefault(cat_key, []).append((x, y, cat_val))
         for minutes in WALK_MINUTES:
             w_key = f"score_weighted_{minutes}min"
             e_key = f"score_expanded_{minutes}min"
@@ -393,6 +411,13 @@ def build_neighborhood_surface_geojson(
             else:
                 weighted_fixed_val = 0.0
             out_props["score_weighted"] = round(max(0.0, min(100.0, float(weighted_fixed_val))), 2)
+            for cat_stem in WEIGHTED_CATEGORY_STEMS:
+                cat_key = f"score_weighted_{cat_stem}"
+                if has_local:
+                    cat_val = idw_score(cx, cy, local_scores.get(cat_key, []), HEX_IDW_RADIUS_METERS)
+                else:
+                    cat_val = 0.0
+                out_props[cat_key] = round(max(0.0, min(100.0, float(cat_val))), 2)
             for minutes in WALK_MINUTES:
                 w_key = f"score_weighted_{minutes}min"
                 e_key = f"score_expanded_{minutes}min"
@@ -801,7 +826,7 @@ def main():
         key=lambda x: x[1].get("avg_score_weighted_10min", 0),
         reverse=True,
     ):
-        ranking_weighted.append({
+        entry = {
             "name": name,
             "building_count": stats["building_count"],
             "avg_score_weighted_5min": stats.get("avg_score_weighted_5min", 0),
@@ -811,7 +836,12 @@ def main():
             "pct_weighted_overall_10min": stats.get("pct_weighted_overall_10min", 0),
             "pct_weighted_overall_15min": stats.get("pct_weighted_overall_15min", 0),
             "coverage_weighted_10min": stats.get("coverage_weighted_10min", 0),
-        })
+        }
+        for cat_stem in WEIGHTED_CATEGORY_STEMS:
+            for minutes in WALK_MINUTES:
+                key = f"avg_score_weighted_{cat_stem}_{minutes}min"
+                entry[key] = stats.get(key, 0)
+        ranking_weighted.append(entry)
     citywide["neighborhood_ranking_weighted"] = ranking_weighted
 
     # Per-type neighborhood comparison (top/bottom for each type at 10min)

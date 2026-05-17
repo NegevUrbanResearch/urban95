@@ -729,6 +729,24 @@ def compute_building_accessibility(
     buildings = buildings[valid].copy()
     buildings["building_id"] = buildings.index
 
+    stale_prefixes = (
+        "amen_",
+        "num_amenities_",
+        "num_trees_",
+        "num_street_lights_",
+        "score_clean_",
+        "score_expanded_",
+        "score_weighted",
+        "clean_pts_",
+    )
+    stale_cols = [c for c in buildings.columns if c.startswith(stale_prefixes)]
+    if stale_cols:
+        buildings = buildings.drop(columns=stale_cols)
+        logging.info(
+            "Dropped %d stale accessibility columns from buildings (will be recomputed).",
+            len(stale_cols),
+        )
+
     logging.info("Computing Urban95 weighted score columns using %d workers...", INDEX_SCORE_WORKERS)
     buildings = append_weighted_urban95_scores(
         buildings,

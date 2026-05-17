@@ -317,12 +317,17 @@ const CLEAN_SCORE_COMPONENTS = [
 ];
 
 const WEIGHTED_CATEGORY_COMPONENTS = [
-  { stem: "environmental_quality", label: "Environmental Quality", weight: 0.2 },
-  { stem: "nature", label: "Nature", weight: 0.15 },
-  { stem: "play", label: "Play", weight: 0.15 },
-  { stem: "safety_mobility", label: "Safety & Mobility", weight: 0.25 },
-  { stem: "family_services", label: "Family Services", weight: 0.25 },
+  { stem: "environmental_quality", label: "Environmental Quality", weight: 0.2, color: "#2E7D32" },
+  { stem: "nature", label: "Nature", weight: 0.15, color: "#7CB342" },
+  { stem: "play", label: "Play", weight: 0.15, color: "#EF6C00" },
+  { stem: "safety_mobility", label: "Safety & Mobility", weight: 0.25, color: "#2563EB" },
+  { stem: "family_services", label: "Family Services", weight: 0.25, color: "#8E24AA" },
 ];
+
+const WEIGHTED_CATEGORY_BY_STEM = WEIGHTED_CATEGORY_COMPONENTS.reduce(function (acc, comp) {
+  acc[comp.stem] = comp;
+  return acc;
+}, {});
 
 const WEIGHTED_SUBCATEGORY_COMPONENTS = {
   environmental_quality: [
@@ -354,6 +359,20 @@ const WEIGHTED_CATEGORY_LABEL_BY_STEM = WEIGHTED_CATEGORY_COMPONENTS.reduce(func
   acc[comp.stem] = comp.label;
   return acc;
 }, {});
+
+function getSelectedWeightedCategoryStem() {
+  if (scoreMode !== "weighted") return null;
+  if (selectedAmenityTypes.size !== 1) return null;
+  const stem = Array.from(selectedAmenityTypes)[0];
+  return WEIGHTED_CATEGORY_BY_STEM[stem] ? stem : null;
+}
+
+function getSelectedWeightedCategoryLabel() {
+  const stem = getSelectedWeightedCategoryStem();
+  if (!stem) return "Urban95";
+  const comp = WEIGHTED_CATEGORY_BY_STEM[stem];
+  return comp ? comp.label : "Urban95";
+}
 
 function cleanPtsPropertyName(weightKey, minutes) {
   return "clean_pts_" + String(weightKey).replace(/-/g, "_") + "_" + minutes + "min";
@@ -935,7 +954,7 @@ function forceAllAmenityTypesSelected() {
 
 function syncFilterUiForScoreMode() {
   const isUrban95 = scoreMode === "weighted";
-  const allowFiltering = !isUrban95 && currentMode === "house";
+  const allowFiltering = isUrban95 || currentMode === "house";
   if (amenityFilterSection) {
     amenityFilterSection.style.display = allowFiltering ? "" : "none";
   }
@@ -953,7 +972,11 @@ function syncFilterUiForScoreMode() {
 }
 
 function getNeighborhoodAverageKey(sfx) {
-  if (scoreMode === "weighted") return "avg_score_weighted_" + URBAN95_FIXED_MINUTES + "min";
+  if (scoreMode === "weighted") {
+    const selectedStem = getSelectedWeightedCategoryStem();
+    if (selectedStem) return "avg_score_weighted_" + selectedStem + sfx;
+    return "avg_score_weighted_" + URBAN95_FIXED_MINUTES + "min";
+  }
   return "avg_overall" + sfx;
 }
 
@@ -977,7 +1000,11 @@ function normalizeSurfaceFilterKey(value) {
 }
 
 function getNeighborhoodSurfaceScorePropertyKey() {
-  if (scoreMode === "weighted") return "score_weighted";
+  if (scoreMode === "weighted") {
+    const selectedStem = getSelectedWeightedCategoryStem();
+    if (selectedStem) return "score_weighted_" + selectedStem;
+    return "score_weighted";
+  }
   const sfx = "_" + getScoreMinutes() + "min";
   if (scoreMode === "expanded") {
     if (currentMode !== "house") {
@@ -1534,6 +1561,26 @@ function collectBuildingScores() {
   return buildingsData.features.map((f) => getBuildingOverallScore(f.properties || {}, walkMinutes));
 }
 
+function buildHistogramDistributionFromScores(scores, step) {
+  const bucketStep = Number(step) > 0 ? Number(step) : 10;
+  const edges = [];
+  for (let v = 0; v <= 100; v += bucketStep) {
+    edges.push(v);
+  }
+  if (edges[edges.length - 1] !== 100) {
+    edges.push(100);
+  }
+  const counts = new Array(edges.length - 1).fill(0);
+  (scores || []).forEach(function (raw) {
+    const score = Math.max(0, Math.min(100, Number(raw) || 0));
+    let idx = Math.floor(score / bucketStep);
+    if (idx >= counts.length) idx = counts.length - 1;
+    if (idx < 0) idx = 0;
+    counts[idx] += 1;
+  });
+  return { edges: edges, counts: counts };
+}
+
 // Interpolate the same red→green gradient used on the basemap
 function getColorForValue(value, breakpoints) {
   const stops = [
@@ -2018,10 +2065,25 @@ function updateBuildingColors() {
 function getBuildingOverallScore(props, minutes) {
   const suffix = "_" + (scoreMode === "weighted" ? URBAN95_FIXED_MINUTES : minutes) + "min";
   const p = props || {};
-  const filteringLockedToAll = currentMode !== "house";
+  const filteringLockedToAll = scoreMode !== "weighted" && currentMode !== "house";
   const useAll = filteringLockedToAll || selectedAmenityTypes.size === allFilterTypes.length;
   const activeTypes = filteringLockedToAll ? allFilterTypes : Array.from(selectedAmenityTypes);
   if (scoreMode === "weighted") {
+    if (!useAll && activeTypes.length > 0) {
+      let weightedTotal = 0;
+      let selectedWeight = 0;
+      activeTypes.forEach(function (stem) {
+        const comp = WEIGHTED_CATEGORY_BY_STEM[stem];
+        if (!comp) return;
+        const categoryScore = Number(p["score_weighted_" + stem + suffix]);
+        if (!Number.isFinite(categoryScore)) return;
+        weightedTotal += categoryScore * comp.weight;
+        selectedWeight += comp.weight;
+      });
+      if (selectedWeight > 0) {
+        return weightedTotal / selectedWeight;
+      }
+    }
     const weighted = p["score_weighted" + suffix];
     if (weighted !== undefined && weighted !== null && weighted !== "") {
       return Number(weighted) || 0;
@@ -2114,6 +2176,18 @@ function weightedCategoryHighlightsFromSource(source, sfx) {
   });
 }
 
+function getWeightedAverageValueFromSource(source, sfx) {
+  const selectedStem = getSelectedWeightedCategoryStem();
+  if (selectedStem) {
+    const categoryKey = "avg_score_weighted_" + selectedStem + sfx;
+    const categoryValue = Number(source && source[categoryKey]);
+    if (Number.isFinite(categoryValue)) return categoryValue;
+  }
+  const overallKey = "avg_score_weighted" + sfx;
+  const overallValue = Number(source && source[overallKey]);
+  return Number.isFinite(overallValue) ? overallValue : 0;
+}
+
 function weightedSubcategoryComparisonRows(neighborhoodProps, cityStats, sfx) {
   const rows = [];
   WEIGHTED_CATEGORY_COMPONENTS.forEach(function (cat) {
@@ -2133,19 +2207,23 @@ function weightedSubcategoryComparisonRows(neighborhoodProps, cityStats, sfx) {
 
 function weightedNeighborhoodRankingRows(stats, sfx) {
   const rows = ((stats && stats.neighborhood_ranking_weighted) || []).slice();
+  const selectedStem = getSelectedWeightedCategoryStem();
+  const scoreKey = selectedStem ? "avg_score_weighted_" + selectedStem + sfx : "avg_score_weighted" + sfx;
   rows.sort(function (a, b) {
-    return (Number(b["avg_score_weighted" + sfx]) || 0) - (Number(a["avg_score_weighted" + sfx]) || 0);
+    return (Number(b[scoreKey]) || 0) - (Number(a[scoreKey]) || 0);
   });
   return rows;
 }
 
 function getCitywideWeightedAverageScore(stats, sfx) {
   if (!stats) return 0;
-  const direct = Number(stats["avg_score_weighted" + sfx]);
+  const selectedStem = getSelectedWeightedCategoryStem();
+  const directKey = selectedStem ? "avg_score_weighted_" + selectedStem + sfx : "avg_score_weighted" + sfx;
+  const direct = Number(stats[directKey]);
   if (Number.isFinite(direct) && direct > 0) return direct;
 
   const rankingVals = ((stats.neighborhood_ranking_weighted || []).map(function (r) {
-    return Number(r["avg_score_weighted" + sfx]);
+    return Number(r[directKey]);
   })).filter(function (v) {
     return Number.isFinite(v);
   });
@@ -2681,16 +2759,27 @@ function openScoreExplainModal() {
 }
 
 function updateFilterLabel() {
-  if (scoreMode === "weighted") {
-    filterLabel.textContent = "Not used in Urban95";
-    return;
-  }
   if (currentMode !== "house") {
-    filterLabel.textContent = "All types (building view only)";
-    return;
+    if (scoreMode !== "weighted") {
+      filterLabel.textContent = "All types (building view only)";
+      return;
+    }
   }
   const total = allFilterTypes.length;
   const selected = selectedAmenityTypes.size;
+
+  if (scoreMode === "weighted") {
+    if (selected === 0 || selected === total) {
+      filterLabel.textContent = "All categories";
+    } else if (selected === 1) {
+      const stem = Array.from(selectedAmenityTypes)[0];
+      const config = WEIGHTED_CATEGORY_BY_STEM[stem];
+      filterLabel.textContent = config ? config.label : stem;
+    } else {
+      filterLabel.textContent = selected + " selected";
+    }
+    return;
+  }
 
   if (selected === 0 || selected === total) {
     filterLabel.textContent = "All types";
@@ -2704,7 +2793,7 @@ function updateFilterLabel() {
 }
 
 function handleFilterRadioChange(e) {
-  if (scoreMode === "weighted" || currentMode !== "house") {
+  if (scoreMode !== "weighted" && currentMode !== "house") {
     forceAllAmenityTypesSelected();
     updateFilterLabel();
     return;
@@ -2733,6 +2822,22 @@ function handleFilterRadioChange(e) {
 
   if (selectedBuildingCentroid) {
     selectBuilding(selectedBuildingCentroid, false);
+  }
+
+  if (currentMode === "neighborhood") {
+    updateNeighborhoodColors();
+    const nhModal = document.getElementById("neighborhood-modal");
+    if (nhModal && nhModal.classList.contains("show") && selectedNeighborhood) {
+      showNeighborhoodModal(selectedNeighborhood);
+    }
+  } else if (currentMode === "citywide") {
+    updateNeighborhoodColors();
+    const cwModal = document.getElementById("citywide-modal");
+    if (cwModal && cwModal.classList.contains("show")) {
+      renderCitywideModal();
+    } else {
+      updateCitywideModalTitle();
+    }
   }
 }
 
@@ -2763,68 +2868,96 @@ function colorWithAlpha(hexColor, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function buildFilterRowMarkup(value, color, label) {
+  const pillStyle =
+    `--pill-color:${color};` +
+    `--pill-bg:${colorWithAlpha(color, 0.14)};` +
+    `--pill-border:${colorWithAlpha(color, 0.35)};` +
+    `--row-accent:${color};` +
+    `--row-accent-soft:${colorWithAlpha(color, 0.10)};` +
+    `--row-accent-strong:${colorWithAlpha(color, 0.45)};`;
+  return (
+    `<input type="radio" name="amenity-filter-only" value="${value}" />` +
+    `<span class="filter-type-pill" style="${pillStyle}">${label}</span>`
+  );
+}
+
 function buildFilterItems(types) {
   filterItems.innerHTML = "";
+  filterItems.classList.toggle("filter-items--weighted", scoreMode === "weighted");
   allFilterTypes = [];
-
-  if (allTreesData && allTreesData.features.length > 0) {
-    allFilterTypes.push("trees");
-  }
-
-  if (allStreetLightsData && allStreetLightsData.features.length > 0) {
-    allFilterTypes.push("street-lights");
-  }
-
-  const typesWithPoints = types.filter(t => typesWithData.has(t));
-  typesWithPoints.forEach(type => {
-    allFilterTypes.push(type);
-  });
 
   const neutral = "#6b7280";
   const allRow = document.createElement("label");
-  allRow.className = "filter-item";
-  allRow.innerHTML = `<input type="radio" name="amenity-filter-only" value="all" checked /><span class="filter-type-pill" style="--pill-color:${neutral};--pill-bg:${colorWithAlpha(neutral, 0.12)};--pill-border:${colorWithAlpha(neutral, 0.3)}">All types</span>`;
+  allRow.className = "filter-item filter-item--all";
+  allRow.innerHTML = buildFilterRowMarkup(
+    "all",
+    neutral,
+    scoreMode === "weighted" ? "All categories" : "All types"
+  );
   allRow.querySelector("input").addEventListener("change", handleFilterRadioChange);
   filterItems.appendChild(allRow);
 
-  if (allTreesData && allTreesData.features.length > 0) {
-    const treesConfig = AMENITY_TYPE_CONFIG["trees"];
-    const treesColor = treesConfig.color || DEFAULT_CONFIG.color;
-    const treesLabel = document.createElement("label");
-    treesLabel.className = "filter-item";
-    treesLabel.innerHTML = `<input type="radio" name="amenity-filter-only" value="trees" /><span class="filter-type-pill" style="--pill-color:${treesColor};--pill-bg:${colorWithAlpha(treesColor, 0.14)};--pill-border:${colorWithAlpha(treesColor, 0.35)}">${treesConfig.label}</span>`;
-    treesLabel.querySelector("input").addEventListener("change", handleFilterRadioChange);
-    filterItems.appendChild(treesLabel);
-  }
+  if (scoreMode === "weighted") {
+    WEIGHTED_CATEGORY_COMPONENTS.forEach(function (comp) {
+      allFilterTypes.push(comp.stem);
+      const label = document.createElement("label");
+      label.className = "filter-item";
+      label.innerHTML = buildFilterRowMarkup(comp.stem, comp.color, comp.label);
+      label.querySelector("input").addEventListener("change", handleFilterRadioChange);
+      filterItems.appendChild(label);
+    });
+  } else {
+    if (allTreesData && allTreesData.features.length > 0) {
+      allFilterTypes.push("trees");
+    }
 
-  if (allStreetLightsData && allStreetLightsData.features.length > 0) {
-    const slConfig = AMENITY_TYPE_CONFIG["street-lights"];
-    const slColor = slConfig.color || DEFAULT_CONFIG.color;
-    const slLabel = document.createElement("label");
-    slLabel.className = "filter-item";
-    slLabel.innerHTML = `<input type="radio" name="amenity-filter-only" value="street-lights" /><span class="filter-type-pill" style="--pill-color:${slColor};--pill-bg:${colorWithAlpha(slColor, 0.14)};--pill-border:${colorWithAlpha(slColor, 0.35)}">${slConfig.label}</span>`;
-    slLabel.querySelector("input").addEventListener("change", handleFilterRadioChange);
-    filterItems.appendChild(slLabel);
-  }
+    if (allStreetLightsData && allStreetLightsData.features.length > 0) {
+      allFilterTypes.push("street-lights");
+    }
 
-  typesWithPoints.forEach(type => {
-    const config = getAmenityConfig(type);
-    const label = document.createElement("label");
-    label.className = "filter-item";
-    const color = config.color || DEFAULT_CONFIG.color;
-    label.innerHTML = `<input type="radio" name="amenity-filter-only" value="${type}" /><span class="filter-type-pill" style="--pill-color:${color};--pill-bg:${colorWithAlpha(color, 0.14)};--pill-border:${colorWithAlpha(color, 0.35)}">${config.label}</span>`;
-    label.querySelector("input").addEventListener("change", handleFilterRadioChange);
-    filterItems.appendChild(label);
-  });
+    const typesWithPoints = types.filter(t => typesWithData.has(t));
+    typesWithPoints.forEach(type => {
+      allFilterTypes.push(type);
+    });
+
+    if (allTreesData && allTreesData.features.length > 0) {
+      const treesConfig = AMENITY_TYPE_CONFIG["trees"];
+      const treesColor = treesConfig.color || DEFAULT_CONFIG.color;
+      const treesLabel = document.createElement("label");
+      treesLabel.className = "filter-item";
+      treesLabel.innerHTML = buildFilterRowMarkup("trees", treesColor, treesConfig.label);
+      treesLabel.querySelector("input").addEventListener("change", handleFilterRadioChange);
+      filterItems.appendChild(treesLabel);
+    }
+
+    if (allStreetLightsData && allStreetLightsData.features.length > 0) {
+      const slConfig = AMENITY_TYPE_CONFIG["street-lights"];
+      const slColor = slConfig.color || DEFAULT_CONFIG.color;
+      const slLabel = document.createElement("label");
+      slLabel.className = "filter-item";
+      slLabel.innerHTML = buildFilterRowMarkup("street-lights", slColor, slConfig.label);
+      slLabel.querySelector("input").addEventListener("change", handleFilterRadioChange);
+      filterItems.appendChild(slLabel);
+    }
+
+    typesWithPoints.forEach(type => {
+      const config = getAmenityConfig(type);
+      const label = document.createElement("label");
+      label.className = "filter-item";
+      const color = config.color || DEFAULT_CONFIG.color;
+      label.innerHTML = buildFilterRowMarkup(type, color, config.label);
+      label.querySelector("input").addEventListener("change", handleFilterRadioChange);
+      filterItems.appendChild(label);
+    });
+  }
 
   selectedAmenityTypes.clear();
   allFilterTypes.forEach(function (type) {
     selectedAmenityTypes.add(type);
   });
 
-  const urban95NoFilter = scoreMode === "weighted";
   const wantAll =
-    urban95NoFilter ||
     !lastFilterRadioSelection ||
     lastFilterRadioSelection === "all" ||
     !allFilterTypes.includes(lastFilterRadioSelection);
@@ -2848,7 +2981,7 @@ function buildFilterItems(types) {
 let popupJustOpened = false;
 
 function openFilterPopup() {
-  if (scoreMode === "weighted" || currentMode !== "house") return;
+  if (scoreMode !== "weighted" && currentMode !== "house") return;
   filterPopup.classList.add("show");
   filterBtn.classList.add("open");
   if (isTouchDevice && filterBackdrop) {
@@ -2868,7 +3001,7 @@ function closeFilterPopup() {
 
 // Toggle filter popup - works for both mouse and touch
 function toggleFilterPopup() {
-  if (scoreMode === "weighted" || currentMode !== "house") return;
+  if (scoreMode !== "weighted" && currentMode !== "house") return;
   const isOpen = filterPopup.classList.contains("show");
   if (isOpen) {
     closeFilterPopup();
@@ -3851,7 +3984,20 @@ function updateNeighborhoodSurfaceData() {
   return urban95Perf.phase("updateNeighborhoodSurfaceData", function () {
     const surfaceSrc = map.getSource("neighborhood-score-surface");
     if (!surfaceSrc) return;
-    const precomputedScoreKey = getNeighborhoodSurfaceScorePropertyKey();
+    let precomputedScoreKey = getNeighborhoodSurfaceScorePropertyKey();
+    if (
+      scoreMode === "weighted" &&
+      precomputedScoreKey &&
+      precomputedScoreKey !== "score_weighted" &&
+      neighborhoodSurfaceData &&
+      Array.isArray(neighborhoodSurfaceData.features) &&
+      neighborhoodSurfaceData.features.length > 0
+    ) {
+      const sample = neighborhoodSurfaceData.features[0].properties || {};
+      if (!Object.prototype.hasOwnProperty.call(sample, precomputedScoreKey)) {
+        precomputedScoreKey = "score_weighted";
+      }
+    }
     if (
       precomputedScoreKey &&
       neighborhoodSurfaceData &&
@@ -3884,7 +4030,15 @@ function updateNeighborhoodColors() {
     const avgKey = getNeighborhoodAverageKey(sfx);
 
     const feats = neighborhoodsData.features;
-    const values = feats.map((f) => (f.properties || {})[avgKey] || 0);
+    const values = feats.map((f) => {
+      const p = f.properties || {};
+      if (scoreMode === "weighted") {
+        const selectedValue = Number(p[avgKey]);
+        if (Number.isFinite(selectedValue)) return selectedValue;
+        return Number(p["avg_score_weighted" + sfx]) || 0;
+      }
+      return Number(p[avgKey]) || 0;
+    });
     const ranks = scoreMode === "weighted" ? null : bulkPercentileRanks(values);
     feats.forEach((f, i) => {
       const p = f.properties || {};
@@ -4100,11 +4254,12 @@ function showNeighborhoodModal(feature) {
 
   if (isWeighted) {
     loadCitywideStats().then(function () {
-      const avgScore = Number(props["avg_score_weighted" + sfx]) || 0;
+      const selectedCategoryLabel = getSelectedWeightedCategoryLabel();
+      const avgScore = getWeightedAverageValueFromSource(props, sfx);
       const cityAvgScore = getCitywideWeightedAverageScore(citywideStats, sfx);
       document.getElementById("neighborhood-modal-title").textContent = props.Name || "Unknown";
       document.getElementById("neighborhood-modal-subtitle").textContent =
-        `${formatMetricNumber(avgScore)}/100 weighted score • Urban95`;
+        `${formatMetricNumber(avgScore)}/100 • ${selectedCategoryLabel}`;
 
       const body = document.getElementById("neighborhood-modal-body");
       neighborhoodCharts.forEach(c => c.destroy());
@@ -4113,23 +4268,26 @@ function showNeighborhoodModal(feature) {
       let html = "";
       html += '<div class="cw-summary">';
       html += `<div class="cw-stat-card"><div class="cw-stat-value">${props.building_count || 0}</div><div class="cw-stat-label">Buildings</div></div>`;
-      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(avgScore)}</div><div class="cw-stat-label">Neighborhood avg score</div></div>`;
-      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(cityAvgScore)}</div><div class="cw-stat-label">City avg score</div></div>`;
+      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(avgScore)}</div><div class="cw-stat-label">Neighborhood avg (${selectedCategoryLabel})</div></div>`;
+      html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(cityAvgScore)}</div><div class="cw-stat-label">City avg (${selectedCategoryLabel})</div></div>`;
       html += `<div class="cw-stat-card"><div class="cw-stat-value">${props["coverage_weighted" + sfx] || 0}%</div><div class="cw-stat-label">Coverage</div></div>`;
       html += "</div>";
 
-      const highlights = weightedCategoryHighlightsFromSource(props, sfx);
-      html += '<div class="cw-section">';
-      html += '<div class="cw-section-title">Urban95 category highlights</div>';
-      html += '<div class="u95-highlight-grid">';
-      highlights.forEach(function (item) {
-        html += '<div class="u95-highlight-card">';
-        html += `<div class="u95-highlight-name">${item.label}</div>`;
-        html += `<div class="u95-highlight-score">${formatMetricNumber(item.score)}</div>`;
-        html += `<div class="u95-highlight-meta">${Math.round(item.weight * 100)}% weight</div>`;
-        html += "</div>";
-      });
-      html += '</div></div>';
+      const selectedStem = getSelectedWeightedCategoryStem();
+      if (!selectedStem) {
+        const highlights = weightedCategoryHighlightsFromSource(props, sfx);
+        html += '<div class="cw-section">';
+        html += '<div class="cw-section-title">Urban95 category highlights</div>';
+        html += '<div class="u95-highlight-grid">';
+        highlights.forEach(function (item) {
+          html += '<div class="u95-highlight-card">';
+          html += `<div class="u95-highlight-name">${item.label}</div>`;
+          html += `<div class="u95-highlight-score">${formatMetricNumber(item.score)}</div>`;
+          html += `<div class="u95-highlight-meta">${Math.round(item.weight * 100)}% weight</div>`;
+          html += "</div>";
+        });
+        html += '</div></div>';
+      }
 
       html += '<div class="cw-section">';
       html += '<div class="cw-section-title">Building score distribution (citywide)</div>';
@@ -4222,9 +4380,13 @@ function renderNeighborhoodCharts(context) {
   if (context && context.weighted) {
     const sfx = context.sfx;
     const neighborhoodProps = context.neighborhoodProps || {};
+    const selectedStem = getSelectedWeightedCategoryStem();
     const histCanvas = document.getElementById("hood-score-hist");
-    if (histCanvas && citywideStats && citywideStats["distribution_weighted" + sfx]) {
-      const dist = citywideStats["distribution_weighted" + sfx];
+    if (histCanvas) {
+      const dist =
+        !selectedStem && citywideStats && citywideStats["distribution_weighted" + sfx]
+          ? citywideStats["distribution_weighted" + sfx]
+          : buildHistogramDistributionFromScores(collectBuildingScores(), 10);
       const labels = dist.edges.slice(0, -1).map((e, i) => `${e}-${dist.edges[i + 1]}`);
       const breakpoints = [0, 25, 50, 75, 100];
       neighborhoodCharts.push(new Chart(histCanvas, {
@@ -4426,12 +4588,31 @@ document.getElementById("neighborhood-modal").addEventListener("click", function
   }
 })();
 
+function updateCitywideModalTitle() {
+  const titleEl = document.getElementById("citywide-modal-title");
+  const subtitleEl = document.getElementById("citywide-modal-subtitle");
+  if (!titleEl || !subtitleEl) return;
+  if (scoreMode === "weighted") {
+    const label = getSelectedWeightedCategoryLabel();
+    titleEl.textContent = `Beer Sheva — City Overview for ${label} Score`;
+    subtitleEl.textContent =
+      label === "Urban95"
+        ? "Weighted Urban95 score across the city"
+        : `${label} subscore across the city`;
+  } else {
+    titleEl.textContent = "Beer Sheva — City Overview";
+    subtitleEl.textContent = "Accessibility across the city";
+  }
+}
+
 function renderCitywideModal() {
   const body = document.getElementById("citywide-body");
   if (!body || !citywideStats) return;
 
   citywideCharts.forEach(c => c.destroy());
   citywideCharts = [];
+
+  updateCitywideModalTitle();
 
   const scoreMinutes = getScoreMinutes();
   const sfx = "_" + scoreMinutes + "min";
@@ -4441,32 +4622,36 @@ function renderCitywideModal() {
   let html = '';
 
   if (isWeighted) {
+    const selectedCategoryLabel = getSelectedWeightedCategoryLabel();
+    const selectedStem = getSelectedWeightedCategoryStem();
     const highlights = weightedCategoryHighlightsFromSource(stats, sfx);
     html += '<div class="cw-summary">';
     html += `<div class="cw-stat-card"><div class="cw-stat-value">${(stats.total_buildings || 0).toLocaleString()}</div><div class="cw-stat-label">Buildings</div></div>`;
-    html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(getCitywideWeightedAverageScore(stats, sfx))}</div><div class="cw-stat-label">City average score</div></div>`;
+    html += `<div class="cw-stat-card"><div class="cw-stat-value">${formatMetricNumber(getCitywideWeightedAverageScore(stats, sfx))}</div><div class="cw-stat-label">City average (${selectedCategoryLabel})</div></div>`;
     html += '</div>';
 
-    html += '<div class="cw-section">';
-    html += '<div class="cw-section-title">Urban95 category highlights</div>';
-    html += '<div class="u95-highlight-grid">';
-    highlights.forEach(function (item) {
-      html += '<div class="u95-highlight-card">';
-      html += `<div class="u95-highlight-name">${item.label}</div>`;
-      html += `<div class="u95-highlight-score">${formatMetricNumber(item.score)}</div>`;
-      html += `<div class="u95-highlight-meta">${Math.round(item.weight * 100)}% weight</div>`;
-      html += '</div>';
-    });
-    html += '</div></div>';
+    if (!selectedStem) {
+      html += '<div class="cw-section">';
+      html += '<div class="cw-section-title">Urban95 category highlights</div>';
+      html += '<div class="u95-highlight-grid">';
+      highlights.forEach(function (item) {
+        html += '<div class="u95-highlight-card">';
+        html += `<div class="u95-highlight-name">${item.label}</div>`;
+        html += `<div class="u95-highlight-score">${formatMetricNumber(item.score)}</div>`;
+        html += `<div class="u95-highlight-meta">${Math.round(item.weight * 100)}% weight</div>`;
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
 
     html += '<div class="cw-section">';
-    html += '<div class="cw-section-title">Building score distribution — Urban95</div>';
+    html += `<div class="cw-section-title">Building score distribution — ${selectedCategoryLabel}</div>`;
     html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Citywide distribution</p>';
     html += '<div class="cw-chart-container"><canvas id="cw-score-hist"></canvas></div>';
     html += '</div>';
 
     html += '<div class="cw-section">';
-    html += '<div class="cw-section-title">Average score by neighborhood</div>';
+    html += `<div class="cw-section-title">Average ${selectedCategoryLabel} score by neighborhood</div>`;
     html += '<div class="cw-chart-container" style="height:420px"><canvas id="cw-neighborhood-score-bar"></canvas></div>';
     html += '</div>';
   } else {
@@ -4572,13 +4757,17 @@ function renderCitywideCharts(sfx) {
 
   const histCanvas = document.getElementById("cw-score-hist");
   if (histCanvas) {
+    const selectedWeightedStem = scoreMode === "weighted" ? getSelectedWeightedCategoryStem() : null;
     let dist = null;
-    if (scoreMode === "weighted" && citywideStats["distribution_weighted" + sfx]) {
+    if (scoreMode === "weighted" && !selectedWeightedStem && citywideStats["distribution_weighted" + sfx]) {
       dist = citywideStats["distribution_weighted" + sfx];
     } else if (scoreMode === "expanded" && citywideStats["distribution_expanded" + sfx]) {
       dist = citywideStats["distribution_expanded" + sfx];
     } else {
       dist = citywideStats["distribution" + sfx];
+    }
+    if (scoreMode === "weighted" && selectedWeightedStem) {
+      dist = buildHistogramDistributionFromScores(collectBuildingScores(), 10);
     }
     if (dist) {
       const bldBreakpoints = scoreMode === "weighted" ? [0, 25, 50, 75, 100] : percentileBreakpoints(collectBuildingScores());
@@ -4614,13 +4803,16 @@ function renderCitywideCharts(sfx) {
     const neighborhoodCanvas = document.getElementById("cw-neighborhood-score-bar");
     if (neighborhoodCanvas) {
       const ranking = weightedNeighborhoodRankingRows(citywideStats, sfx);
+      const selectedStem = getSelectedWeightedCategoryStem();
+      const selectedCategoryLabel = getSelectedWeightedCategoryLabel();
+      const scoreKey = selectedStem ? "avg_score_weighted_" + selectedStem + sfx : "avg_score_weighted" + sfx;
       citywideCharts.push(new Chart(neighborhoodCanvas, {
         type: "bar",
         data: {
           labels: ranking.map(r => r.name),
           datasets: [{
-            label: "Average Urban95 score",
-            data: ranking.map(r => Number(r["avg_score_weighted" + sfx]) || 0),
+            label: "Average " + selectedCategoryLabel + " score",
+            data: ranking.map(r => Number(r[scoreKey]) || 0),
             backgroundColor: "#2563eb",
             borderRadius: 3,
           }],
