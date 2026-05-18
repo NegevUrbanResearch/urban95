@@ -360,6 +360,204 @@ const WEIGHTED_CATEGORY_LABEL_BY_STEM = WEIGHTED_CATEGORY_COMPONENTS.reduce(func
   return acc;
 }, {});
 
+const SCORE_EXPLAIN_WEIGHTED_CATEGORY_ICONS = {
+  environmental_quality: "garden",
+  nature: "park",
+  play: "playground",
+  safety_mobility: "bus",
+  family_services: "heart",
+};
+
+const SCORE_EXPLAIN_WEIGHTED_SUB_ICONS = {
+  shade: "park-alt1",
+  trees: "park-alt1",
+  roads: "road-accident",
+  parks: "park",
+  playgrounds: "playground",
+  street_lights: "lighthouse",
+  bicycle_access: "bicycle",
+  bus_stops: "bus",
+  shelters: "shelter",
+  education: "school",
+  community: "town-hall",
+  business: "shop",
+  health: "hospital",
+};
+
+const SCORE_EXPLAIN_CLEAN_ICON_BY_KEY = {
+  trees: "park-alt1",
+  parks: "park",
+  playgrounds: "playground",
+  health: "hospital",
+  education: "school",
+  bus_stops: "bus",
+  shelters: "shelter",
+  "community-centers": "town-hall",
+  businesscenters: "shop",
+  "street-lights": "lighthouse",
+};
+
+const SCORE_EXPLAIN_ROW_ICON_BY_LABEL = {
+  "Amenity POIs (count)": "shop",
+  "Trees (×¼)": "park-alt1",
+  "Street lights (×¼)": "lighthouse",
+  "Trees (weighted)": "park-alt1",
+  "Other manifest-weighted": "marker",
+};
+
+function getWeightedCategoryIcon(stem) {
+  return SCORE_EXPLAIN_WEIGHTED_CATEGORY_ICONS[stem] || "marker";
+}
+
+function getWeightedSubcategoryIcon(stem) {
+  return SCORE_EXPLAIN_WEIGHTED_SUB_ICONS[stem] || "marker";
+}
+
+function getCleanComponentIcon(key) {
+  return SCORE_EXPLAIN_CLEAN_ICON_BY_KEY[key] || "marker";
+}
+
+function getScoreExplainRowIcon(row) {
+  if (!row) return "marker";
+  if (row.icon) return row.icon;
+  if (row.amenityType) return getAmenityConfig(row.amenityType).icon;
+  if (row.cleanKey) return getCleanComponentIcon(row.cleanKey);
+  if (row.weightedStem) return getWeightedCategoryIcon(row.weightedStem);
+  if (row.weightedSubStem) return getWeightedSubcategoryIcon(row.weightedSubStem);
+  return SCORE_EXPLAIN_ROW_ICON_BY_LABEL[row.label] || "marker";
+}
+
+function renderHorizonIcon(iconName, color) {
+  const name = iconName || "marker";
+  const iconColor = color || "#64748b";
+  const url = ICONS_BASE + "/" + encodeURIComponent(name) + ".svg";
+  return (
+    '<span class="horizon-icon" role="img" aria-hidden="true" style="--horizon-icon-color:' +
+    escapeHtml(iconColor) +
+    ";--horizon-icon-url:url('" +
+    url +
+    "')\"></span>"
+  );
+}
+
+const SCORE_EXPLAIN_ICON_NEUTRAL = "#0f172a";
+
+function getScoreExplainRowIconColor(row, barColor) {
+  if (!row) return SCORE_EXPLAIN_ICON_NEUTRAL;
+  if (scoreMode === "weighted" && !row.amenityType && !row.cleanKey) return barColor || "#64748b";
+  return SCORE_EXPLAIN_ICON_NEUTRAL;
+}
+
+function getScoreExplainPartialFilterSet() {
+  if (selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length) return null;
+  return selectedAmenityTypes;
+}
+
+function isScoreExplainRowFilterHighlighted(row) {
+  const active = getScoreExplainPartialFilterSet();
+  if (!active || !row) return false;
+  if (row.amenityType) return active.has(row.amenityType);
+  if (row.cleanKey) {
+    let hit = false;
+    active.forEach(function (t) {
+      if (filterTypeToCleanWeightKey(t) === row.cleanKey) hit = true;
+    });
+    return hit;
+  }
+  if (row.label === "Trees (×¼)" || row.label === "Trees (weighted)") return active.has("trees");
+  if (row.label === "Street lights (×¼)") return active.has("street-lights");
+  return false;
+}
+
+function isScoreExplainCategoryFilterHighlighted(cat) {
+  const active = getScoreExplainPartialFilterSet();
+  if (!active || !cat) return false;
+  return active.has(cat.stem);
+}
+
+function parseColorChannels(color) {
+  const s = String(color || "").trim();
+  const rgb = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  let h = s.startsWith("#") ? s.slice(1) : s;
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
+  if (h.length === 6 && /^[0-9a-f]+$/i.test(h)) {
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  return [37, 99, 235];
+}
+
+function channelsToCss(channels) {
+  return "rgb(" + channels[0] + "," + channels[1] + "," + channels[2] + ")";
+}
+
+function mixChannels(channels, whiteMix) {
+  const w = Math.min(1, Math.max(0, whiteMix));
+  return channels.map(function (c) {
+    return Math.round(c + (255 - c) * w);
+  });
+}
+
+function mixColorWithWhite(color, whiteMix) {
+  return channelsToCss(mixChannels(parseColorChannels(color), whiteMix));
+}
+
+function horizonBarFillStyle(baseColor, widthPct) {
+  const base = parseColorChannels(baseColor || "#2563eb");
+  const light = channelsToCss(mixChannels(base, 0.45));
+  const full = channelsToCss(base);
+  return "width:" + widthPct + "%;background:linear-gradient(90deg," + light + " 0%," + full + " 100%)";
+}
+
+function horizonSubBarFillStyle(parentColor, widthPct, subIndex, subCount) {
+  const base = parseColorChannels(parentColor || "#2563eb");
+  const n = Math.max(1, subCount);
+  const idx = Math.max(0, Math.min(subIndex, n - 1));
+  const subMix = n === 1 ? 0.32 : 0.5 - (idx / (n - 1)) * 0.28;
+  const sub = mixChannels(base, subMix);
+  const light = mixChannels(sub, 0.18);
+  return (
+    "width:" +
+    widthPct +
+    "%;background:linear-gradient(90deg," +
+    channelsToCss(light) +
+    " 0%," +
+    channelsToCss(sub) +
+    " 100%)"
+  );
+}
+
+function renderHorizonLabelCell(label, iconName, weightTagHtml, labelColor, opts) {
+  opts = opts || {};
+  const iconColor =
+    opts.iconColor != null ? opts.iconColor : labelColor != null ? labelColor : "#64748b";
+  const colorLabelText = opts.colorLabelText !== false && labelColor != null && labelColor !== "";
+  let html = '<span class="horizon-label"';
+  if (colorLabelText) html += ' style="color:' + escapeHtml(labelColor) + '"';
+  html += ">";
+  html += '<span class="horizon-label-top">';
+  html += renderHorizonIcon(iconName, iconColor);
+  html += '<span class="horizon-label-text">' + escapeHtml(label) + "</span>";
+  html += "</span>";
+  if (weightTagHtml) html += weightTagHtml;
+  html += "</span>";
+  return html;
+}
+
+function renderHorizonSubLabelCell(label, iconName, color) {
+  const iconColor = color != null && color !== "" ? color : SCORE_EXPLAIN_ICON_NEUTRAL;
+  let html = '<span class="horizon-sub-label"';
+  if (color != null && color !== "") html += ' style="color:' + escapeHtml(color) + '"';
+  html += ">";
+  html += '<span class="horizon-label-top">';
+  html += renderHorizonIcon(iconName, iconColor);
+  html += '<span class="horizon-label-text">' + escapeHtml(label) + "</span>";
+  html += "</span></span>";
+  return html;
+}
+
 function getSelectedWeightedCategoryStem() {
   if (scoreMode !== "weighted") return null;
   if (selectedAmenityTypes.size !== 1) return null;
@@ -2196,6 +2394,17 @@ function formatMetricNumber(value) {
   return value.toFixed(1);
 }
 
+function formatScoreInteger(value) {
+  if (!Number.isFinite(value)) return "—";
+  return Math.round(value).toLocaleString();
+}
+
+function formatScoreExplainRowValue(row) {
+  const v = Number(row && row.value);
+  if (Number.isFinite(v)) return formatScoreInteger(v);
+  return row && row.valueLabel ? String(row.valueLabel).replace(/\s*pts\s*$/i, "").trim() : "";
+}
+
 function weightedCategoryHighlightsFromSource(source, sfx) {
   return WEIGHTED_CATEGORY_COMPONENTS.map(function (comp) {
     const key = "avg_score_weighted_" + comp.stem + sfx;
@@ -2392,9 +2601,14 @@ function explainRankBarColor(pct) {
   return "#ef4444";
 }
 
+function heroPercentileMeterFillStyle(value0to100) {
+  const v = Math.min(100, Math.max(0, Number(value0to100) || 0));
+  return "width:" + v + "%;--meter-fill-pct:" + Math.max(1, v);
+}
+
 function buildExplainScoreBreakdown(buildingProps) {
   const p = buildingProps || {};
-  const m = walkMinutes;
+  const m = getScoreMinutes();
   const sfx = "_" + m + "min";
   const useAll = selectedAmenityTypes.size === allFilterTypes.length;
   const overallScore = getBuildingOverallScore(p, m);
@@ -2413,6 +2627,7 @@ function buildExplainScoreBreakdown(buildingProps) {
         weight: comp.weight,
         value: v,
         valueLabel: formatMetricNumber(v) + " / 100",
+        color: comp.color,
         subrows: [],
       };
       const subcomponents = WEIGHTED_SUBCATEGORY_COMPONENTS[comp.stem] || [];
@@ -2422,9 +2637,11 @@ function buildExplainScoreBreakdown(buildingProps) {
         const hasValue = raw !== undefined && raw !== null && raw !== "";
         const subVal = hasValue ? Number(raw) || 0 : null;
         group.subrows.push({
+          stem: sub.stem,
           label: sub.label,
           weight: sub.weight,
           totalWeight: sub.weight * comp.weight,
+          value: subVal,
           valueLabel: subVal != null ? formatMetricNumber(subVal) + " / 100" : "Missing (re-run preprocess)",
         });
       });
@@ -2445,70 +2662,43 @@ function buildExplainScoreBreakdown(buildingProps) {
   const overallPct = percentileForSeries(series.overall, overallScore);
 
   if (isClean) {
-    if (useAll) {
-      rows.push({ sectionTitle: "Weighted components" });
-      if (hasCleanPtsBreakdown(p, m)) {
-        CLEAN_SCORE_COMPONENTS.forEach(function (c) {
-          const col = cleanPtsPropertyName(c.key, m);
-          const v = Number(p[col]) || 0;
-          const w = CLEAN_WEIGHTS[c.key];
-          const mid = "flt_pts_" + c.key.replace(/-/g, "_");
-          const arr = series.explain[mid];
-          rows.push({
-            label: c.label,
-            detail: w + " pts × (" + c.shortTag + ")",
-            value: v,
-            valueLabel: formatMetricNumber(v) + " pts",
-            percentile: percentileForSeries(arr, v),
-          });
-        });
-      } else {
-        const treeW = CLEAN_WEIGHTS.trees * (Number(p["num_trees" + sfx]) || 0);
-        const rest = (Number(p["score_clean" + sfx]) || 0) - treeW;
+    rows.push({ sectionTitle: "Weighted components" });
+    if (hasCleanPtsBreakdown(p, m)) {
+      CLEAN_SCORE_COMPONENTS.forEach(function (c) {
+        const col = cleanPtsPropertyName(c.key, m);
+        const v = Number(p[col]) || 0;
+        const w = CLEAN_WEIGHTS[c.key];
+        const mid = "flt_pts_" + c.key.replace(/-/g, "_");
+        const arr = series.explain[mid];
         rows.push({
-          label: "Trees (weighted)",
-          detail: "×" + CLEAN_WEIGHTS.trees + " per tree in range",
-          value: treeW,
-          valueLabel: formatMetricNumber(treeW) + " pts",
-          percentile: percentileForSeries(series.explain.flt_tree_w, treeW),
-        });
-        rows.push({
-          label: "Other manifest-weighted",
-          detail: "Regenerate data with preprocess_accessibility.py for a per-category breakdown.",
-          value: rest,
-          valueLabel: formatMetricNumber(rest) + " pts",
-          percentile: percentileForSeries(series.explain.flt_rest, rest),
-        });
-      }
-    } else {
-      rows.push({ sectionTitle: "Selected categories" });
-      selectedAmenityTypes.forEach(function (type) {
-        const id = "flt_sel_" + type;
-        const arr = series.explain[id];
-        const v = getFilteredContributionForType(p, m, type);
-        const cfg = getAmenityConfig(type);
-        let detail = "";
-        const wk = filterTypeToCleanWeightKey(type);
-        if (wk && hasCleanPtsBreakdown(p, m)) {
-          const comp = CLEAN_SCORE_COMPONENTS.find(function (c) {
-            return c.key === wk;
-          });
-          if (comp && CLEAN_WEIGHTS[wk] != null) {
-            detail = CLEAN_WEIGHTS[wk] + " pts × (" + comp.shortTag + ")";
-          }
-        }
-        rows.push({
-          label: cfg.label,
-          detail: detail,
+          label: c.label,
+          cleanKey: c.key,
+          detail: w + " pts × (" + c.shortTag + ")",
           value: v,
           valueLabel: formatMetricNumber(v) + " pts",
           percentile: percentileForSeries(arr, v),
         });
       });
+    } else {
+      const treeW = CLEAN_WEIGHTS.trees * (Number(p["num_trees" + sfx]) || 0);
+      const rest = (Number(p["score_clean" + sfx]) || 0) - treeW;
+      rows.push({
+        label: "Trees (weighted)",
+        detail: "×" + CLEAN_WEIGHTS.trees + " per tree in range",
+        value: treeW,
+        valueLabel: formatMetricNumber(treeW) + " pts",
+        percentile: percentileForSeries(series.explain.flt_tree_w, treeW),
+      });
+      rows.push({
+        label: "Other manifest-weighted",
+        detail: "Regenerate data with preprocess_accessibility.py for a per-category breakdown.",
+        value: rest,
+        valueLabel: formatMetricNumber(rest) + " pts",
+        percentile: percentileForSeries(series.explain.flt_rest, rest),
+      });
     }
   } else {
-    if (useAll) {
-      rows.push({ sectionTitle: "Main components" });
+    rows.push({ sectionTitle: "Main components" });
       const na = Number(p["num_amenities" + sfx]) || 0;
       const tw = (Number(p["num_trees" + sfx]) || 0) * 0.25;
       const sw = (Number(p["num_street_lights" + sfx]) || 0) * 0.25;
@@ -2523,14 +2713,14 @@ function buildExplainScoreBreakdown(buildingProps) {
         label: "Trees (×¼)",
         detail: "",
         value: tw,
-        valueLabel: formatMetricNumber(tw) + " pts",
+        valueLabel: formatMetricNumber(tw),
         percentile: percentileForSeries(series.explain.exp_tree_w, tw),
       });
       rows.push({
         label: "Street lights (×¼)",
         detail: "",
         value: sw,
-        valueLabel: formatMetricNumber(sw) + " pts",
+        valueLabel: formatMetricNumber(sw),
         percentile: percentileForSeries(series.explain.exp_sl_w, sw),
       });
 
@@ -2551,9 +2741,8 @@ function buildExplainScoreBreakdown(buildingProps) {
         const cfg = getAmenityConfig(t);
         amenRows.push({
           label: cfg.label,
-          detail: hasBuildingColumn
-            ? "POI count in walk range"
-            : "POI count in walk range (citywide percentile unavailable in this dataset)",
+          amenityType: t,
+          detail: "",
           value: cnt,
           valueLabel: formatMetricNumber(cnt),
           percentile: hasBuildingColumn ? percentileForSeries(arr, cnt) : null,
@@ -2563,27 +2752,10 @@ function buildExplainScoreBreakdown(buildingProps) {
         if (b.value !== a.value) return b.value - a.value;
         return a.label.localeCompare(b.label);
       });
-      if (amenRows.length > 0) {
-        rows.push({ sectionTitle: "POI categories (count in range)" });
-        amenRows.forEach(function (r) {
-          rows.push(r);
-        });
-      }
-    } else {
-      rows.push({ sectionTitle: "Selected categories" });
-      selectedAmenityTypes.forEach(function (type) {
-        const id = "exp_sel_" + type;
-        const arr = series.explain[id];
-        const v = getExpandedContributionForType(p, m, type);
-        const cfg = getAmenityConfig(type);
-        const suffix = type === "trees" || type === "street-lights" ? " pts" : " (count)";
-        rows.push({
-          label: cfg.label,
-          detail: type === "trees" || type === "street-lights" ? "×¼ weight" : "",
-          value: v,
-          valueLabel: formatMetricNumber(v) + suffix,
-          percentile: percentileForSeries(arr, v),
-        });
+    if (amenRows.length > 0) {
+      rows.push({ sectionTitle: "POI categories (count in range)" });
+      amenRows.forEach(function (r) {
+        rows.push(r);
       });
     }
   }
@@ -2600,194 +2772,493 @@ function buildExplainScoreBreakdown(buildingProps) {
   };
 }
 
-function renderScoreExplainCategoryList(breakdown) {
-  if (!breakdown) return "";
-  const showPercentile = scoreMode !== "weighted";
-
-  if (scoreMode === "weighted" && Array.isArray(breakdown.weightedCategories)) {
-    let weightedHtml = '<div class="score-explain-list score-explain-list-weighted">';
-    weightedHtml += '<div class="score-explain-equation-card">';
-    weightedHtml += '<div class="score-explain-equation-label">Urban95 equation</div>';
-    weightedHtml += '<div class="score-explain-equation-text">' + escapeHtml(breakdown.formulaLine || "") + "</div>";
-    weightedHtml += "</div>";
-    weightedHtml += '<h3 class="score-explain-section-h">Main category scores</h3>';
-    breakdown.weightedCategories.forEach(function (cat, idx) {
-      const targetId = "score-explain-sub-" + idx;
-      weightedHtml += '<div class="score-explain-card score-explain-category-card">';
-      weightedHtml += '<div class="score-explain-card-main">';
-      weightedHtml += '<div class="score-explain-card-title">';
-      weightedHtml += '<span class="score-explain-card-name">' + escapeHtml(cat.label) + "</span>";
-      weightedHtml +=
-        '<span class="score-explain-card-hint">' +
-        escapeHtml((cat.weight * 100).toFixed(0) + "% of total index") +
-        "</span>";
-      weightedHtml += "</div>";
-      weightedHtml += '<div class="score-explain-card-values">';
-      weightedHtml += '<div class="score-explain-card-metric">';
-      weightedHtml += '<span class="score-explain-metric-label">Category score</span>';
-      weightedHtml += '<span class="score-explain-metric-val">' + escapeHtml(cat.valueLabel) + "</span>";
-      weightedHtml += "</div>";
-      weightedHtml += '<div class="score-explain-card-metric">';
-      weightedHtml +=
-        '<button type="button" class="score-explain-toggle-btn" data-target="' +
-        targetId +
-        '" aria-expanded="false">Show subcategories</button>';
-      weightedHtml += "</div>";
-      weightedHtml += "</div>";
-      weightedHtml += "</div>";
-      weightedHtml +=
-        '<div class="score-explain-sublist" id="' +
-        targetId +
-        '" hidden>';
-      (cat.subrows || []).forEach(function (sub) {
-        weightedHtml += '<div class="score-explain-subitem">';
-        weightedHtml += '<div class="score-explain-subitem-head">';
-        weightedHtml += '<span class="score-explain-subitem-name">' + escapeHtml(sub.label) + "</span>";
-        weightedHtml +=
-          '<span class="score-explain-subitem-weight">' +
-          escapeHtml((sub.weight * 100).toFixed(0) + "% of category • " + (sub.totalWeight * 100).toFixed(1) + "% of total") +
-          "</span>";
-        weightedHtml += "</div>";
-        weightedHtml += '<div class="score-explain-subitem-score">' + escapeHtml(sub.valueLabel) + "</div>";
-        weightedHtml += "</div>";
-      });
-      weightedHtml += "</div>";
-      weightedHtml += "</div>";
-    });
-    weightedHtml += "</div>";
-    return weightedHtml;
-  }
-
-  let html = '<div class="score-explain-list">';
-  (breakdown.rows || []).forEach(function (row) {
-    if (row.sectionTitle) {
-      html += '<h3 class="score-explain-section-h">' + escapeHtml(row.sectionTitle) + "</h3>";
-      return;
+function renderScoreExplainSidebarWeighted(categories) {
+  const partialFilter = getScoreExplainPartialFilterSet();
+  let html =
+    '<div class="horizon-chart' + (partialFilter ? " score-explain-chart-partial-filter" : "") + '">';
+  categories.forEach(function (cat, idx) {
+    const pct = Math.min(100, Math.max(0, Number(cat.value) || 0));
+    const color = cat.color || "#2563eb";
+    const highlighted = isScoreExplainCategoryFilterHighlighted(cat);
+    html += '<div class="horizon-group' + (highlighted ? " is-filter-highlight" : "") + '" data-cat-idx="' + idx + '"';
+    if (highlighted) {
+      html += ' style="--filter-highlight-color:' + escapeHtml(color) + '"';
     }
-    const pct = row.percentile;
-    const barW = pct != null ? Math.round(pct) : 0;
-    const barColor = explainRankBarColor(pct);
-    const pctDisplay =
-      pct != null ? pct + getOrdinalSuffix(pct) + " percentile" : "—";
-
-    html += '<div class="score-explain-card">';
-    html += '<div class="score-explain-card-main">';
-    html += '<div class="score-explain-card-title">';
-    html += '<span class="score-explain-card-name">' + escapeHtml(row.label) + "</span>";
-    if (row.detail) {
-      html += '<span class="score-explain-card-hint">' + escapeHtml(row.detail) + "</span>";
-    }
-    html += "</div>";
-    html += '<div class="score-explain-card-values">';
-    html += '<div class="score-explain-card-metric">';
-    html += '<span class="score-explain-metric-label">Score</span>';
-    html += '<span class="score-explain-metric-val">' + escapeHtml(row.valueLabel) + "</span>";
-    html += "</div>";
-    if (showPercentile) {
-      html += '<div class="score-explain-card-metric">';
-      html += '<span class="score-explain-metric-label">Percentile</span>';
-      html += '<span class="score-explain-metric-pct">' + escapeHtml(pctDisplay) + "</span>";
-      html += "</div>";
-    }
-    html += "</div>";
-    html += "</div>";
-    html += '<div class="score-explain-card-bar">';
-    if (showPercentile && pct != null) {
+    html += ">";
+    html += '<div class="horizon-row" tabindex="0" role="button" aria-expanded="false">';
+    html +=
+      renderHorizonLabelCell(cat.label, getWeightedCategoryIcon(cat.stem), "", color);
+    html +=
+      '<div class="horizon-bar-container" aria-hidden="true"><div class="horizon-bar-fill" style="' +
+      horizonBarFillStyle(color, pct) +
+      '"></div></div>';
+    html +=
+      '<span class="horizon-score-cell"><span class="horizon-score">' +
+      escapeHtml(formatScoreInteger(Number(cat.value) || 0)) +
+      '</span><span class="horizon-score-weight">×' +
+      escapeHtml((cat.weight * 100).toFixed(0)) +
+      '%</span></span></div>';
+    html += '<div class="horizon-subs"><div class="horizon-subs-inner">';
+    const subrows = cat.subrows || [];
+    subrows.forEach(function (sub, subIdx) {
+      const sv = sub.value != null ? Math.min(100, Math.max(0, Number(sub.value) || 0)) : 0;
+      html += '<div class="horizon-sub-row">';
+      html += renderHorizonSubLabelCell(sub.label, getWeightedSubcategoryIcon(sub.stem), null);
       html +=
-        '<div class="score-explain-card-bar-fill" style="width:' +
-        barW +
-        "%;background:" +
-        barColor +
-        '"></div>';
-    }
-    html += "</div>";
-    html += "</div>";
+        '<div class="horizon-sub-bar-container" aria-hidden="true"><div class="horizon-sub-bar-fill" style="' +
+        horizonSubBarFillStyle(color, sv, subIdx, subrows.length) +
+        '"></div></div>';
+      html +=
+        '<span class="horizon-score">' + escapeHtml(sub.value != null ? formatScoreInteger(sv) : "—") + "</span></div>";
+    });
+    html += "</div></div></div>";
   });
   html += "</div>";
   return html;
 }
 
-function hideScoreExplainModal() {
-  const modal = document.getElementById("score-explain-modal");
-  if (modal) modal.classList.remove("show");
+function renderScoreExplainSidebarExpanded(rows) {
+  if (!rows || rows.length === 0) return "";
+
+  const sections = [];
+  let cur = null;
+  rows.forEach(function (row) {
+    if (row.sectionTitle) {
+      cur = { title: row.sectionTitle, rows: [] };
+      sections.push(cur);
+    } else if (cur) {
+      cur.rows.push(row);
+    }
+  });
+
+  const partialFilter = getScoreExplainPartialFilterSet();
+  let html =
+    '<div class="horizon-chart horizon-chart-expanded' +
+    (partialFilter ? " score-explain-chart-partial-filter" : "") +
+    '">';
+  sections.forEach(function (sec) {
+    const maxVal = sec.rows.reduce(function (m, r) {
+      const v = Number(r.value);
+      if (!Number.isFinite(v)) return m;
+      return v > m ? v : m;
+    }, 0);
+
+    html += '<h3 class="score-explain-section-h">' + escapeHtml(sec.title || "") + "</h3>";
+
+    sec.rows.forEach(function (row) {
+      const pct = row.percentile;
+      let barW = 0;
+      if (pct != null) {
+        barW = Math.min(100, Math.max(0, Number(pct) || 0));
+      } else {
+        const v = Number(row.value) || 0;
+        barW = maxVal > 0 ? Math.min(100, Math.max(0, (v / maxVal) * 100)) : 0;
+      }
+      const barColor = pct != null ? explainRankBarColor(pct) : "#2563eb";
+
+      const highlighted = isScoreExplainRowFilterHighlighted(row);
+      html += '<div class="horizon-group' + (highlighted ? " is-filter-highlight" : "") + '">';
+      html += '<div class="horizon-row" tabindex="-1">';
+      html += renderHorizonLabelCell(row.label, getScoreExplainRowIcon(row), "", null, {
+        iconColor: SCORE_EXPLAIN_ICON_NEUTRAL,
+        colorLabelText: false,
+      });
+      html +=
+        '<div class="horizon-bar-container" aria-hidden="true"><div class="horizon-bar-fill" style="' +
+        horizonBarFillStyle(barColor, barW) +
+        '"></div></div>';
+      html += '<span class="horizon-score">' + escapeHtml(formatScoreExplainRowValue(row)) + "</span></div>";
+      html += "</div>";
+    });
+  });
+  html += "</div>";
+  return html;
 }
 
-function openScoreExplainModal() {
-  if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) return;
-  const modal = document.getElementById("score-explain-modal");
-  const scrollEl = document.getElementById("score-explain-modal-scroll");
-  if (!modal || !scrollEl) return;
+function getScoreExplainHeroLabel() {
+  if (scoreMode === "weighted") return getScoreModeLabel() + " score";
+  return "Citywide percentile";
+}
 
-  const breakdown = buildExplainScoreBreakdown(selectedBuildingCentroid.feature.properties || {});
-  const scoreKind = getScoreModeLabel();
-  const eyebrow = document.getElementById("score-explain-eyebrow");
-  const note = document.getElementById("score-explain-hero-note");
-  const numEl = document.getElementById("score-explain-hero-num");
-  const pctEl = document.getElementById("score-explain-hero-pct");
-  const meterFill = document.getElementById("score-explain-hero-meter-fill");
-  const pctBlock = document.querySelector(".score-explain-hero-block-pct");
-  const weightedMode = scoreMode === "weighted";
+function populateScoreExplainBuildingContext() {
+  const buildingCtxEl = document.getElementById("score-explain-building-ctx");
+  const idEl = document.getElementById("score-explain-building-ctx-id");
+  const coordsEl = document.getElementById("score-explain-building-ctx-coords");
+  if (!buildingCtxEl || !idEl) return;
 
-  if (eyebrow) {
-    eyebrow.textContent = weightedMode
-      ? scoreKind + " · citywide comparison"
-      : scoreKind + " · " + walkMinutes + " min walk · vs all buildings";
-  }
-
-  if (!breakdown) {
-    if (numEl) numEl.textContent = "—";
-    if (pctEl) pctEl.textContent = weightedMode ? "0-100 scale" : "—";
-    if (meterFill) meterFill.style.width = weightedMode ? "100%" : "0%";
-    if (note) note.textContent = "";
-    if (pctBlock) pctBlock.style.display = weightedMode ? "none" : "";
-    scrollEl.innerHTML =
-      '<p class="score-explain-empty">Score breakdown is unavailable for the current selection.</p>';
-    scrollEl.scrollTop = 0;
-    modal.classList.add("show");
+  if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) {
+    buildingCtxEl.hidden = true;
+    idEl.textContent = "";
+    if (coordsEl) {
+      coordsEl.textContent = "";
+      coordsEl.hidden = true;
+    }
     return;
   }
 
-  if (numEl) numEl.textContent = breakdown.overallScoreLabel;
-  if (pctBlock) pctBlock.style.display = weightedMode ? "none" : "";
-  if (!weightedMode && pctEl) {
-    pctEl.textContent =
-      breakdown.overallPercentile != null
-        ? breakdown.overallPercentile + getOrdinalSuffix(breakdown.overallPercentile)
-        : "—";
-  }
-  if (!weightedMode && meterFill) {
-    meterFill.style.width =
-      breakdown.overallPercentile != null
-        ? Math.min(100, Math.max(0, breakdown.overallPercentile)) + "%"
-        : "0%";
-  }
-  if (note) {
-    note.textContent = weightedMode
-      ? "Expand each category to inspect subcategory scores and weights."
-      : breakdown.formulaLine;
+  const props = selectedBuildingCentroid.feature.properties || {};
+  const bid = props.building_id;
+  idEl.textContent = "Building #" + (bid != null ? String(bid) : "?");
+
+  if (coordsEl && selectedBuildingCentroid.lat != null && selectedBuildingCentroid.lng != null) {
+    coordsEl.textContent =
+      Number(selectedBuildingCentroid.lat).toFixed(5) + ", " + Number(selectedBuildingCentroid.lng).toFixed(5);
+    coordsEl.hidden = false;
+  } else if (coordsEl) {
+    coordsEl.textContent = "";
+    coordsEl.hidden = true;
   }
 
-  scrollEl.innerHTML = renderScoreExplainCategoryList(breakdown);
-  scrollEl.querySelectorAll(".score-explain-toggle-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      const targetId = btn.getAttribute("data-target");
-      if (!targetId) return;
-      const target = scrollEl.querySelector("#" + targetId);
-      if (!target) return;
-      const isHidden = target.hasAttribute("hidden");
-      if (isHidden) {
-        target.removeAttribute("hidden");
-        btn.setAttribute("aria-expanded", "true");
-        btn.textContent = "Hide subcategories";
-      } else {
-        target.setAttribute("hidden", "");
-        btn.setAttribute("aria-expanded", "false");
-        btn.textContent = "Show subcategories";
-      }
-    });
+  buildingCtxEl.hidden = false;
+}
+
+function populateScoreExplainSidebarHeader(breakdown, metrics) {
+  const heroEl = document.getElementById("score-explain-sidebar-hero");
+  const noteEl = document.getElementById("score-explain-sidebar-note");
+  const weightedMode = scoreMode === "weighted";
+
+  populateScoreExplainBuildingContext();
+
+  if (!heroEl || !noteEl) return;
+
+  if (!breakdown && !metrics) {
+    heroEl.innerHTML = "";
+    noteEl.innerHTML = "";
+    return;
+  }
+
+  if (weightedMode) {
+    let scoreVal = null;
+    if (metrics && metrics.overallScore != null) scoreVal = Number(metrics.overallScore);
+    if ((scoreVal == null || !Number.isFinite(scoreVal)) && breakdown && breakdown.overallScoreLabel != null) {
+      scoreVal = Number(String(breakdown.overallScoreLabel).replace(/,/g, ""));
+    }
+    if (!Number.isFinite(scoreVal)) scoreVal = 0;
+    scoreVal = Math.min(100, Math.max(0, scoreVal));
+    let heroHtml = '<div class="percentile-summary score-explain-sidebar-hero-compact">';
+    heroHtml +=
+      '<p class="score-explain-hero-kicker">' + escapeHtml(getScoreExplainHeroLabel()) + "</p>";
+    heroHtml += "<div class=\"percentile-value\">" + escapeHtml(formatScoreInteger(scoreVal)) + "<em>/100</em></div>";
+    heroHtml +=
+      '<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="' +
+      heroPercentileMeterFillStyle(scoreVal) +
+      '"></div></div>';
+    heroHtml += "</div>";
+    heroEl.innerHTML = heroHtml;
+
+    if (breakdown && breakdown.formulaLine) {
+      noteEl.innerHTML =
+        '<details class="score-explain-formula-fold"><summary>Urban95 equation</summary><p>' +
+        escapeHtml(breakdown.formulaLine) +
+        "</p></details>";
+    } else {
+      noteEl.innerHTML = "";
+    }
+    return;
+  }
+
+  let op = null;
+  if (metrics && metrics.overallPercentile != null) op = metrics.overallPercentile;
+  if (op == null && breakdown && breakdown.overallPercentile != null) op = breakdown.overallPercentile;
+
+  let heroHtml = '<div class="percentile-summary score-explain-sidebar-hero-compact">';
+  heroHtml += '<p class="score-explain-hero-kicker">' + escapeHtml(getScoreExplainHeroLabel()) + "</p>";
+  if (op != null) {
+    heroHtml +=
+      "<div class=\"percentile-value\">" +
+      escapeHtml(String(op)) +
+      "<span>" +
+      escapeHtml(getOrdinalSuffix(op)) +
+      "</span><em>percentile</em></div>";
+    heroHtml +=
+      '<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="' +
+      heroPercentileMeterFillStyle(op) +
+      '"></div></div>';
+  } else {
+    heroHtml += '<div class="percentile-value">—</div>';
+    heroHtml +=
+      '<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="' +
+      heroPercentileMeterFillStyle(0) +
+      '"></div></div>';
+  }
+  heroHtml += "</div>";
+  heroEl.innerHTML = heroHtml;
+
+  if (breakdown && breakdown.formulaLine) {
+    noteEl.innerHTML = "<p>" + escapeHtml(breakdown.formulaLine) + "</p>";
+  } else {
+    noteEl.textContent = "";
+  }
+}
+
+function renderScoreExplainSidebar(breakdown, metrics, ctx) {
+  void metrics;
+  void ctx;
+  const unavailable =
+    '<p class="score-explain-empty">Score breakdown is unavailable for the current selection.</p>';
+
+  if (scoreMode === "weighted") {
+    if (!breakdown || !Array.isArray(breakdown.weightedCategories) || breakdown.weightedCategories.length === 0) {
+      return unavailable;
+    }
+    return renderScoreExplainSidebarWeighted(breakdown.weightedCategories);
+  }
+
+  if (!breakdown || !Array.isArray(breakdown.rows) || breakdown.rows.length === 0) {
+    return unavailable;
+  }
+  return renderScoreExplainSidebarExpanded(breakdown.rows);
+}
+
+let scoreExplainFitRaf = 0;
+
+const SCORE_EXPLAIN_CONTENT_DESIGN = {
+  bar: 34,
+  subBar: 24,
+  rowPad: 0.55,
+  subRowPad: 0.28,
+  font: 1,
+  icon: 20,
+  subIcon: 17,
+  groupGap: 0,
+  subsGap: 0.25,
+  labelCol: "10.75rem",
+};
+
+function resetScoreExplainSidebarFit(body, inner) {
+  if (body) {
+    body.classList.remove("is-content-scaled", "is-chart-roomy");
+    body.style.removeProperty("max-height");
+    body.style.removeProperty("--sidebar-content-scale");
+    body.style.removeProperty("--sidebar-content-bar-h");
+    body.style.removeProperty("--sidebar-content-sub-bar-h");
+    body.style.removeProperty("--sidebar-content-row-pad");
+    body.style.removeProperty("--sidebar-content-sub-row-pad");
+    body.style.removeProperty("--sidebar-content-font");
+    body.style.removeProperty("--sidebar-content-icon");
+    body.style.removeProperty("--sidebar-content-sub-icon");
+    body.style.removeProperty("--sidebar-content-group-gap");
+    body.style.removeProperty("--sidebar-content-subs-gap");
+    body.style.removeProperty("--sidebar-fit-label-col");
+  }
+  if (inner) {
+    inner.classList.remove("is-chart-fit-tight", "is-chart-fit-ultra");
+  }
+}
+
+function applyScoreExplainContentScale(body, inner, scale) {
+  const s = Math.min(1, Math.max(0.48, scale));
+  const d = SCORE_EXPLAIN_CONTENT_DESIGN;
+  body.style.setProperty("--sidebar-content-scale", String(s));
+  body.style.setProperty("--sidebar-content-bar-h", Math.max(14, Math.round(d.bar * s)) + "px");
+  body.style.setProperty("--sidebar-content-sub-bar-h", Math.max(10, Math.round(d.subBar * s)) + "px");
+  body.style.setProperty("--sidebar-content-row-pad", Math.max(0.12, d.rowPad * s) + "rem");
+  body.style.setProperty("--sidebar-content-sub-row-pad", Math.max(0.08, d.subRowPad * s) + "rem");
+  body.style.setProperty("--sidebar-content-font", String(s));
+  body.style.setProperty("--sidebar-content-icon", Math.max(14, Math.round(d.icon * s)) + "px");
+  body.style.setProperty("--sidebar-content-sub-icon", Math.max(12, Math.round(d.subIcon * s)) + "px");
+  body.style.setProperty("--sidebar-content-group-gap", Math.max(0, Math.round(d.groupGap + 3 * s)) + "px");
+  body.style.setProperty("--sidebar-content-subs-gap", Math.max(0.08, d.subsGap * s) + "rem");
+  if (s < 1) {
+    const labelRem = parseFloat(d.labelCol);
+    body.style.setProperty("--sidebar-fit-label-col", Math.max(8.5, labelRem * s) + "rem");
+  } else {
+    body.style.removeProperty("--sidebar-fit-label-col");
+  }
+  body.classList.toggle("is-content-scaled", s < 1);
+  inner.classList.toggle("is-chart-fit-tight", s < 0.9);
+  inner.classList.toggle("is-chart-fit-ultra", s < 0.76);
+}
+
+function fitScoreExplainSidebarToViewport() {
+  const sidebar = document.getElementById("score-explain-sidebar");
+  const inner = sidebar ? sidebar.querySelector(".score-explain-sidebar-inner") : null;
+  const header = sidebar ? sidebar.querySelector(".score-explain-sidebar-header") : null;
+  const body = document.getElementById("score-explain-sidebar-body");
+  if (!sidebar || !inner || !header || !body || !sidebar.classList.contains("is-open")) return;
+
+  resetScoreExplainSidebarFit(body, inner);
+
+  const emptyEl = document.getElementById("score-explain-sidebar-empty");
+  let reserved = header.offsetHeight;
+  if (emptyEl && !emptyEl.hidden) reserved += emptyEl.offsetHeight;
+  const bodyStyle = getComputedStyle(body);
+  reserved += parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+
+  const available = Math.max(80, inner.clientHeight - reserved);
+  body.style.maxHeight = available + "px";
+
+  const chart = body.querySelector(".horizon-chart");
+  if (!chart) return;
+
+  function contentHeight() {
+    return chart.scrollHeight;
+  }
+
+  let needed = contentHeight();
+  body.classList.toggle("is-chart-roomy", needed < available * 0.92);
+
+  if (needed <= available) return;
+
+  let scale = (available / needed) * 0.98;
+  applyScoreExplainContentScale(body, inner, scale);
+
+  needed = contentHeight();
+  if (needed > available) {
+    scale = scale * (available / needed) * 0.98;
+    applyScoreExplainContentScale(body, inner, scale);
+  }
+
+  body.classList.toggle("is-chart-roomy", contentHeight() < available * 0.92);
+}
+
+function scheduleFitScoreExplainSidebar() {
+  cancelAnimationFrame(scoreExplainFitRaf);
+  scoreExplainFitRaf = requestAnimationFrame(function () {
+    scoreExplainFitRaf = requestAnimationFrame(fitScoreExplainSidebarToViewport);
   });
-  scrollEl.scrollTop = 0;
-  modal.classList.add("show");
+}
+
+function bindScoreExplainSidebarInteractions(root) {
+  if (root.getAttribute("data-score-explain-bound") === "1") return;
+  root.setAttribute("data-score-explain-bound", "1");
+  root.addEventListener("click", function (e) {
+    const row = e.target.closest('.horizon-row[role="button"]');
+    if (!row || !root.contains(row)) return;
+    const group = row.closest(".horizon-group");
+    const subs = group ? group.querySelector(".horizon-subs") : null;
+    if (!subs) return;
+    const open = subs.classList.toggle("is-open");
+    row.classList.toggle("is-expanded", open);
+    row.setAttribute("aria-expanded", open ? "true" : "false");
+    scheduleFitScoreExplainSidebar();
+  });
+  root.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const row = e.target.closest('.horizon-row[role="button"]');
+    if (!row || !root.contains(row)) return;
+    e.preventDefault();
+    row.click();
+  });
+}
+
+function isScoreExplainSidebarOpen() {
+  const el = document.getElementById("score-explain-sidebar");
+  return !!(el && el.classList.contains("is-open"));
+}
+
+function setScoreExplainMapPadding(open) {
+  const sidebar = document.getElementById("score-explain-sidebar");
+  if (!map || !sidebar) return;
+  const isMobile = window.matchMedia("(max-width: 768px)").matches;
+  if (!open || isMobile) {
+    map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
+  } else {
+    const w = sidebar.getBoundingClientRect().width || 400;
+    map.setPadding({ top: 0, bottom: 0, left: 0, right: Math.round(w) });
+  }
+  map.resize();
+}
+
+function syncScoreExplainBackdrop() {
+  const backdrop = document.getElementById("score-explain-backdrop");
+  if (!backdrop) return;
+  if (!isScoreExplainSidebarOpen()) {
+    backdrop.hidden = true;
+    return;
+  }
+  const isMobile = window.matchMedia("(max-width: 768px)").matches;
+  backdrop.hidden = !isMobile;
+}
+
+function focusMapContainerAfterSidebar() {
+  if (map && typeof map.getCanvas === "function") {
+    const canvas = map.getCanvas();
+    if (canvas) {
+      canvas.setAttribute("tabindex", "-1");
+      canvas.focus({ preventScroll: true });
+      return;
+    }
+  }
+  const mapEl = document.getElementById("map");
+  if (mapEl) {
+    mapEl.setAttribute("tabindex", "-1");
+    mapEl.focus({ preventScroll: true });
+  }
+}
+
+function showScoreExplainSidebar() {
+  const el = document.getElementById("score-explain-sidebar");
+  if (!el) return;
+  el.classList.add("is-open");
+  el.removeAttribute("aria-hidden");
+  document.body.classList.add("score-explain-open");
+  setScoreExplainMapPadding(true);
+  syncScoreExplainBackdrop();
+  scheduleFitScoreExplainSidebar();
+  const closeBtn = document.getElementById("score-explain-sidebar-close");
+  if (closeBtn) {
+    closeBtn.focus({ preventScroll: true });
+  }
+}
+
+function hideScoreExplainSidebar() {
+  const el = document.getElementById("score-explain-sidebar");
+  if (!el) return;
+  el.classList.remove("is-open");
+  el.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("score-explain-open");
+  setScoreExplainMapPadding(false);
+  syncScoreExplainBackdrop();
+  focusMapContainerAfterSidebar();
+}
+
+function syncScoreExplainSidebar() {
+  const root = document.getElementById("score-explain-sidebar-body");
+  const emptyEl = document.getElementById("score-explain-sidebar-empty");
+  if (!root) return;
+
+  if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) {
+    hideScoreExplainSidebar();
+    return;
+  }
+  if (selectedAmenityTypes.size === 0) {
+    if (emptyEl) {
+      emptyEl.hidden = false;
+      emptyEl.textContent = "Select amenity types in the filter to see a score breakdown.";
+    }
+    root.innerHTML = "";
+    populateScoreExplainSidebarHeader(null, null);
+    showScoreExplainSidebar();
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+
+  const props = selectedBuildingCentroid.feature.properties || {};
+  const breakdown = buildExplainScoreBreakdown(props);
+  const metrics = buildPercentileMetrics(props);
+
+  if (!breakdown && !metrics) {
+    // Post-review: mirror "Score data unavailable" - show sidebar with empty state message
+    if (emptyEl) {
+      emptyEl.hidden = false;
+      emptyEl.textContent = "Score data unavailable";
+    }
+    root.innerHTML = "";
+    populateScoreExplainSidebarHeader(null, null);
+    showScoreExplainSidebar();
+    return;
+  }
+
+  populateScoreExplainSidebarHeader(breakdown, metrics);
+  root.innerHTML = renderScoreExplainSidebar(breakdown, metrics, {
+    building: selectedBuildingCentroid,
+    scoreKind: getScoreModeLabel(),
+    minutes: getScoreMinutes(),
+  });
+  bindScoreExplainSidebarInteractions(root);
+  showScoreExplainSidebar();
+  scheduleFitScoreExplainSidebar();
 }
 
 function updateFilterLabel() {
@@ -3097,9 +3568,9 @@ document.addEventListener("touchstart", function(e) {
 
 document.addEventListener("keydown", function(e) {
   if (e.key === "Escape") {
-    const scoreExplainModal = document.getElementById("score-explain-modal");
-    if (scoreExplainModal && scoreExplainModal.classList.contains("show")) {
-      hideScoreExplainModal();
+    if (isScoreExplainSidebarOpen()) {
+      hideScoreExplainSidebar();
+      e.stopPropagation();
       return;
     }
     closeFilterPopup();
@@ -3340,6 +3811,7 @@ function selectBuilding(building, doFly = true) {
         essential: true
       });
     }
+    updateRadiusInfo();
     return;
   }
 
@@ -3365,8 +3837,7 @@ function selectBuilding(building, doFly = true) {
     updateTreesSource();
     updateStreetLightsSource();
 
-    const infoPanel = document.getElementById("radius-info");
-    if (infoPanel) infoPanel.style.display = "none";
+    updateRadiusInfo();
 
     if (doFly) {
       map.easeTo({
@@ -3414,58 +3885,13 @@ function selectBuilding(building, doFly = true) {
 function updateRadiusInfo() {
   const infoPanel = document.getElementById("radius-info");
   if (!infoPanel) return;
-
-  infoPanel.classList.add("percentile-mode");
-
-  if (!selectedBuildingCentroid || !selectedBuildingCentroid.feature) {
+  if (currentMode !== "house") {
     infoPanel.style.display = "none";
+    hideScoreExplainSidebar();
     return;
   }
-
-  if (selectedAmenityTypes.size === 0) {
-    infoPanel.innerHTML = '<div class="radius-count">Select amenity types in the filter</div>';
-    infoPanel.style.display = "block";
-    return;
-  }
-
-  const metrics = buildPercentileMetrics(selectedBuildingCentroid.feature.properties || {});
-  if (!metrics) {
-    infoPanel.innerHTML = '<div class="radius-count">Score data unavailable</div>';
-    infoPanel.style.display = "block";
-    return;
-  }
-
-  const scoreKind = getScoreModeLabel();
-  const weightedMode = scoreMode === "weighted";
-
-  let html = '<div class="percentile-popup-inner">';
-  html += '<div class="percentile-summary">';
-  if (weightedMode) {
-    const scoreVal = Math.min(100, Math.max(0, Number(metrics.overallScore) || 0));
-    html += `<div class="percentile-label">${scoreKind} accessibility — weighted score</div>`;
-    html += `<div class="percentile-value">${formatMetricNumber(scoreVal)}<em>/100</em></div>`;
-    html += `<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="width:${scoreVal}%"></div></div>`;
-  } else {
-    html += `<div class="percentile-label">${scoreKind} accessibility — citywide percentile</div>`;
-    html += `<div class="percentile-value">${metrics.overallPercentile}<span>${getOrdinalSuffix(metrics.overallPercentile)}</span><em>percentile</em></div>`;
-    html += `<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="width:${metrics.overallPercentile}%"></div></div>`;
-  }
-  html += "</div>";
-
-  html += '<div class="percentile-actions">';
-  html +=
-    '<button type="button" class="score-explain-btn" id="score-explain-open-btn">Explain score</button>';
-  html += "</div>";
-  html += "</div>";
-
-  infoPanel.innerHTML = html;
-  const openBtn = infoPanel.querySelector("#score-explain-open-btn");
-  if (openBtn) {
-    openBtn.onclick = function () {
-      openScoreExplainModal();
-    };
-  }
-  infoPanel.style.display = "block";
+  syncScoreExplainSidebar();
+  infoPanel.style.display = "none";
 }
 
 // Clear the radius selection
@@ -3488,7 +3914,7 @@ function clearRadiusSelection() {
 
   const infoPanel = document.getElementById("radius-info");
   if (infoPanel) infoPanel.style.display = "none";
-  hideScoreExplainModal();
+  hideScoreExplainSidebar();
 }
 
 const scoreModelToggle = document.getElementById("score-model-toggle");
@@ -4661,15 +5087,28 @@ document.getElementById("neighborhood-modal").addEventListener("click", function
   if (e.target === this) hideNeighborhoodModal();
 });
 
-(function initScoreExplainModal() {
-  const el = document.getElementById("score-explain-modal");
-  const closeBtn = document.getElementById("score-explain-modal-close");
-  if (closeBtn && el) {
-    closeBtn.addEventListener("click", hideScoreExplainModal);
-    el.addEventListener("click", function (e) {
-      if (e.target === el) hideScoreExplainModal();
-    });
+(function initScoreExplainSidebar() {
+  const closeBtn = document.getElementById("score-explain-sidebar-close");
+  const backdrop = document.getElementById("score-explain-backdrop");
+  const body = document.getElementById("score-explain-sidebar-body");
+  if (closeBtn) closeBtn.addEventListener("click", hideScoreExplainSidebar);
+  if (backdrop) backdrop.addEventListener("click", hideScoreExplainSidebar);
+  if (body) {
+    body.addEventListener(
+      "wheel",
+      function (e) {
+        if (isScoreExplainSidebarOpen()) e.preventDefault();
+      },
+      { passive: false }
+    );
   }
+  window.addEventListener("resize", function () {
+    if (isScoreExplainSidebarOpen()) {
+      setScoreExplainMapPadding(true);
+      syncScoreExplainBackdrop();
+      scheduleFitScoreExplainSidebar();
+    }
+  });
 })();
 
 function updateCitywideModalTitle() {
