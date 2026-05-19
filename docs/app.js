@@ -1,26 +1,62 @@
 /* global maplibregl, turf, deck, pmtiles */
 
 const BASE = "./data";
+const GENERATED_ARTIFACTS = window.Urban95DataArtifacts || {};
+const GENERATED_URLS = GENERATED_ARTIFACTS.urls || {};
 const ICONS_BASE = "./icons";
 const DECK_GL_URL = "https://unpkg.com/deck.gl@9.0.31/dist.min.js";
 const CHART_JS_URL = "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js";
 const BUILDINGS_URL = BASE + "/buildings_accessibility.geojson";
+const BUILDINGS_LOOKUP_URL = GENERATED_URLS.buildingsLookup || BASE + "/buildings_lookup.json";
 const PARKS_URL = BASE + "/parks.geojson";
 const TREES_URL = BASE + "/trees.geojson";
 const STREET_LIGHTS_URL = BASE + "/street_lights.geojson";
 const AMENITIES_CLEAN_URL = BASE + "/amenities_new.geojson";
 const AMENITIES_LEGACY_URL = BASE + "/amenities_all.geojson";
 const ISOCHRONES_URL = BASE + "/isochrones.geojson";
+const ISOCHRONES_LOOKUP_URL = GENERATED_URLS.isochronesLookup || BASE + "/isochrones_lookup.json";
+const POINTS_LOOKUP_URL = GENERATED_URLS.pointsLookup || BASE + "/points_lookup.json";
 const NEIGHBORHOODS_URL = BASE + "/neighborhoods.geojson";
 const NEIGHBORHOOD_SURFACE_URL = BASE + "/neighborhood_surface.geojson";
+const BUILDINGS_PMTILES_URL = GENERATED_URLS.buildingsPmtiles || BASE + "/buildings_accessibility.pmtiles";
+const NEIGHBORHOOD_SURFACE_PMTILES_URL =
+  GENERATED_URLS.neighborhoodSurfacePmtiles || BASE + "/neighborhood_surface.pmtiles";
+const TREES_PMTILES_URL = GENERATED_URLS.treesPmtiles || BASE + "/trees.pmtiles";
+const STREET_LIGHTS_PMTILES_URL = GENERATED_URLS.streetLightsPmtiles || BASE + "/street_lights.pmtiles";
 const NEIGHBORHOOD_CHARTS_URL = BASE + "/neighborhood_charts.json";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
 const PARK_DOT_PATTERN_ID = "park-dot-pattern";
+const hasGeneratedArtifact =
+  GENERATED_ARTIFACTS.hasGeneratedArtifact ||
+  function () {
+    return false;
+  };
+const pmtilesUrl =
+  GENERATED_ARTIFACTS.pmtilesUrl ||
+  function (path) {
+    return "pmtiles://" + new URL(path, window.location.href).href;
+  };
+const sourceLayer =
+  GENERATED_ARTIFACTS.sourceLayer ||
+  function (_artifactName, fallbackLayer) {
+    return fallbackLayer;
+  };
+const vectorSourceOrGeojson =
+  GENERATED_ARTIFACTS.vectorSourceOrGeojson ||
+  function (_artifactName, _pmtilesPath, fallbackData) {
+    return {
+      type: "geojson",
+      data: fallbackData || { type: "FeatureCollection", features: [] },
+    };
+  };
 
 function shouldTryGzip(url) {
   return (
     url === BUILDINGS_URL ||
+    url === BUILDINGS_LOOKUP_URL ||
     url === ISOCHRONES_URL ||
+    url === ISOCHRONES_LOOKUP_URL ||
+    url === POINTS_LOOKUP_URL ||
     url === TREES_URL ||
     url === STREET_LIGHTS_URL ||
     url === AMENITIES_LEGACY_URL
@@ -109,6 +145,95 @@ async function fetchJsonWithGzipFallback(url, options) {
     "total=" + Math.round(performance.now() - loadStartedAt) + "ms"
   );
   return plainParsed;
+}
+
+const urban95RuntimeData =
+  window.Urban95RuntimeData && typeof window.Urban95RuntimeData.createLoaders === "function"
+    ? window.Urban95RuntimeData
+    : null;
+const compactIsochroneFeature =
+  urban95RuntimeData && typeof urban95RuntimeData.compactIsochroneFeature === "function"
+    ? urban95RuntimeData.compactIsochroneFeature
+    : function () {
+        return null;
+      };
+const featureCollectionFromPointRecords =
+  urban95RuntimeData && typeof urban95RuntimeData.featureCollectionFromPointRecords === "function"
+    ? urban95RuntimeData.featureCollectionFromPointRecords
+    : function (records) {
+        return {
+          type: "FeatureCollection",
+          features: (records || [])
+            .map(function (record, index) {
+              var lng = Number(record && record.lng);
+              var lat = Number(record && record.lat);
+              if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+              return {
+                type: "Feature",
+                geometry: { type: "Point", coordinates: [lng, lat] },
+                properties: {
+                  amenity_type: record && record.type,
+                  name: record && record.name ? record.name : "",
+                  _lookupIndex: index,
+                },
+              };
+            })
+            .filter(Boolean),
+        };
+      };
+
+const urban95RuntimeLoaders = urban95RuntimeData
+  ? urban95RuntimeData.createLoaders(fetchJsonWithGzipFallback, {
+      buildingsLookup: BUILDINGS_LOOKUP_URL,
+      isochronesLookup: ISOCHRONES_LOOKUP_URL,
+      pointsLookup: POINTS_LOOKUP_URL,
+      buildingsPmtiles: BUILDINGS_PMTILES_URL,
+      neighborhoodSurfacePmtiles: NEIGHBORHOOD_SURFACE_PMTILES_URL,
+      treesPmtiles: TREES_PMTILES_URL,
+      streetLightsPmtiles: STREET_LIGHTS_PMTILES_URL,
+    }, {
+      buildings: BUILDINGS_URL,
+      isochrones: ISOCHRONES_URL,
+      amenitiesClean: AMENITIES_CLEAN_URL,
+      amenitiesLegacy: AMENITIES_LEGACY_URL,
+    })
+  : {
+      loadBuildingsRuntimeData: function () {
+        return fetchJsonWithGzipFallback(BUILDINGS_URL);
+      },
+      loadPointsLookup: function () {
+        return fetchJsonWithGzipFallback(POINTS_LOOKUP_URL, { required: false });
+      },
+      loadIsochronesLookup: function () {
+        return fetchJsonWithGzipFallback(ISOCHRONES_LOOKUP_URL, { required: false });
+      },
+    };
+
+function loadPointsLookup() {
+  return urban95RuntimeLoaders.loadPointsLookup();
+}
+
+function loadAmenitiesGeojsonFallback() {
+  return Promise.all([
+    fetchJsonWithGzipFallback(AMENITIES_CLEAN_URL, { required: true }),
+    fetchJsonWithGzipFallback(AMENITIES_LEGACY_URL, { required: false })
+  ]).then(function (results) {
+    return {
+      source: "geojson",
+      cleanFc: filterCleanManifestPointFeatures(results[0]),
+      legacyFc: results[1],
+      treesFc: null,
+      streetLightsFc: null,
+    };
+  });
+}
+
+function hasValidPointsLookupSources(lookup) {
+  const sources = lookup && lookup.sources;
+  return Boolean(
+    sources &&
+    Array.isArray(sources.amenities_clean)
+  );
 }
 
 /** Dev profiling: add ?perf=1 or localStorage urban95_perf=1 — records phase timings (see floating panel). */
@@ -806,8 +931,9 @@ const _urban95PmtilesProtocol = typeof pmtiles !== "undefined" && pmtiles.Protoc
 if (_urban95PmtilesProtocol) maplibregl.addProtocol("pmtiles", _urban95PmtilesProtocol.tile);
 
 const BUILDINGS_MAP_SOURCE_ID = "buildings";
-const BUILDINGS_VECTOR_LAYER_ID = "buildings";
+const BUILDINGS_VECTOR_LAYER_ID = sourceLayer("buildings", "buildings");
 const BUILDINGS_SYM_PCT_STATE_KEY = "sym_pct";
+const BUILDINGS_SELECTED_STATE_KEY = "selected";
 
 const BUILDINGS_CHOROPLETH_FILL_COLOR_EXPR = [
   "interpolate",
@@ -826,10 +952,10 @@ const BUILDINGS_CHOROPLETH_FILL_COLOR_EXPR = [
 ];
 
 const _urban95BuildingsSource =
-  _urban95PmtilesProtocol != null
+  hasGeneratedArtifact("buildings")
     ? {
         type: "vector",
-        url: "pmtiles://" + new URL(BASE + "/buildings_accessibility.pmtiles", window.location.href).href,
+        url: pmtilesUrl(BUILDINGS_PMTILES_URL),
         promoteId: "building_id",
       }
     : {
@@ -849,7 +975,31 @@ const _urban95BuildingsFillLayer = Object.assign(
       "fill-outline-color": "#d4d4d8",
     },
   },
-  _urban95PmtilesProtocol ? { "source-layer": BUILDINGS_VECTOR_LAYER_ID } : {}
+  hasGeneratedArtifact("buildings") ? { "source-layer": BUILDINGS_VECTOR_LAYER_ID } : {}
+);
+
+const _urban95BuildingsSelectedLayer = Object.assign(
+  {
+    id: "buildings-selected-outline-vector",
+    type: "line",
+    source: BUILDINGS_MAP_SOURCE_ID,
+    paint: {
+      "line-color": "#111827",
+      "line-width": [
+        "case",
+        ["boolean", ["feature-state", BUILDINGS_SELECTED_STATE_KEY], false],
+        3,
+        0,
+      ],
+      "line-opacity": [
+        "case",
+        ["boolean", ["feature-state", BUILDINGS_SELECTED_STATE_KEY], false],
+        1,
+        0,
+      ],
+    },
+  },
+  hasGeneratedArtifact("buildings") ? { "source-layer": BUILDINGS_VECTOR_LAYER_ID } : {}
 );
 
 function createParkDotPatternImage() {
@@ -921,18 +1071,20 @@ const map = new maplibregl.Map({
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
+      "trees-vector": vectorSourceOrGeojson("trees", TREES_PMTILES_URL),
       "street-lights": {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
+      "street-lights-vector": vectorSourceOrGeojson("street_lights", STREET_LIGHTS_PMTILES_URL),
       neighborhoods: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
-      "neighborhood-score-surface": {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      },
+      "neighborhood-score-surface": vectorSourceOrGeojson(
+        "neighborhood_surface",
+        NEIGHBORHOOD_SURFACE_PMTILES_URL
+      ),
     },
     layers: [
       { id: "osm", type: "raster", source: "osm" },
@@ -948,6 +1100,7 @@ const map = new maplibregl.Map({
         layout: { visibility: "visible" },
       },
       _urban95BuildingsFillLayer,
+      ...(hasGeneratedArtifact("buildings") ? [_urban95BuildingsSelectedLayer] : []),
       {
         id: "radius-circle-fill",
         type: "fill",
@@ -1003,8 +1156,8 @@ const urban95PointToggles = document.getElementById("urban95-point-toggles");
 const amenityPointsToggleWrap = document.getElementById("amenity-points-toggle-wrap");
 const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
 
-const TREE_LAYER_IDS = ["tree-icons"];
-const STREET_LIGHT_LAYER_IDS = ["street-light-icons"];
+const TREE_LAYER_IDS = ["tree-icons", "tree-icons-vector"];
+const STREET_LIGHT_LAYER_IDS = ["street-light-icons", "street-light-icons-vector"];
 const TREES_AND_LIGHTS_LAYER_IDS = TREE_LAYER_IDS.concat(STREET_LIGHT_LAYER_IDS);
 
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
@@ -1029,21 +1182,27 @@ let typesWithDataClean = new Set();
 let typesWithDataLegacy = new Set();
 let allTreesData = null;
 let allStreetLightsData = null;
+let treesDataSource = "none";
+let streetLightsDataSource = "none";
 let buildingsData = null;
 let buildingCentroids = [];
 let selectedAmenityTypes = new Set();
 let lastFilterRadioSelection = "all";
 let allFilterTypes = [];
 let selectedBuildingCentroid = null;
+let selectedBuildingVectorId = null;
 let amenitiesInRadiusIds = new Set();
 let treesInRadiusIds = new Set();
 let streetLightsInRadiusIds = new Set();
 let iconsLoaded = false;
 let treesLoadStarted = false;
 let streetLightsLoadStarted = false;
-let isochroneLoadStarted = false;
+let treesGeojsonLoadInFlight = false;
+let streetLightsGeojsonLoadInFlight = false;
+let isochroneLoadPromise = null;
 let isochronesLoaded = false;
 let isochroneIndex = {};
+let isochronesLookupMode = "legacy";
 let visibleAmenityFeatures = [];
 let deckAmenityOverlay = null;
 let scoreMode = "weighted";
@@ -1062,6 +1221,42 @@ const BUILDING_CENTROID_MIN_CANDIDATES = 24;
 let _deckLoadPromise = null;
 let _chartLoadPromise = null;
 let buildingCentroidGridIndex = new Map();
+
+function setSelectedBuildingVectorState(buildingId) {
+  selectedBuildingVectorId = buildingId == null ? null : buildingId;
+  if (!hasGeneratedArtifact("buildings")) return;
+  if (!map || !map.getSource || !map.getSource(BUILDINGS_MAP_SOURCE_ID)) return;
+  if (!map.getLayer || !map.getLayer(_urban95BuildingsSelectedLayer.id)) return;
+
+  if (setSelectedBuildingVectorState._previousId != null) {
+    const previousId = Number(setSelectedBuildingVectorState._previousId);
+    if (Number.isFinite(previousId)) {
+      map.setFeatureState(
+        {
+          source: BUILDINGS_MAP_SOURCE_ID,
+          sourceLayer: BUILDINGS_VECTOR_LAYER_ID,
+          id: previousId,
+        },
+        { [BUILDINGS_SELECTED_STATE_KEY]: false }
+      );
+    }
+  }
+
+  if (buildingId != null) {
+    const nextId = Number(buildingId);
+    if (Number.isFinite(nextId)) {
+      map.setFeatureState(
+        {
+          source: BUILDINGS_MAP_SOURCE_ID,
+          sourceLayer: BUILDINGS_VECTOR_LAYER_ID,
+          id: nextId,
+        },
+        { [BUILDINGS_SELECTED_STATE_KEY]: true }
+      );
+    }
+  }
+  setSelectedBuildingVectorState._previousId = selectedBuildingVectorId;
+}
 
 function loadExternalScriptOnce(src) {
   return new Promise(function (resolve, reject) {
@@ -1438,8 +1633,19 @@ async function loadAmenityIcons() {
 
 // Lazy load trees when zoomed in (trees only visible at zoom 14+)
 function loadTreesIfNeeded() {
-  if (treesLoadStarted || allTreesData) return;
+  const needsAuthoritativeGeojson = scoreMode === "expanded" && treesDataSource !== "geojson";
+  if (treesGeojsonLoadInFlight) return;
+  if (
+    (treesLoadStarted && treesDataSource !== "lookup") ||
+    (allTreesData && !needsAuthoritativeGeojson)
+  ) return;
+  if (hasGeneratedArtifact("trees") && scoreMode === "weighted") {
+    console.log("[Load] trees: skipped full GeoJSON fetch for weighted PMTiles display");
+    updateTreesSource();
+    return;
+  }
   treesLoadStarted = true;
+  treesGeojsonLoadInFlight = true;
   const treesLoadStartedAt = performance.now();
   console.log("[Load] trees: start");
   
@@ -1447,6 +1653,7 @@ function loadTreesIfNeeded() {
     .then(function (treesData) {
       if (!treesData) throw new Error("Empty tree data");
       allTreesData = treesData;
+      treesDataSource = "geojson";
       console.log("[Load] trees: features", (treesData.features || []).length);
       
       const treesProcessStartedAt = performance.now();
@@ -1468,17 +1675,31 @@ function loadTreesIfNeeded() {
         "[Load] trees: complete total",
         Math.round(performance.now() - treesLoadStartedAt) + "ms"
       );
+      treesGeojsonLoadInFlight = false;
       loadStreetLightsIfNeeded();
     })
     .catch(function (err) {
       console.error("Failed to load trees:", err);
+      treesGeojsonLoadInFlight = false;
       treesLoadStarted = false;
     });
 }
 
 function loadStreetLightsIfNeeded() {
-  if (streetLightsLoadStarted || allStreetLightsData) return;
+  const needsAuthoritativeGeojson =
+    scoreMode === "expanded" && streetLightsDataSource !== "geojson";
+  if (streetLightsGeojsonLoadInFlight) return;
+  if (
+    (streetLightsLoadStarted && streetLightsDataSource !== "lookup") ||
+    (allStreetLightsData && !needsAuthoritativeGeojson)
+  ) return;
+  if (hasGeneratedArtifact("street_lights") && scoreMode === "weighted") {
+    console.log("[Load] street-lights: skipped full GeoJSON fetch for weighted PMTiles display");
+    updateStreetLightsSource();
+    return;
+  }
   streetLightsLoadStarted = true;
+  streetLightsGeojsonLoadInFlight = true;
   const streetLightsLoadStartedAt = performance.now();
   console.log("[Load] street-lights: start");
 
@@ -1486,6 +1707,7 @@ function loadStreetLightsIfNeeded() {
     .then(function (data) {
       if (!data) throw new Error("Empty street light data");
       allStreetLightsData = data;
+      streetLightsDataSource = "geojson";
       console.log("[Load] street-lights: features", (data.features || []).length);
 
       const streetLightsProcessStartedAt = performance.now();
@@ -1507,11 +1729,19 @@ function loadStreetLightsIfNeeded() {
         "[Load] street-lights: complete total",
         Math.round(performance.now() - streetLightsLoadStartedAt) + "ms"
       );
+      streetLightsGeojsonLoadInFlight = false;
     })
     .catch(function (err) {
       console.error("Failed to load street lights:", err);
+      streetLightsGeojsonLoadInFlight = false;
       streetLightsLoadStarted = false;
     });
+}
+
+function ensureExpandedPointDataLoaded() {
+  if (scoreMode !== "expanded") return;
+  if (treesDataSource !== "geojson") loadTreesIfNeeded();
+  if (streetLightsDataSource !== "geojson") loadStreetLightsIfNeeded();
 }
 
 function warnIfBuildingScoresIncomplete(fc) {
@@ -1576,6 +1806,7 @@ function applyScoreModeAmenities() {
     buildFilterItems(allAmenityTypes);
     syncFilterUiForScoreMode();
     updateShowPointsToggleLabel();
+    ensureExpandedPointDataLoaded();
     applyShowPointsToggle();
     updateAmenitiesSource();
     updateTreesSource();
@@ -1662,20 +1893,29 @@ function isFilterOnlyStreetLights() {
 // Update trees source — Urban95 shows all trees at detail zoom, Amenities Focus keeps isochrone clipping
 function updateTreesSource() {
   return urban95Perf.phase("updateTreesSource", function () {
-    if (!allTreesData) return;
-
     const source = map.getSource("trees");
-    if (!source) return;
+    const useGeneratedVector = hasGeneratedArtifact("trees");
+    const showWeightedTrees =
+      currentMode === "house" &&
+      scoreMode === "weighted" &&
+      map.getZoom() >= URBAN95_DETAIL_POINTS_MIN_ZOOM &&
+      (showTreesToggle ? showTreesToggle.checked : true);
 
     if (scoreMode === "weighted") {
-      const zoom = map.getZoom();
-      if (zoom >= URBAN95_DETAIL_POINTS_MIN_ZOOM) {
+      setLayerVisibilityIfPresent("tree-icons", showWeightedTrees && !useGeneratedVector);
+      setLayerVisibilityIfPresent("tree-icons-vector", showWeightedTrees && useGeneratedVector);
+      if (useGeneratedVector || !source || !allTreesData) return;
+      if (showWeightedTrees) {
         source.setData(allTreesData);
       } else {
         source.setData({ type: "FeatureCollection", features: [] });
       }
       return;
     }
+
+    setLayerVisibilityIfPresent("tree-icons", currentMode === "house");
+    setLayerVisibilityIfPresent("tree-icons-vector", false);
+    if (!allTreesData || !source) return;
 
     if (selectedAmenityTypes.size === 0) {
       source.setData({ type: "FeatureCollection", features: [] });
@@ -1708,20 +1948,29 @@ function updateTreesSource() {
 // Street lights: separate symbol layer (not part of amenity deck overlay)
 function updateStreetLightsSource() {
   return urban95Perf.phase("updateStreetLightsSource", function () {
-    if (!allStreetLightsData) return;
-
     const source = map.getSource("street-lights");
-    if (!source) return;
+    const useGeneratedVector = hasGeneratedArtifact("street_lights");
+    const showWeightedStreetLights =
+      currentMode === "house" &&
+      scoreMode === "weighted" &&
+      map.getZoom() >= URBAN95_DETAIL_POINTS_MIN_ZOOM &&
+      (showLightsToggle ? showLightsToggle.checked : true);
 
     if (scoreMode === "weighted") {
-      const zoom = map.getZoom();
-      if (zoom >= URBAN95_DETAIL_POINTS_MIN_ZOOM) {
+      setLayerVisibilityIfPresent("street-light-icons", showWeightedStreetLights && !useGeneratedVector);
+      setLayerVisibilityIfPresent("street-light-icons-vector", showWeightedStreetLights && useGeneratedVector);
+      if (useGeneratedVector || !source || !allStreetLightsData) return;
+      if (showWeightedStreetLights) {
         source.setData(allStreetLightsData);
       } else {
         source.setData({ type: "FeatureCollection", features: [] });
       }
       return;
     }
+
+    setLayerVisibilityIfPresent("street-light-icons", currentMode === "house");
+    setLayerVisibilityIfPresent("street-light-icons-vector", false);
+    if (!allStreetLightsData || !source) return;
 
     if (selectedAmenityTypes.size === 0) {
       source.setData({ type: "FeatureCollection", features: [] });
@@ -1771,6 +2020,26 @@ function addAmenityLayers() {
       "icon-opacity": 0.9,
     },
   });
+  if (hasGeneratedArtifact("trees")) {
+    map.addLayer({
+      id: "tree-icons-vector",
+      type: "symbol",
+      source: "trees-vector",
+      "source-layer": sourceLayer("trees", "trees"),
+      minzoom: URBAN95_DETAIL_POINTS_MIN_ZOOM,
+      layout: {
+        visibility: "none",
+        "icon-image": "park-alt1",
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 1.2],
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+      },
+      paint: {
+        "icon-color": "#2E7D32",
+        "icon-opacity": 0.9,
+      },
+    });
+  }
 
   const slCfg = AMENITY_TYPE_CONFIG["street-lights"];
   map.addLayer({
@@ -1787,6 +2056,41 @@ function addAmenityLayers() {
       "icon-color": slCfg.color,
       "icon-opacity": 0.95,
     },
+  });
+  if (hasGeneratedArtifact("street_lights")) {
+    map.addLayer({
+      id: "street-light-icons-vector",
+      type: "symbol",
+      source: "street-lights-vector",
+      "source-layer": sourceLayer("street_lights", "street_lights"),
+      minzoom: URBAN95_DETAIL_POINTS_MIN_ZOOM,
+      layout: {
+        visibility: "none",
+        "icon-image": "marker",
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.55, 18, 1.1],
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+      },
+      paint: {
+        "icon-color": slCfg.color,
+        "icon-opacity": 0.95,
+      },
+    });
+  }
+
+  bindPointHoverLayer("tree-icons", function () {
+    return "Tree";
+  });
+  bindPointHoverLayer("tree-icons-vector", function () {
+    return "Tree";
+  });
+  bindPointHoverLayer("street-light-icons", function (feature) {
+    const p = (feature && feature.properties) || {};
+    return p.name || p.Name || p.hebrew_name || p.hebrew_nam || "Street light";
+  });
+  bindPointHoverLayer("street-light-icons-vector", function (feature) {
+    const p = (feature && feature.properties) || {};
+    return p.name || p.Name || p.hebrew_name || p.hebrew_nam || "Street light";
   });
 }
 
@@ -1869,25 +2173,60 @@ function updateAccessibilityLegendLabels() {
   legendLabels.innerHTML = labels.map((l) => `<span>${l}</span>`).join("");
 }
 
+function setLayerVisibilityIfPresent(layerId, visible) {
+  if (!map.getLayer(layerId)) return;
+  if (
+    !visible &&
+    (TREE_LAYER_IDS.indexOf(layerId) !== -1 || STREET_LIGHT_LAYER_IDS.indexOf(layerId) !== -1)
+  ) {
+    resetPointHoverState();
+  }
+  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+}
+
 function setLayerVisibility(layerIds, visible) {
-  const v = visible ? "visible" : "none";
   layerIds.forEach((id) => {
-    if (map.getLayer(id)) {
-      map.setLayoutProperty(id, "visibility", v);
-    }
+    setLayerVisibilityIfPresent(id, visible);
   });
 }
 
+function resetPointHoverState() {
+  tooltip.style.display = "none";
+  map.getCanvas().style.cursor = "";
+}
+
 function setTreesVisibility(visible) {
+  if (!visible) resetPointHoverState();
   setLayerVisibility(TREE_LAYER_IDS, visible);
 }
 
 function setStreetLightsVisibility(visible) {
+  if (!visible) resetPointHoverState();
   setLayerVisibility(STREET_LIGHT_LAYER_IDS, visible);
 }
 
 function setTreesAndLightsVisibility(visible) {
+  if (!visible) resetPointHoverState();
   setLayerVisibility(TREES_AND_LIGHTS_LAYER_IDS, visible);
+}
+
+function bindPointHoverLayer(layerId, labelForFeature) {
+  if (!map.getLayer(layerId)) return;
+  map.on("mouseenter", layerId, function () {
+    if (!_deckHovering) map.getCanvas().style.cursor = "pointer";
+  });
+  map.on("mouseleave", layerId, function () {
+    if (!_deckHovering) map.getCanvas().style.cursor = "";
+    tooltip.style.display = "none";
+  });
+  map.on("mousemove", layerId, function (e) {
+    if (_deckHovering || !e.features || e.features.length === 0) return;
+    const label = labelForFeature ? labelForFeature(e.features[0]) : "";
+    tooltip.textContent = label || "";
+    tooltip.style.display = "block";
+    tooltip.style.left = (e.point.x + 12) + "px";
+    tooltip.style.top = (e.point.y + 12) + "px";
+  });
 }
 
 function buildUrban95ReferenceRadius(lng, lat) {
@@ -1913,11 +2252,14 @@ function updateShowPointsToggleLabel() {
 }
 
 function applyShowPointsToggle() {
+  resetPointHoverState();
   if (scoreMode === "weighted") {
-    setTreesVisibility(showTreesToggle ? showTreesToggle.checked : true);
-    setStreetLightsVisibility(showLightsToggle ? showLightsToggle.checked : true);
+    updateTreesSource();
+    updateStreetLightsSource();
+    updateDeckAmenityLayers();
   } else {
-    setTreesAndLightsVisibility(true);
+    updateTreesSource();
+    updateStreetLightsSource();
     updateDeckAmenityLayers();
   }
 }
@@ -2148,6 +2490,7 @@ function updateDeckAmenityLayers() {
       if (deckAmenityOverlay) {
         deckAmenityOverlay.setProps({ layers: [] });
       }
+      _deckHovering = false;
       tooltip.style.display = "none";
       map.getCanvas().style.cursor = "";
       return;
@@ -2170,6 +2513,9 @@ function updateDeckAmenityLayers() {
 
   if (!atlas || Object.keys(mapping).length === 0) {
     deckAmenityOverlay.setProps({ layers: [] });
+    _deckHovering = false;
+    tooltip.style.display = "none";
+    map.getCanvas().style.cursor = "";
     return;
   }
 
@@ -2336,7 +2682,7 @@ function updateBuildingColors() {
       });
     }
 
-    if (_urban95PmtilesProtocol) {
+    if (hasGeneratedArtifact("buildings")) {
       feats.forEach(function (f) {
         const p = f.properties || {};
         const bid = Number(p.building_id);
@@ -3727,49 +4073,76 @@ function findClosestBuilding(lngLat) {
 function loadIsochrones(options) {
   const opts = options || {};
   const background = opts.background === true;
-  if (isochronesLoaded || isochroneLoadStarted) return;
-  isochroneLoadStarted = true;
-  const isochronesLoadStartedAt = performance.now();
-  console.log("[Load] isochrones: start");
-
   if (!background) {
     setLoadingStatus("Loading walking areas...");
   }
+  if (isochronesLoaded) return Promise.resolve(null);
+  if (isochroneLoadPromise) return isochroneLoadPromise;
+  const isochronesLoadStartedAt = performance.now();
+  console.log("[Load] isochrones: start");
 
-  fetchJsonWithGzipFallback(ISOCHRONES_URL)
+  isochroneLoadPromise = urban95RuntimeLoaders
+    .loadIsochronesLookup()
     .then(function (data) {
       return urban95Perf.phase("loadIsochrones:indexAndFinish", function () {
-        if (!data || !data.features) throw new Error("Invalid isochrone data");
-        const isochronesIndexStartedAt = performance.now();
-        data.features.forEach(function (f) {
-          const bid = f.properties.building_id;
-          const mins = f.properties.minutes;
-          isochroneIndex[bid + "_" + mins] = f;
+        const byBuilding = data && typeof data.by_building === "object" ? data.by_building : null;
+        const hasCompactLookup =
+          byBuilding &&
+          !Array.isArray(byBuilding) &&
+          Object.keys(byBuilding).length > 0;
+        if (hasCompactLookup) {
+          isochroneIndex = byBuilding;
+          isochronesLookupMode = "compact";
+          isochronesLoaded = true;
+          loadingState.isochrones = true;
+          updateLoadingProgress();
+          console.log(
+            "[Load] isochrones: compact lookup ready in",
+            Math.round(performance.now() - isochronesLoadStartedAt) + "ms"
+          );
+          if (waitingForIsochroneLoad) {
+            hideIsochroneLoadingScreen();
+          }
+          if (selectedBuildingCentroid) {
+            selectBuilding(selectedBuildingCentroid, false);
+          }
+          return null;
+        }
+        return fetchJsonWithGzipFallback(ISOCHRONES_URL).then(function (legacyData) {
+          if (!legacyData || !legacyData.features) throw new Error("Invalid isochrone data");
+          isochronesLookupMode = "legacy";
+          isochroneIndex = {};
+          const isochronesIndexStartedAt = performance.now();
+          legacyData.features.forEach(function (f) {
+            const bid = f.properties.building_id;
+            const mins = f.properties.minutes;
+            isochroneIndex[bid + "_" + mins] = f;
+          });
+          console.log(
+            "[Load] isochrones: indexed",
+            legacyData.features.length,
+            "features in",
+            Math.round(performance.now() - isochronesIndexStartedAt) + "ms"
+          );
+          isochronesLoaded = true;
+          loadingState.isochrones = true;
+          updateLoadingProgress();
+          console.log(
+            "[Load] isochrones: complete total",
+            Math.round(performance.now() - isochronesLoadStartedAt) + "ms"
+          );
+          if (waitingForIsochroneLoad) {
+            hideIsochroneLoadingScreen();
+          }
+          if (selectedBuildingCentroid) {
+            selectBuilding(selectedBuildingCentroid, false);
+          }
+          return null;
         });
-        console.log(
-          "[Load] isochrones: indexed",
-          data.features.length,
-          "features in",
-          Math.round(performance.now() - isochronesIndexStartedAt) + "ms"
-        );
-        isochronesLoaded = true;
-        loadingState.isochrones = true;
-        updateLoadingProgress();
-        console.log(
-          "[Load] isochrones: complete total",
-          Math.round(performance.now() - isochronesLoadStartedAt) + "ms"
-        );
-        if (waitingForIsochroneLoad) {
-          hideIsochroneLoadingScreen();
-        }
-        if (selectedBuildingCentroid) {
-          selectBuilding(selectedBuildingCentroid, false);
-        }
       });
     })
     .catch(function (err) {
       console.error("Failed to load isochrones:", err);
-      isochroneLoadStarted = false;
       loadingState.isochrones = true;
       updateLoadingProgress();
       if (waitingForIsochroneLoad) {
@@ -3778,11 +4151,18 @@ function loadIsochrones(options) {
           hideIsochroneLoadingScreen();
         }, 900);
       }
+    })
+    .finally(function () {
+      isochroneLoadPromise = null;
     });
+  return isochroneLoadPromise;
 }
 
 // Look up the precomputed isochrone polygon for a building
 function getIsochrone(buildingId, minutes) {
+  if (isochronesLookupMode === "compact") {
+    return compactIsochroneFeature(isochroneIndex, buildingId, minutes);
+  }
   const key = buildingId + "_" + minutes;
   return isochroneIndex[key] || null;
 }
@@ -3858,11 +4238,14 @@ function easeInOutQuad(t) {
 function selectBuilding(building, doFly = true) {
   return urban95Perf.phase("selectBuilding", function () {
   selectedBuildingCentroid = building;
+  setSelectedBuildingVectorState(building && building.properties && building.properties.building_id);
 
   // Highlight the selected building outline
   const buildingSource = map.getSource("selected-building");
-  if (buildingSource && building.feature) {
+  if (!hasGeneratedArtifact("buildings") && buildingSource && building.feature) {
     buildingSource.setData({ type: "FeatureCollection", features: [building.feature] });
+  } else if (buildingSource) {
+    buildingSource.setData({ type: "FeatureCollection", features: [] });
   }
 
   if (scoreMode === "weighted") {
@@ -3895,6 +4278,17 @@ function selectBuilding(building, doFly = true) {
   }
 
   if (!isochronesLoaded) {
+    amenitiesInRadiusIds.clear();
+    treesInRadiusIds.clear();
+    streetLightsInRadiusIds.clear();
+    latestRadiusCounts = {};
+    const radiusSource = map.getSource("radius-circle");
+    if (radiusSource) {
+      radiusSource.setData({ type: "FeatureCollection", features: [] });
+    }
+    updateAmenitiesSource();
+    updateTreesSource();
+    updateStreetLightsSource();
     showIsochroneLoadingScreen();
     loadIsochrones();
     if (doFly) {
@@ -3992,6 +4386,7 @@ function updateRadiusInfo() {
 // Clear the radius selection
 function clearRadiusSelection() {
   selectedBuildingCentroid = null;
+  setSelectedBuildingVectorState(null);
   amenitiesInRadiusIds.clear();
   treesInRadiusIds.clear();
   streetLightsInRadiusIds.clear();
@@ -4088,38 +4483,6 @@ map.on("click", function (e) {
   }
 });
 
-map.on("mouseenter", "tree-icons", () => {
-  if (!_deckHovering) map.getCanvas().style.cursor = "pointer";
-});
-map.on("mouseleave", "tree-icons", () => {
-  if (!_deckHovering) map.getCanvas().style.cursor = "";
-  tooltip.style.display = "none";
-});
-map.on("mousemove", "tree-icons", (e) => {
-  if (_deckHovering || e.features.length === 0) return;
-  tooltip.textContent = "Tree";
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.point.x + 12) + "px";
-  tooltip.style.top = (e.point.y + 12) + "px";
-});
-
-map.on("mouseenter", "street-light-icons", () => {
-  if (!_deckHovering) map.getCanvas().style.cursor = "pointer";
-});
-map.on("mouseleave", "street-light-icons", () => {
-  if (!_deckHovering) map.getCanvas().style.cursor = "";
-  tooltip.style.display = "none";
-});
-map.on("mousemove", "street-light-icons", (e) => {
-  if (_deckHovering || e.features.length === 0) return;
-  const p = e.features[0].properties || {};
-  const name = p.name || p.Name || p.hebrew_name || p.hebrew_nam;
-  tooltip.textContent = name || "Street light";
-  tooltip.style.display = "block";
-  tooltip.style.left = (e.point.x + 12) + "px";
-  tooltip.style.top = (e.point.y + 12) + "px";
-});
-
 map.on("load", async function () {
   const appLoadStartedAt = performance.now();
   console.log("[Load] app startup: map load event");
@@ -4149,10 +4512,17 @@ map.on("load", async function () {
 
   setLoadingStatus("Loading buildings...");
   const buildingsStartedAt = performance.now();
-  fetchJsonWithGzipFallback(BUILDINGS_URL)
+  const buildingsLoad = hasGeneratedArtifact("buildings")
+    ? urban95RuntimeLoaders.loadBuildingsRuntimeData()
+    : fetchJsonWithGzipFallback(BUILDINGS_URL);
+  buildingsLoad
     .then(function (fc) {
       console.log("[Load] buildings: features", (fc.features || []).length);
       buildingsData = fc;
+      if (!hasGeneratedArtifact("buildings")) {
+        const buildingsSource = map.getSource(BUILDINGS_MAP_SOURCE_ID);
+        if (buildingsSource) buildingsSource.setData(fc);
+      }
       warnIfBuildingScoresIncomplete(fc);
       percentileSeriesCache.clear();
       buildingAmenityStatKeyCache.clear();
@@ -4223,14 +4593,35 @@ map.on("load", async function () {
   
   setLoadingStatus("Loading amenities...");
   const amenitiesStartedAt = performance.now();
-  Promise.all([
-    fetchJsonWithGzipFallback(AMENITIES_CLEAN_URL, { required: true }),
-    fetchJsonWithGzipFallback(AMENITIES_LEGACY_URL, { required: false })
-  ])
-    .then(function (results) {
+  loadPointsLookup()
+    .then(function (lookup) {
+      if (hasValidPointsLookupSources(lookup)) {
+        const lookupSources = lookup && lookup.sources ? lookup.sources : {};
+        return {
+          source: "points_lookup",
+          cleanFc: featureCollectionFromPointRecords(lookupSources.amenities_clean),
+          legacyFc: Array.isArray(lookupSources.amenities_legacy)
+            ? featureCollectionFromPointRecords(lookupSources.amenities_legacy)
+            : null,
+          treesFc: Array.isArray(lookupSources.trees)
+            ? featureCollectionFromPointRecords(lookupSources.trees)
+            : null,
+          streetLightsFc: Array.isArray(lookupSources.street_lights)
+            ? featureCollectionFromPointRecords(lookupSources.street_lights)
+            : null,
+        };
+      }
+      return loadAmenitiesGeojsonFallback();
+    })
+    .catch(function () {
+      return loadAmenitiesGeojsonFallback();
+    })
+    .then(function (payload) {
       const amenitiesProcessStartedAt = performance.now();
-      const cleanFc = filterCleanManifestPointFeatures(results[0]);
-      const legacyFc = results[1];
+      const cleanFc = payload.cleanFc;
+      const legacyFc = payload.legacyFc;
+      const treesFc = payload.treesFc;
+      const streetLightsFc = payload.streetLightsFc;
 
       allAmenitiesDataClean = cleanFc;
       const cleanScan = scanAmenityTypesFromFeatures(cleanFc);
@@ -4248,14 +4639,32 @@ map.on("load", async function () {
         typesWithDataLegacy = new Set();
       }
 
+      if (payload.source === "points_lookup" && treesFc) {
+        allTreesData = treesFc;
+        treesLoadStarted = true;
+        treesDataSource = "lookup";
+      }
+
+      if (payload.source === "points_lookup" && streetLightsFc) {
+        allStreetLightsData = streetLightsFc;
+        streetLightsLoadStarted = true;
+        streetLightsDataSource = "lookup";
+      }
+
       applyScoreModeAmenities();
       console.log(
         "[Load] amenities: process/apply complete in",
         Math.round(performance.now() - amenitiesProcessStartedAt) + "ms",
+        "source=",
+        payload.source,
         "clean=",
         cleanFc && cleanFc.features ? cleanFc.features.length : 0,
         "legacy=",
-        legacyFc && legacyFc.features ? legacyFc.features.length : 0
+        legacyFc && legacyFc.features ? legacyFc.features.length : 0,
+        "trees=",
+        treesFc && treesFc.features ? treesFc.features.length : 0,
+        "streetLights=",
+        streetLightsFc && streetLightsFc.features ? streetLightsFc.features.length : 0
       );
 
       loadingState.amenities = true;
@@ -4281,8 +4690,7 @@ map.on("load", async function () {
 
   loadingState.isochrones = true;
   updateLoadingProgress();
-  loadIsochrones({ background: true });
-  console.log("[Load] isochrones: background loading started");
+  console.log("[Load] isochrones: deferred until Amenities Focus needs walking areas");
   console.log(
     "[Load] app startup: async jobs queued in",
     Math.round(performance.now() - appLoadStartedAt) + "ms"
@@ -4517,7 +4925,7 @@ function addNeighborhoodLayers() {
 
   const surfaceBeforeId = map.getLayer("buildings-fill") ? "buildings-fill" : undefined;
   map.addLayer(
-    {
+    Object.assign({
       id: "neighborhoods-surface",
       type: "fill",
       source: "neighborhood-score-surface",
@@ -4528,7 +4936,9 @@ function addNeighborhoodLayers() {
         "fill-antialias": true,
       },
       layout: { visibility: "none" },
-    },
+    }, hasGeneratedArtifact("neighborhood_surface")
+      ? { "source-layer": sourceLayer("neighborhood_surface", "neighborhood_surface") }
+      : {}),
     surfaceBeforeId
   );
 
@@ -4558,7 +4968,10 @@ function addNeighborhoodLayers() {
  */
 function applyHouseModeHexBackground() {
   if (currentMode !== "house") return;
-  loadNeighborhoodSurfaceData().then(function () {
+  const surfaceLoad = hasGeneratedArtifact("neighborhood_surface")
+    ? Promise.resolve(null)
+    : loadNeighborhoodSurfaceData();
+  surfaceLoad.then(function () {
     if (currentMode !== "house") return;
     addNeighborhoodLayers();
     if (!map.getLayer("neighborhoods-surface")) return;
@@ -4577,6 +4990,16 @@ function updateNeighborhoodSurfaceData() {
   return urban95Perf.phase("updateNeighborhoodSurfaceData", function () {
     const surfaceSrc = map.getSource("neighborhood-score-surface");
     if (!surfaceSrc) return;
+    if (hasGeneratedArtifact("neighborhood_surface")) {
+      if (map.getLayer("neighborhoods-surface")) {
+        const scoreKey = getNeighborhoodSurfaceScorePropertyKey() || "score_weighted";
+        const colorExpr = getNeighborhoodSurfaceColorExpression(scoreKey);
+        const outlineExpr = currentMode === "house" ? "rgba(0,0,0,0)" : colorExpr;
+        map.setPaintProperty("neighborhoods-surface", "fill-color", colorExpr);
+        map.setPaintProperty("neighborhoods-surface", "fill-outline-color", outlineExpr);
+      }
+      return;
+    }
     let precomputedScoreKey = getNeighborhoodSurfaceScorePropertyKey();
     if (
       scoreMode === "weighted" &&
@@ -4775,7 +5198,10 @@ function enterNeighborhoodMode() {
   urban95Perf.phaseAsync(
     "enterNeighborhoodMode:loadsThenApply",
     loadNeighborhoods().then(function (data) {
-      return Promise.all([loadNeighborhoodChartsPayload(), loadNeighborhoodSurfaceData()]).then(function () {
+      const surfaceLoad = hasGeneratedArtifact("neighborhood_surface")
+        ? Promise.resolve(null)
+        : loadNeighborhoodSurfaceData();
+      return Promise.all([loadNeighborhoodChartsPayload(), surfaceLoad]).then(function () {
         urban95Perf.phase("enterNeighborhoodMode:applyLayersFitBounds", function () {
           const src = map.getSource("neighborhoods");
           if (src) src.setData(data);
