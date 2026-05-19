@@ -87,11 +87,25 @@
         </div>
       </div>
 
-      <div class="section">
-        <label class="toggle">
-          <input type="checkbox" id="show-points-toggle" checked />
+      <div class="section" id="points-visibility-section">
+        <div class="detail-point-toggles" id="urban95-point-toggles">
+          <label class="toggle toggle-with-icon">
+            <input type="checkbox" id="show-trees-toggle" checked />
+            <span class="toggle-slider"></span>
+            <span class="toggle-icon" aria-hidden="true"><img src="./icons/park-alt1.svg" alt="" /></span>
+            <span class="toggle-label">Trees</span>
+          </label>
+          <label class="toggle toggle-with-icon">
+            <input type="checkbox" id="show-lights-toggle" />
+            <span class="toggle-slider"></span>
+            <span class="toggle-icon" aria-hidden="true"><img src="./icons/lighthouse.svg" alt="" /></span>
+            <span class="toggle-label">Lights</span>
+          </label>
+        </div>
+        <label class="toggle" id="amenity-points-toggle-wrap">
+          <input type="checkbox" id="show-amenity-points-toggle" checked />
           <span class="toggle-slider"></span>
-          <span class="toggle-label">Show trees and lights</span>
+          <span class="toggle-label">Show amenity points</span>
         </label>
         <label class="toggle">
           <input type="checkbox" id="show-heatmap-toggle" checked />
@@ -102,7 +116,7 @@
 
       <div class="section">
         <div class="section-title">Building score</div>
-        <div class="metric-options" id="score-model-toggle">
+        <div class="metric-options segmented-options" id="score-model-toggle" role="radiogroup" aria-label="Building score">
           <label class="radio-option">
             <input type="radio" name="score-model" value="weighted" checked />
             <span>Urban95</span>

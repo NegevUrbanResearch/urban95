@@ -146,6 +146,13 @@ body {
   gap: 6px;
 }
 
+.metric-options.segmented-options {
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
 .radio-option {
   display: flex;
   align-items: center;
@@ -161,8 +168,21 @@ body {
   justify-content: center;
 }
 
+.segmented-options .radio-option {
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: #6b7280;
+  box-shadow: none;
+}
+
 .radio-option:hover {
   border-color: #93c5fd;
+}
+
+.segmented-options .radio-option:hover {
+  border-color: transparent;
+  color: #374151;
 }
 
 .radio-option input {
@@ -176,6 +196,14 @@ body {
 .radio-option:has(input:checked) {
   border-color: #3b82f6;
   background: #eff6ff;
+}
+
+.segmented-options .radio-option:has(input:checked) {
+  border-color: transparent;
+  background: #fff;
+  color: #3b82f6;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .radio-custom {
@@ -395,6 +423,17 @@ body {
   padding-bottom: 0;
 }
 
+.detail-point-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.toggle-with-icon {
+  padding: 4px 0;
+}
+
 .toggle input {
   display: none;
 }
@@ -432,6 +471,22 @@ body {
 
 .toggle-label {
   font-weight: 500;
+}
+
+.toggle-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.toggle-icon img {
+  width: 14px;
+  height: 14px;
+  display: block;
+  opacity: 0.68;
 }
 
 .legend-section {
@@ -704,7 +759,7 @@ body {
 .score-explain-header-meta {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
 }
 
@@ -792,6 +847,14 @@ body {
 
 .score-explain-sidebar-body > .horizon-chart > .horizon-group {
   flex: 0 0 auto;
+}
+
+.score-explain-sidebar-body:has(.score-explain-radius-note) > .horizon-chart {
+  flex: 0 0 auto;
+}
+
+.score-explain-sidebar-body.is-chart-roomy:has(.score-explain-radius-note) > .horizon-chart {
+  justify-content: flex-start;
 }
 
 .score-explain-sidebar-body > .horizon-chart > .score-explain-section-h {
@@ -1241,7 +1304,7 @@ body {
 }
 
 .score-explain-sidebar .horizon-chart:not(.horizon-chart-expanded) .horizon-score-weight {
-  font-size: calc(0.74rem * var(--sidebar-content-font, 1));
+  font-size: calc(0.66rem * var(--sidebar-content-font, 1));
 }
 
 .score-explain-sidebar .horizon-chart:not(.horizon-chart-expanded) .horizon-icon {
@@ -1334,7 +1397,7 @@ body {
 }
 
 .horizon-score-weight {
-  font-size: 0.74rem;
+  font-size: 0.66rem;
   font-weight: 600;
   color: #64748b;
   line-height: 1.15;
@@ -1361,6 +1424,34 @@ body {
 .score-explain-sidebar .score-explain-formula-fold {
   font-size: 13px;
   color: #475569;
+}
+
+.score-explain-radius-note {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #334155;
+  font-size: 12.5px;
+  line-height: 1.42;
+  text-align: left;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
+}
+
+.score-explain-radius-note-label {
+  color: #1d4ed8;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .score-explain-sidebar .score-explain-formula-fold summary {

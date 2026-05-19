@@ -15,6 +15,7 @@ const NEIGHBORHOODS_URL = BASE + "/neighborhoods.geojson";
 const NEIGHBORHOOD_SURFACE_URL = BASE + "/neighborhood_surface.geojson";
 const NEIGHBORHOOD_CHARTS_URL = BASE + "/neighborhood_charts.json";
 const CITYWIDE_STATS_URL = BASE + "/citywide_stats.json";
+const PARK_DOT_PATTERN_ID = "park-dot-pattern";
 
 function shouldTryGzip(url) {
   return (
@@ -851,6 +852,47 @@ const _urban95BuildingsFillLayer = Object.assign(
   _urban95PmtilesProtocol ? { "source-layer": BUILDINGS_VECTOR_LAYER_ID } : {}
 );
 
+function createParkDotPatternImage() {
+  const size = 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, size, size);
+
+  // The intentionally clipped off-tile dots give the 2px repeat a softer,
+  // slightly irregular screen texture than a perfectly even grid.
+  [
+    [1.5, 1.4, 0.48, "rgba(21, 128, 61, 0.7)"],
+    [4.5, 1.8, 0.38, "rgba(22, 163, 74, 0.6)"],
+    [7.8, 1.2, 0.42, "rgba(21, 128, 61, 0.64)"],
+    [2.8, 4.2, 0.4, "rgba(22, 163, 74, 0.62)"],
+    [6.2, 4.8, 0.48, "rgba(21, 128, 61, 0.68)"],
+    [9.2, 5.4, 0.34, "rgba(22, 163, 74, 0.58)"],
+    [1.2, 7.4, 0.36, "rgba(21, 128, 61, 0.61)"],
+    [4.8, 8.1, 0.46, "rgba(22, 163, 74, 0.66)"],
+    [8.3, 8.4, 0.4, "rgba(21, 128, 61, 0.63)"],
+  ].forEach(function (dot) {
+    ctx.fillStyle = dot[3];
+    ctx.beginPath();
+    ctx.arc(dot[0], dot[1], dot[2], 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  return ctx.getImageData(0, 0, size, size);
+}
+
+function applyParkDotPattern() {
+  if (!map.hasImage(PARK_DOT_PATTERN_ID)) {
+    map.addImage(PARK_DOT_PATTERN_ID, createParkDotPatternImage(), { pixelRatio: 1 });
+  }
+  if (map.getLayer("parks-fill")) {
+    map.setPaintProperty("parks-fill", "fill-pattern", PARK_DOT_PATTERN_ID);
+    map.setPaintProperty("parks-fill", "fill-opacity", 1);
+    map.setPaintProperty("parks-fill", "fill-outline-color", "rgba(22, 101, 52, 0.22)");
+  }
+}
+
 const map = new maplibregl.Map({
   container: "map",
   style: {
@@ -898,10 +940,10 @@ const map = new maplibregl.Map({
         id: "parks-fill",
         type: "fill",
         source: "parks",
-        paint: { 
-          "fill-color": "#22c55e", 
-          "fill-opacity": 0.3, 
-          "fill-outline-color": "#16a34a" 
+        paint: {
+          "fill-color": "rgba(187, 247, 208, 0.2)",
+          "fill-opacity": 1,
+          "fill-outline-color": "rgba(22, 101, 52, 0.22)"
         },
         layout: { visibility: "visible" },
       },
@@ -954,13 +996,16 @@ const legendLabels = document.getElementById("legend-labels");
 const SYM_PCT_KEY = "_u95_symb_pct";
 const tooltip = document.getElementById("tooltip");
 const radiusToggle = document.getElementById("radius-toggle");
-const showPointsToggle = document.getElementById("show-points-toggle");
+const showTreesToggle = document.getElementById("show-trees-toggle");
+const showLightsToggle = document.getElementById("show-lights-toggle");
+const showAmenityPointsToggle = document.getElementById("show-amenity-points-toggle");
+const urban95PointToggles = document.getElementById("urban95-point-toggles");
+const amenityPointsToggleWrap = document.getElementById("amenity-points-toggle-wrap");
 const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
 
-const TREES_AND_LIGHTS_LAYER_IDS = [
-  "tree-icons",
-  "street-light-icons",
-];
+const TREE_LAYER_IDS = ["tree-icons"];
+const STREET_LIGHT_LAYER_IDS = ["street-light-icons"];
+const TREES_AND_LIGHTS_LAYER_IDS = TREE_LAYER_IDS.concat(STREET_LIGHT_LAYER_IDS);
 
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
@@ -1009,6 +1054,7 @@ let latestRadiusCounts = {};
 const percentileSeriesCache = new Map();
 const buildingAmenityStatKeyCache = new Map();
 const URBAN95_FIXED_MINUTES = 10;
+const URBAN95_REFERENCE_RADIUS_METERS = 300;
 const BUILDING_CENTROID_GRID_CELL_DEGREES = 0.002;
 const BUILDING_CENTROID_MAX_GRID_RING = 4;
 const BUILDING_CENTROID_MIN_CANDIDATES = 24;
@@ -1159,6 +1205,12 @@ function syncFilterUiForScoreMode() {
   }
   if (radiusSection) {
     radiusSection.style.display = isUrban95 ? "none" : "";
+  }
+  const hintEl = document.getElementById("mode-hint");
+  if (hintEl && currentMode === "house") {
+    hintEl.textContent = isUrban95
+      ? "Click map to analyze nearest building; Urban95 shows a fixed 300 m reference radius"
+      : "Click map to analyze nearest building";
   }
   if (filterBtn) {
     filterBtn.disabled = !allowFiltering;
@@ -1817,33 +1869,53 @@ function updateAccessibilityLegendLabels() {
   legendLabels.innerHTML = labels.map((l) => `<span>${l}</span>`).join("");
 }
 
-function setTreesAndLightsVisibility(visible) {
+function setLayerVisibility(layerIds, visible) {
   const v = visible ? "visible" : "none";
-  TREES_AND_LIGHTS_LAYER_IDS.forEach((id) => {
+  layerIds.forEach((id) => {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, "visibility", v);
     }
   });
 }
 
+function setTreesVisibility(visible) {
+  setLayerVisibility(TREE_LAYER_IDS, visible);
+}
+
+function setStreetLightsVisibility(visible) {
+  setLayerVisibility(STREET_LIGHT_LAYER_IDS, visible);
+}
+
+function setTreesAndLightsVisibility(visible) {
+  setLayerVisibility(TREES_AND_LIGHTS_LAYER_IDS, visible);
+}
+
+function buildUrban95ReferenceRadius(lng, lat) {
+  return turf.circle([lng, lat], URBAN95_REFERENCE_RADIUS_METERS, {
+    steps: 96,
+    units: "meters",
+  });
+}
+
 /**
- * The "show points" toggle changes meaning with the active score model:
- *   - Urban95 (weighted): toggles the tree + street-light icon layers.
- *   - Amenities Focus (expanded): toggles the deck.gl amenity pie-chart overlay
- *     (trees and lights are already filtered through the amenity filter UI).
+ * Point visibility controls change with the active score model:
+ *   - Urban95 (weighted): independent tree and street-light symbol toggles.
+ *   - Amenities Focus (expanded): one deck.gl amenity pie-chart overlay toggle
+ *     because trees and lights are already filtered through the amenity filter UI.
  */
 function updateShowPointsToggleLabel() {
-  if (!showPointsToggle) return;
-  const wrapper = showPointsToggle.closest(".toggle");
-  const labelEl = wrapper ? wrapper.querySelector(".toggle-label") : null;
-  if (!labelEl) return;
-  labelEl.textContent = scoreMode === "weighted" ? "Show trees and lights" : "Show amenity points";
+  if (urban95PointToggles) {
+    urban95PointToggles.style.display = scoreMode === "weighted" ? "" : "none";
+  }
+  if (amenityPointsToggleWrap) {
+    amenityPointsToggleWrap.style.display = scoreMode === "expanded" ? "" : "none";
+  }
 }
 
 function applyShowPointsToggle() {
-  if (!showPointsToggle) return;
   if (scoreMode === "weighted") {
-    setTreesAndLightsVisibility(showPointsToggle.checked);
+    setTreesVisibility(showTreesToggle ? showTreesToggle.checked : true);
+    setStreetLightsVisibility(showLightsToggle ? showLightsToggle.checked : true);
   } else {
     setTreesAndLightsVisibility(true);
     updateDeckAmenityLayers();
@@ -2069,7 +2141,7 @@ function clusterVisibleAmenities(features) {
 function updateDeckAmenityLayers() {
   return urban95Perf.phase("updateDeckAmenityLayers", function () {
     const toggleAllows =
-      scoreMode !== "expanded" || !showPointsToggle || showPointsToggle.checked;
+      scoreMode !== "expanded" || !showAmenityPointsToggle || showAmenityPointsToggle.checked;
     const shouldRender =
       currentMode === "house" && toggleAllows && map.getZoom() >= AMENITY_CLUSTER_MIN_ZOOM;
     if (!shouldRender) {
@@ -2814,7 +2886,17 @@ function renderScoreExplainSidebarWeighted(categories) {
     html += "</div></div></div>";
   });
   html += "</div>";
+  html += renderUrban95ReferenceRadiusNote();
   return html;
+}
+
+function renderUrban95ReferenceRadiusNote() {
+  return (
+    '<div class="score-explain-radius-note"><span class="score-explain-radius-note-label">Reference radius</span>' +
+    '<span>Urban95 uses a fixed ' +
+    URBAN95_REFERENCE_RADIUS_METERS +
+    " m reference circle for most checks; trees and bike access use 20 m, shelters use 50 m.</span></div>"
+  );
 }
 
 function renderScoreExplainSidebarExpanded(rows) {
@@ -3092,7 +3174,7 @@ function fitScoreExplainSidebarToViewport() {
   if (!chart) return;
 
   function contentHeight() {
-    return chart.scrollHeight;
+    return body.scrollHeight;
   }
 
   let needed = contentHeight();
@@ -3585,8 +3667,20 @@ document.addEventListener("keydown", function(e) {
   }
 });
 
-if (showPointsToggle) {
-  showPointsToggle.addEventListener("change", function () {
+if (showTreesToggle) {
+  showTreesToggle.addEventListener("change", function () {
+    applyShowPointsToggle();
+  });
+}
+
+if (showLightsToggle) {
+  showLightsToggle.addEventListener("change", function () {
+    applyShowPointsToggle();
+  });
+}
+
+if (showAmenityPointsToggle) {
+  showAmenityPointsToggle.addEventListener("change", function () {
     applyShowPointsToggle();
   });
 }
@@ -3779,7 +3873,7 @@ function selectBuilding(building, doFly = true) {
 
     const radiusSource = map.getSource("radius-circle");
     if (radiusSource) {
-      radiusSource.setData({ type: "FeatureCollection", features: [] });
+      radiusSource.setData(buildUrban95ReferenceRadius(building.lng, building.lat));
     }
 
     updateAmenitiesSource();
@@ -3788,9 +3882,10 @@ function selectBuilding(building, doFly = true) {
     updateRadiusInfo();
 
     if (doFly) {
+      const radiusPolygon = buildUrban95ReferenceRadius(building.lng, building.lat);
       map.easeTo({
         center: [building.lng, building.lat],
-        zoom: Math.max(map.getZoom(), 16),
+        zoom: Math.max(map.getZoom(), getZoomForPolygon(radiusPolygon)),
         duration: 1400,
         easing: easeInOutQuad,
         essential: true
@@ -4030,6 +4125,7 @@ map.on("load", async function () {
   console.log("[Load] app startup: map load event");
   loadingState.mapReady = true;
   updateLoadingProgress();
+  applyParkDotPattern();
   
   // Load icons first
   setLoadingStatus("Loading icons...");
@@ -4045,7 +4141,7 @@ map.on("load", async function () {
   // Add amenity layers after icons are loaded
   const layerInitStartedAt = performance.now();
   addAmenityLayers();
-  setTreesAndLightsVisibility(showPointsToggle ? showPointsToggle.checked : true);
+  applyShowPointsToggle();
   console.log(
     "[Load] layer init: complete",
     Math.round(performance.now() - layerInitStartedAt) + "ms"
@@ -4609,7 +4705,7 @@ function switchMode(mode) {
 }
 
 function setControlsForMode(mode) {
-  const showPointsSection = showPointsToggle ? showPointsToggle.closest(".section") : null;
+  const showPointsSection = document.getElementById("points-visibility-section");
   const legendSection = document.querySelector(".legend-section");
 
   if (mode === "house") {
