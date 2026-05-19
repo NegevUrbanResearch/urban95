@@ -646,7 +646,7 @@ const _urban95BuildingsFillLayer = Object.assign(
     source: BUILDINGS_MAP_SOURCE_ID,
     paint: {
       "fill-color": BUILDINGS_CHOROPLETH_FILL_COLOR_EXPR,
-      "fill-opacity": 0.85,
+      "fill-opacity": 1,
       "fill-outline-color": "#d4d4d8",
     },
   },
@@ -757,8 +757,9 @@ const SYM_PCT_KEY = "_u95_symb_pct";
 const tooltip = document.getElementById("tooltip");
 const radiusToggle = document.getElementById("radius-toggle");
 const showPointsToggle = document.getElementById("show-points-toggle");
+const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
 
-const AMENITY_POINT_LAYER_IDS = [
+const TREES_AND_LIGHTS_LAYER_IDS = [
   "tree-icons",
   "street-light-icons",
 ];
@@ -1041,6 +1042,9 @@ function getNeighborhoodSurfaceColorExpression(scoreProperty) {
   ];
 }
 
+// Opacity for the hex score grid when rendered as a soft background underneath buildings in house mode.
+const HOUSE_MODE_HEX_OPACITY = 0.3;
+
 // Analysis mode state
 let currentMode = "house"; // "house" | "neighborhood" | "citywide"
 let neighborhoodsData = null;
@@ -1321,6 +1325,8 @@ function applyScoreModeAmenities() {
     amenitiesInRadiusIds.clear();
     buildFilterItems(allAmenityTypes);
     syncFilterUiForScoreMode();
+    updateShowPointsToggleLabel();
+    applyShowPointsToggle();
     updateAmenitiesSource();
     updateTreesSource();
     updateStreetLightsSource();
@@ -1329,6 +1335,7 @@ function applyScoreModeAmenities() {
     // returning to house.
     if (currentMode === "house") {
       updateBuildingColors();
+      updateNeighborhoodSurfaceData();
     }
     if (selectedBuildingCentroid) {
       selectBuilding(selectedBuildingCentroid, false);
@@ -1612,14 +1619,37 @@ function updateAccessibilityLegendLabels() {
   legendLabels.innerHTML = labels.map((l) => `<span>${l}</span>`).join("");
 }
 
-function setAmenityPointsVisibility(visible) {
+function setTreesAndLightsVisibility(visible) {
   const v = visible ? "visible" : "none";
-  AMENITY_POINT_LAYER_IDS.forEach((id) => {
+  TREES_AND_LIGHTS_LAYER_IDS.forEach((id) => {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, "visibility", v);
     }
   });
-  updateDeckAmenityLayers();
+}
+
+/**
+ * The "show points" toggle changes meaning with the active score model:
+ *   - Urban95 (weighted): toggles the tree + street-light icon layers.
+ *   - Amenities Focus (expanded): toggles the deck.gl amenity pie-chart overlay
+ *     (trees and lights are already filtered through the amenity filter UI).
+ */
+function updateShowPointsToggleLabel() {
+  if (!showPointsToggle) return;
+  const wrapper = showPointsToggle.closest(".toggle");
+  const labelEl = wrapper ? wrapper.querySelector(".toggle-label") : null;
+  if (!labelEl) return;
+  labelEl.textContent = scoreMode === "weighted" ? "Show trees and lights" : "Show amenity points";
+}
+
+function applyShowPointsToggle() {
+  if (!showPointsToggle) return;
+  if (scoreMode === "weighted") {
+    setTreesAndLightsVisibility(showPointsToggle.checked);
+  } else {
+    setTreesAndLightsVisibility(true);
+    updateDeckAmenityLayers();
+  }
 }
 
 
@@ -1840,8 +1870,10 @@ function clusterVisibleAmenities(features) {
 
 function updateDeckAmenityLayers() {
   return urban95Perf.phase("updateDeckAmenityLayers", function () {
-    const showPoints = showPointsToggle ? showPointsToggle.checked : true;
-    const shouldRender = showPoints && map.getZoom() >= AMENITY_CLUSTER_MIN_ZOOM;
+    const toggleAllows =
+      scoreMode !== "expanded" || !showPointsToggle || showPointsToggle.checked;
+    const shouldRender =
+      currentMode === "house" && toggleAllows && map.getZoom() >= AMENITY_CLUSTER_MIN_ZOOM;
     if (!shouldRender) {
       if (deckAmenityOverlay) {
         deckAmenityOverlay.setProps({ layers: [] });
@@ -2838,6 +2870,8 @@ function handleFilterRadioChange(e) {
     } else {
       updateCitywideModalTitle();
     }
+  } else if (currentMode === "house") {
+    updateNeighborhoodSurfaceData();
   }
 }
 
@@ -3082,7 +3116,14 @@ document.addEventListener("keydown", function(e) {
 
 if (showPointsToggle) {
   showPointsToggle.addEventListener("change", function () {
-    setAmenityPointsVisibility(this.checked);
+    applyShowPointsToggle();
+  });
+}
+
+if (showHeatmapToggle) {
+  showHeatmapToggle.addEventListener("change", function () {
+    if (currentMode !== "house" || !map.getLayer("neighborhoods-surface")) return;
+    map.setLayoutProperty("neighborhoods-surface", "visibility", this.checked ? "visible" : "none");
   });
 }
 
@@ -3508,6 +3549,7 @@ radiusToggle.addEventListener("click", function (e) {
   // Update building choropleth for new walking time and re-analyze selected building
   if (currentMode === "house") {
     updateBuildingColors();
+    updateNeighborhoodSurfaceData();
     if (selectedBuildingCentroid) {
       selectBuilding(selectedBuildingCentroid, true);
     }
@@ -3577,7 +3619,7 @@ map.on("load", async function () {
   // Add amenity layers after icons are loaded
   const layerInitStartedAt = performance.now();
   addAmenityLayers();
-  setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
+  setTreesAndLightsVisibility(showPointsToggle ? showPointsToggle.checked : true);
   console.log(
     "[Load] layer init: complete",
     Math.round(performance.now() - layerInitStartedAt) + "ms"
@@ -3723,6 +3765,8 @@ map.on("load", async function () {
     "[Load] app startup: async jobs queued in",
     Math.round(performance.now() - appLoadStartedAt) + "ms"
   );
+
+  applyHouseModeHexBackground();
 
   map.getCanvas().style.cursor = "";
 });
@@ -3949,18 +3993,22 @@ function addNeighborhoodLayers() {
   if (map.getLayer("neighborhoods-fill")) return;
   console.log("[Neighborhood] Adding layers dynamically");
 
-  map.addLayer({
-    id: "neighborhoods-surface",
-    type: "fill",
-    source: "neighborhood-score-surface",
-    paint: {
-      "fill-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
-      "fill-outline-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
-      "fill-opacity": getNeighborhoodHexSurfaceOpacityExpression(),
-      "fill-antialias": true,
+  const surfaceBeforeId = map.getLayer("buildings-fill") ? "buildings-fill" : undefined;
+  map.addLayer(
+    {
+      id: "neighborhoods-surface",
+      type: "fill",
+      source: "neighborhood-score-surface",
+      paint: {
+        "fill-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
+        "fill-outline-color": getNeighborhoodSurfaceColorExpression(getNeighborhoodSurfaceScorePropertyKey()),
+        "fill-opacity": getNeighborhoodHexSurfaceOpacityExpression(),
+        "fill-antialias": true,
+      },
+      layout: { visibility: "none" },
     },
-    layout: { visibility: "none" },
-  });
+    surfaceBeforeId
+  );
 
   map.addLayer({
     id: "neighborhoods-fill",
@@ -3979,6 +4027,29 @@ function addNeighborhoodLayers() {
   // Skip label layer to avoid glyphs requirement issues
 }
 
+
+/**
+ * House mode renders the hex score grid as a soft, borderless background underneath the
+ * buildings. Non-residential hexes (gray "has_buildings == 0" cells) are filtered out so the
+ * heatmap stays focused on areas relevant to the building analysis. The surface is explicitly
+ * moved below `buildings-fill` so buildings always render fully opaque on top of the heatmap.
+ */
+function applyHouseModeHexBackground() {
+  if (currentMode !== "house") return;
+  loadNeighborhoodSurfaceData().then(function () {
+    if (currentMode !== "house") return;
+    addNeighborhoodLayers();
+    if (!map.getLayer("neighborhoods-surface")) return;
+    if (map.getLayer("buildings-fill")) {
+      map.moveLayer("neighborhoods-surface", "buildings-fill");
+    }
+    map.setPaintProperty("neighborhoods-surface", "fill-opacity", HOUSE_MODE_HEX_OPACITY);
+    map.setFilter("neighborhoods-surface", ["==", ["to-number", ["get", "has_buildings"], 0], 1]);
+    const heatmapVisible = showHeatmapToggle ? showHeatmapToggle.checked : true;
+    map.setLayoutProperty("neighborhoods-surface", "visibility", heatmapVisible ? "visible" : "none");
+    updateNeighborhoodSurfaceData();
+  });
+}
 
 function updateNeighborhoodSurfaceData() {
   return urban95Perf.phase("updateNeighborhoodSurfaceData", function () {
@@ -4007,16 +4078,18 @@ function updateNeighborhoodSurfaceData() {
       surfaceSrc.setData(neighborhoodSurfaceData);
       if (map.getLayer("neighborhoods-surface")) {
         const colorExpr = getNeighborhoodSurfaceColorExpression(precomputedScoreKey);
+        const outlineExpr = currentMode === "house" ? "rgba(0,0,0,0)" : colorExpr;
         map.setPaintProperty("neighborhoods-surface", "fill-color", colorExpr);
-        map.setPaintProperty("neighborhoods-surface", "fill-outline-color", colorExpr);
+        map.setPaintProperty("neighborhoods-surface", "fill-outline-color", outlineExpr);
       }
       return;
     }
     surfaceSrc.setData({ type: "FeatureCollection", features: [] });
     if (map.getLayer("neighborhoods-surface")) {
       const colorExpr = getNeighborhoodSurfaceColorExpression(precomputedScoreKey || "score");
+      const outlineExpr = currentMode === "house" ? "rgba(0,0,0,0)" : colorExpr;
       map.setPaintProperty("neighborhoods-surface", "fill-color", colorExpr);
-      map.setPaintProperty("neighborhoods-surface", "fill-outline-color", colorExpr);
+      map.setPaintProperty("neighborhoods-surface", "fill-outline-color", outlineExpr);
     }
   });
 }
@@ -4134,18 +4207,19 @@ function enterHouseMode() {
   return urban95Perf.phase("enterHouseMode", function () {
     setControlsForMode("house");
 
-    // Show buildings, hide neighborhoods
+    // Buildings render crisp on top of the soft hex heatmap background.
     if (map.getLayer("buildings-fill")) {
       map.setLayoutProperty("buildings-fill", "visibility", "visible");
-      map.setPaintProperty("buildings-fill", "fill-opacity", 0.85);
+      map.setPaintProperty("buildings-fill", "fill-opacity", 1);
     }
-    if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
     if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "none");
     if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "none");
     if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "none");
 
-    setAmenityPointsVisibility(showPointsToggle ? showPointsToggle.checked : true);
+    applyShowPointsToggle();
+    updateDeckAmenityLayers();
     updateBuildingColors();
+    applyHouseModeHexBackground();
   });
 }
 
@@ -4164,7 +4238,16 @@ function enterNeighborhoodMode() {
     if (map.getLayer("parks-fill")) {
       map.setLayoutProperty("parks-fill", "visibility", "none");
     }
-    setAmenityPointsVisibility(false);
+    if (map.getLayer("neighborhoods-surface")) {
+      map.setPaintProperty(
+        "neighborhoods-surface",
+        "fill-opacity",
+        getNeighborhoodHexSurfaceOpacityExpression()
+      );
+      map.setFilter("neighborhoods-surface", null);
+    }
+    setTreesAndLightsVisibility(false);
+    updateDeckAmenityLayers();
   });
 
   urban95Perf.phaseAsync(
@@ -4197,7 +4280,7 @@ function exitNeighborhoodMode() {
   return urban95Perf.phase("exitNeighborhoodMode", function () {
     if (map.getLayer("buildings-fill")) {
       map.setLayoutProperty("buildings-fill", "visibility", "visible");
-      map.setPaintProperty("buildings-fill", "fill-opacity", 0.85);
+      map.setPaintProperty("buildings-fill", "fill-opacity", 1);
     }
     if (map.getLayer("neighborhoods-surface")) {
       map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
@@ -4230,7 +4313,8 @@ function enterCitywideMode() {
     map.setPaintProperty("buildings-fill", "fill-opacity", 0.15);
     map.setPaintProperty("buildings-fill", "fill-color", "#9ca3af");
   }
-  setAmenityPointsVisibility(false);
+  setTreesAndLightsVisibility(false);
+  updateDeckAmenityLayers();
 
   // Show citywide modal
   loadCitywideStats().then(function (data) {
