@@ -853,7 +853,7 @@ const _urban95BuildingsFillLayer = Object.assign(
 );
 
 function createParkDotPatternImage() {
-  const size = 2;
+  const size = 3;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -863,15 +863,15 @@ function createParkDotPatternImage() {
   // The intentionally clipped off-tile dots give the 2px repeat a softer,
   // slightly irregular screen texture than a perfectly even grid.
   [
-    [1.5, 1.4, 0.48, "rgba(21, 128, 61, 0.7)"],
-    [4.5, 1.8, 0.38, "rgba(22, 163, 74, 0.6)"],
-    [7.8, 1.2, 0.42, "rgba(21, 128, 61, 0.64)"],
-    [2.8, 4.2, 0.4, "rgba(22, 163, 74, 0.62)"],
-    [6.2, 4.8, 0.48, "rgba(21, 128, 61, 0.68)"],
-    [9.2, 5.4, 0.34, "rgba(22, 163, 74, 0.58)"],
-    [1.2, 7.4, 0.36, "rgba(21, 128, 61, 0.61)"],
-    [4.8, 8.1, 0.46, "rgba(22, 163, 74, 0.66)"],
-    [8.3, 8.4, 0.4, "rgba(21, 128, 61, 0.63)"],
+    [1.5, 1.4, 0.48, "rgba(15, 118, 110, 0.58)"],
+    [4.5, 1.8, 0.38, "rgba(13, 148, 136, 0.5)"],
+    [7.8, 1.2, 0.42, "rgba(15, 118, 110, 0.53)"],
+    [2.8, 4.2, 0.4, "rgba(13, 148, 136, 0.51)"],
+    [6.2, 4.8, 0.48, "rgba(15, 118, 110, 0.56)"],
+    [9.2, 5.4, 0.34, "rgba(13, 148, 136, 0.48)"],
+    [1.2, 7.4, 0.36, "rgba(15, 118, 110, 0.5)"],
+    [4.8, 8.1, 0.46, "rgba(13, 148, 136, 0.55)"],
+    [8.3, 8.4, 0.4, "rgba(15, 118, 110, 0.52)"],
   ].forEach(function (dot) {
     ctx.fillStyle = dot[3];
     ctx.beginPath();
@@ -888,8 +888,8 @@ function applyParkDotPattern() {
   }
   if (map.getLayer("parks-fill")) {
     map.setPaintProperty("parks-fill", "fill-pattern", PARK_DOT_PATTERN_ID);
-    map.setPaintProperty("parks-fill", "fill-opacity", 1);
-    map.setPaintProperty("parks-fill", "fill-outline-color", "rgba(22, 101, 52, 0.22)");
+    map.setPaintProperty("parks-fill", "fill-opacity", 0.5);
+    map.setPaintProperty("parks-fill", "fill-outline-color", "rgba(15, 118, 110, 0.16)");
   }
 }
 
@@ -941,9 +941,9 @@ const map = new maplibregl.Map({
         type: "fill",
         source: "parks",
         paint: {
-          "fill-color": "rgba(187, 247, 208, 0.2)",
-          "fill-opacity": 1,
-          "fill-outline-color": "rgba(22, 101, 52, 0.22)"
+          "fill-color": "rgba(204, 251, 241, 0)",
+          "fill-opacity": 0.5,
+          "fill-outline-color": "rgba(15, 118, 110, 0.16)"
         },
         layout: { visibility: "visible" },
       },
