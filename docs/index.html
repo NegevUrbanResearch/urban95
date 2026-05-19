@@ -87,11 +87,25 @@
         </div>
       </div>
 
-      <div class="section">
-        <label class="toggle">
-          <input type="checkbox" id="show-points-toggle" checked />
+      <div class="section" id="points-visibility-section">
+        <div class="detail-point-toggles" id="urban95-point-toggles">
+          <label class="toggle toggle-with-icon">
+            <input type="checkbox" id="show-trees-toggle" checked />
+            <span class="toggle-slider"></span>
+            <span class="toggle-icon" aria-hidden="true"><img src="./icons/park-alt1.svg" alt="" /></span>
+            <span class="toggle-label">Trees</span>
+          </label>
+          <label class="toggle toggle-with-icon">
+            <input type="checkbox" id="show-lights-toggle" />
+            <span class="toggle-slider"></span>
+            <span class="toggle-icon" aria-hidden="true"><img src="./icons/lighthouse.svg" alt="" /></span>
+            <span class="toggle-label">Lights</span>
+          </label>
+        </div>
+        <label class="toggle" id="amenity-points-toggle-wrap">
+          <input type="checkbox" id="show-amenity-points-toggle" checked />
           <span class="toggle-slider"></span>
-          <span class="toggle-label">Show trees and lights</span>
+          <span class="toggle-label">Show amenity points</span>
         </label>
         <label class="toggle">
           <input type="checkbox" id="show-heatmap-toggle" checked />
@@ -102,7 +116,7 @@
 
       <div class="section">
         <div class="section-title">Building score</div>
-        <div class="metric-options" id="score-model-toggle">
+        <div class="metric-options segmented-options" id="score-model-toggle" role="radiogroup" aria-label="Building score">
           <label class="radio-option">
             <input type="radio" name="score-model" value="weighted" checked />
             <span>Urban95</span>
@@ -129,42 +143,44 @@
 
     <div id="radius-info"></div>
 
+    <aside
+      id="score-explain-sidebar"
+      class="score-explain-sidebar"
+      aria-label="Score breakdown"
+      aria-hidden="true"
+    >
+      <div class="score-explain-sidebar-inner">
+        <header class="score-explain-sidebar-header">
+          <button
+            type="button"
+            id="score-explain-sidebar-close"
+            class="score-explain-sidebar-close"
+            aria-label="Close score breakdown"
+          >
+            &times;
+          </button>
+          <p class="score-explain-eyebrow" id="score-explain-sidebar-eyebrow" hidden></p>
+          <div class="score-explain-hero-metrics" id="score-explain-sidebar-hero"></div>
+          <div class="score-explain-header-meta" id="score-explain-header-meta">
+            <div class="score-explain-building-ctx" id="score-explain-building-ctx" hidden>
+              <span class="building-ctx-dot" aria-hidden="true"></span>
+              <div class="building-ctx-text">
+                <span class="building-ctx-id" id="score-explain-building-ctx-id"></span>
+                <span class="building-ctx-coords" id="score-explain-building-ctx-coords" hidden></span>
+              </div>
+            </div>
+            <p class="score-explain-hero-note" id="score-explain-sidebar-note"></p>
+          </div>
+        </header>
+        <p id="score-explain-sidebar-empty" class="score-explain-empty" hidden></p>
+        <div id="score-explain-sidebar-body" class="score-explain-sidebar-body" tabindex="-1"></div>
+      </div>
+      <button type="button" id="score-explain-backdrop" class="score-explain-backdrop" aria-label="Close score breakdown" hidden></button>
+    </aside>
+
     <div id="tooltip"></div>
 
     <div id="filter-backdrop" class="filter-backdrop"></div>
-
-    <div
-      id="score-explain-modal"
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="score-explain-title"
-    >
-      <div class="modal-content score-explain-modal-content">
-        <button type="button" id="score-explain-modal-close" class="modal-close" aria-label="Close explain score">
-          &times;
-        </button>
-        <div class="score-explain-modal-hero">
-          <p class="score-explain-eyebrow" id="score-explain-eyebrow"></p>
-          <h2 id="score-explain-title" class="score-explain-title">Explain score</h2>
-          <div class="score-explain-hero-metrics">
-            <div class="score-explain-hero-block">
-              <span class="score-explain-hero-label">Weighted score</span>
-              <span class="score-explain-hero-num" id="score-explain-hero-num">—</span>
-            </div>
-            <div class="score-explain-hero-block score-explain-hero-block-pct">
-              <span class="score-explain-hero-label">Citywide percentile</span>
-              <span class="score-explain-hero-pct" id="score-explain-hero-pct">—</span>
-              <div class="score-explain-hero-meter" aria-hidden="true">
-                <div class="score-explain-hero-meter-fill" id="score-explain-hero-meter-fill"></div>
-              </div>
-            </div>
-          </div>
-          <p class="score-explain-hero-note" id="score-explain-hero-note"></p>
-        </div>
-        <div id="score-explain-modal-scroll" class="score-explain-modal-scroll"></div>
-      </div>
-    </div>
 
     <div id="neighborhood-modal" class="modal">
       <div class="modal-content citywide-content">
