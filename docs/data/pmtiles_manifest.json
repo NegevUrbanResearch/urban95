@@ -7,7 +7,7 @@
       "output": "docs/data/buildings_accessibility.pmtiles",
       "source_layer": "buildings",
       "status": "built",
-      "bytes": 31060967
+      "bytes": 43652457
     },
     {
       "name": "buildings_lookup",
@@ -35,7 +35,7 @@
       "output": "docs/data/neighborhood_surface.pmtiles",
       "source_layer": "neighborhood_surface",
       "status": "built",
-      "bytes": 24312995
+      "bytes": 26771800
     },
     {
       "name": "points_lookup",

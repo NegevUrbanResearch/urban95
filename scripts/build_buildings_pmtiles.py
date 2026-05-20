@@ -150,7 +150,12 @@ DEFAULT_TILE_LAYERS = (
         minzoom=10,
         maxzoom=18,
         geometry="polygon",
-        tippecanoe_flags=("--no-line-simplification", "--detect-shared-borders"),
+        tippecanoe_flags=(
+            "--no-line-simplification",
+            "--detect-shared-borders",
+            "--no-feature-limit",
+            "--no-tile-size-limit",
+        ),
     ),
     TileLayerSpec(
         name="neighborhood_surface",
@@ -160,7 +165,11 @@ DEFAULT_TILE_LAYERS = (
         minzoom=10,
         maxzoom=18,
         geometry="polygon",
-        tippecanoe_flags=("--detect-shared-borders",),
+        tippecanoe_flags=(
+            "--detect-shared-borders",
+            "--no-feature-limit",
+            "--no-tile-size-limit",
+        ),
     ),
     TileLayerSpec(
         name="roads",
@@ -438,9 +447,13 @@ def run_tippecanoe_layer(spec: TileLayerSpec, source_path: Path, output_mbtiles:
             f"--minimum-zoom={spec.minzoom}",
             f"--maximum-zoom={spec.maxzoom}",
             *spec.tippecanoe_flags,
-            "--drop-densest-as-needed",
             "--quiet",
         ]
+        if (
+            "--no-feature-limit" not in spec.tippecanoe_flags
+            and "--no-tile-size-limit" not in spec.tippecanoe_flags
+        ):
+            docker_cmd.insert(-1, "--drop-densest-as-needed")
 
         result = subprocess.run(
             docker_cmd,

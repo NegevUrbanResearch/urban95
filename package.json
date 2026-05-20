@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "http-server . -c-1",
-    "start:docs": "http-server docs -c-1"
+    "start:docs": "http-server docs -c-1",
+    "test:frontend": "node --test tests/frontend/module_contracts.test.js tests/frontend/score_model.test.js"
   },
   "repository": {
     "type": "git",
