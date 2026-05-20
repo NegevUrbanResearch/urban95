@@ -173,8 +173,7 @@
             d.setIsochroneIndex(byBuilding);
             d.setIsochronesLookupMode("compact");
             d.setIsochronesLoaded(true);
-            d.getLoadingState().isochrones = true;
-            d.updateLoadingProgress();
+            d.markIsochronesLoaded();
             console.log(
               "[Load] isochrones: compact lookup ready in",
               Math.round(performance.now() - isochronesLoadStartedAt) + "ms"
@@ -205,8 +204,7 @@
               Math.round(performance.now() - isochronesIndexStartedAt) + "ms"
             );
             d.setIsochronesLoaded(true);
-            d.getLoadingState().isochrones = true;
-            d.updateLoadingProgress();
+            d.markIsochronesLoaded();
             console.log(
               "[Load] isochrones: complete total",
               Math.round(performance.now() - isochronesLoadStartedAt) + "ms"
@@ -223,8 +221,7 @@
       })
       .catch(function (err) {
         console.error("Failed to load isochrones:", err);
-        d.getLoadingState().isochrones = true;
-        d.updateLoadingProgress();
+        d.markIsochronesLoaded();
         if (d.getWaitingForIsochroneLoad()) {
           d.setLoadingStatus("Failed loading walking areas. Please retry in a moment.");
           setTimeout(function () {

@@ -1,4 +1,4 @@
-const fs = require("node:fs");
+﻿const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -12,6 +12,13 @@ function normalizeLocalScriptPath(scriptPath) {
 function scriptSourcesFromIndex() {
   const html = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "index.html"), "utf8");
   return [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"[^>]*>/g)].map((match) => match[1]);
+}
+
+function readAppCoordinatorSource() {
+  return [
+    fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "js", "core", "appDependencies.js"), "utf8"),
+    fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8"),
+  ].join("\n");
 }
 
 function requireScriptIndex(scripts, expectedPath) {
@@ -36,12 +43,24 @@ function runCoreStartup(browserOverrides) {
 function loadAppCoordinatorNamespaces(browser) {
   runBrowserScript("docs/js/core/logger.js", browser);
   runBrowserScript("docs/js/core/startup.js", browser);
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
+  runBrowserScript("docs/js/core/pointDataSources.js", browser);
+  runBrowserScript("docs/js/core/appStartupBridge.js", browser);
 }
 
 function runAppScript(browser) {
   loadAppCoordinatorNamespaces(browser);
+  runBrowserScript("docs/js/scoring/scoreContext.js", browser);
+  runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+  runBrowserScript("docs/js/ui/amenityMode.js", browser);
+  runBrowserScript("docs/js/ui/controlActions.js", browser);
+  runBrowserScript("docs/js/map/mapShell.js", browser);
+  runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
+  runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
+  runBrowserScript("docs/js/core/appDependencies.js", browser);
   return runBrowserScript("docs/app.js", browser);
 }
 
@@ -60,18 +79,52 @@ test("index loads core frontend modules before app.js", () => {
   assert.ok(loadersIndex < loggerIndex);
   const runtimeIndex = requireScriptIndex(scripts, "./js/core/runtimeData.js");
   assert.ok(loggerIndex < runtimeIndex);
+  const pointDataSourcesIndex = requireScriptIndex(scripts, "./js/core/pointDataSources.js");
+  assert.ok(runtimeIndex < pointDataSourcesIndex);
   const startupIndex = requireScriptIndex(scripts, "./js/core/startup.js");
-  assert.ok(runtimeIndex < startupIndex);
+  assert.ok(pointDataSourcesIndex < startupIndex);
+  const loadingUiIndex = requireScriptIndex(scripts, "./js/core/loadingUi.js");
+  assert.ok(startupIndex < loadingUiIndex);
+  assert.ok(loadingUiIndex < appIndex);
+  const appStartupBridgeIndex = requireScriptIndex(scripts, "./js/core/appStartupBridge.js");
+  assert.ok(loadingUiIndex < appStartupBridgeIndex);
+  assert.ok(appStartupBridgeIndex < appIndex);
   const appStateIndex = requireScriptIndex(scripts, "./js/core/appState.js");
   assert.ok(startupIndex < appStateIndex);
   assert.ok(appStateIndex < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/core/perfPanel.js") < appIndex);
-  assert.ok(requireScriptIndex(scripts, "./js/scoring/scoreModel.js") < appIndex);
-  assert.ok(requireScriptIndex(scripts, "./js/map/mapLayers.js") < appIndex);
+  const scoreContextIndex = requireScriptIndex(scripts, "./js/scoring/scoreContext.js");
+  const scoreExplainIndex = requireScriptIndex(scripts, "./js/scoring/scoreExplain.js");
+  const scoreSidebarChromeIndex = requireScriptIndex(scripts, "./js/ui/scoreSidebarChrome.js");
+  const scoreSidebarIndex = requireScriptIndex(scripts, "./js/ui/scoreSidebar.js");
+  const mapLayersIndex = requireScriptIndex(scripts, "./js/map/mapLayers.js");
+  const mapShellIndex = requireScriptIndex(scripts, "./js/map/mapShell.js");
+  assert.ok(requireScriptIndex(scripts, "./js/scoring/scoreModel.js") < scoreContextIndex);
+  assert.ok(scoreContextIndex < scoreExplainIndex);
+  assert.ok(scoreExplainIndex < scoreSidebarIndex);
+  assert.ok(scoreSidebarChromeIndex < scoreSidebarIndex);
+  assert.ok(scoreSidebarChromeIndex < mapLayersIndex);
+  const neighborhoodScoresIndex = requireScriptIndex(scripts, "./js/map/neighborhoodScores.js");
+  const iconLoaderIndex = requireScriptIndex(scripts, "./js/map/iconLoader.js");
+  assert.ok(mapLayersIndex < iconLoaderIndex);
+  assert.ok(mapShellIndex < neighborhoodScoresIndex);
+  assert.ok(neighborhoodScoresIndex < iconLoaderIndex);
+  assert.ok(mapLayersIndex < appIndex);
+  assert.ok(iconLoaderIndex < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/map/mapRenderers.js") < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/map/selection.js") < appIndex);
-  assert.ok(requireScriptIndex(scripts, "./js/ui/controls.js") < appIndex);
-  assert.ok(requireScriptIndex(scripts, "./js/ui/scoreSidebar.js") < appIndex);
+  const amenityModeIndex = requireScriptIndex(scripts, "./js/ui/amenityMode.js");
+  const controlActionsIndex = requireScriptIndex(scripts, "./js/ui/controlActions.js");
+  const controlsIndex = requireScriptIndex(scripts, "./js/ui/controls.js");
+  assert.ok(scoreSidebarChromeIndex < amenityModeIndex);
+  assert.ok(amenityModeIndex < mapLayersIndex);
+  assert.ok(mapLayersIndex < mapShellIndex);
+  assert.ok(mapShellIndex < appIndex);
+  assert.ok(amenityModeIndex < controlsIndex);
+  assert.ok(controlActionsIndex < controlsIndex);
+  assert.ok(controlActionsIndex < appIndex);
+  assert.ok(controlsIndex < appIndex);
+  assert.ok(scoreSidebarIndex < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/ui/infoModal.js") < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/ui/dashboards.js") < appIndex);
   const modeControllerIndex = requireScriptIndex(scripts, "./js/map/modeController.js");
@@ -80,6 +133,9 @@ test("index loads core frontend modules before app.js", () => {
   const mapEventsIndex = requireScriptIndex(scripts, "./js/map/mapEvents.js");
   assert.ok(modeControllerIndex < mapEventsIndex);
   assert.ok(mapEventsIndex < appIndex);
+  const appDependenciesIndex = requireScriptIndex(scripts, "./js/core/appDependencies.js");
+  assert.ok(mapEventsIndex < appDependenciesIndex);
+  assert.ok(appDependenciesIndex < appIndex);
 });
 
 test("logger keeps debug and perf quiet by default without materializing lazy payloads", () => {
@@ -276,16 +332,29 @@ test("core modules expose stable Urban95 namespaces", () => {
   runBrowserScript("docs/js/core/dataArtifacts.js", browser);
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
+  runBrowserScript("docs/js/core/pointDataSources.js", browser);
+  runBrowserScript("docs/js/core/appStartupBridge.js", browser);
   runBrowserScript("docs/js/core/startup.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/scoring/scoreContext.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
+  runBrowserScript("docs/js/map/mapShell.js", browser);
+  runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
+  runBrowserScript("docs/js/map/mapShell.js", browser);
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
   runBrowserScript("docs/js/map/selection.js", browser);
   runBrowserScript("docs/js/ui/controls.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
+  runBrowserScript("docs/js/core/appStartupBridge.js", browser);
+  runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+  runBrowserScript("docs/js/map/iconLoader.js", browser);
+  runBrowserScript("docs/js/ui/amenityMode.js", browser);
+  runBrowserScript("docs/js/ui/controlActions.js", browser);
 
   assert.equal(browser.window.Urban95Config.urls.buildings, "./data/buildings_accessibility.geojson");
   assert.equal(typeof browser.window.Urban95DataArtifacts.hasGeneratedArtifact, "function");
@@ -300,6 +369,7 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95MapLayers.createBuildingsFillLayer, "function");
   assert.equal(typeof browser.window.Urban95MapLayers.createBuildingsSelectedLayer, "function");
   assert.equal(typeof browser.window.Urban95MapLayers.applyParkDotPattern, "function");
+  assert.equal(typeof browser.window.Urban95MapShell.createBaseMap, "function");
   [
     "configure",
     "setLayerVisibilityIfPresent",
@@ -349,6 +419,16 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95ScoreSidebar.show, "function");
   assert.equal(typeof browser.window.Urban95ScoreSidebar.hide, "function");
   assert.equal(typeof browser.window.Urban95ScoreSidebar.sync, "function");
+  assert.equal(typeof browser.window.Urban95LoadingUi.create, "function");
+  assert.equal(typeof browser.window.Urban95PointDataSources.create, "function");
+  assert.equal(typeof browser.window.Urban95AppStartupBridge.bindStartup, "function");
+  assert.equal(typeof browser.window.Urban95ScoreContext.create, "function");
+  assert.equal(typeof browser.window.Urban95ScoreExplain.create, "function");
+  assert.equal(typeof browser.window.Urban95ScoreSidebarChrome.create, "function");
+  assert.equal(typeof browser.window.Urban95NeighborhoodScores.create, "function");
+  assert.equal(typeof browser.window.Urban95IconLoader.create, "function");
+  assert.equal(typeof browser.window.Urban95AmenityMode.create, "function");
+  assert.equal(typeof browser.window.Urban95ControlActions.create, "function");
   assert.equal(typeof browser.window.Urban95InfoModal.bind, "function");
   assert.equal(typeof browser.window.Urban95Dashboards.configure, "function");
   assert.equal(typeof browser.window.Urban95Dashboards.showNeighborhoodModal, "function");
@@ -374,28 +454,735 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95MapEvents.bind, "function");
 });
 
+test("amenity mode owns clean-vs-legacy selection and refresh order", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/amenityMode.js", browser);
+
+  const calls = [];
+  const state = {
+    scoreMode: "expanded",
+    cleanData: { features: [{ properties: { amenity_type: "park" } }] },
+    legacyData: { features: [{ properties: { amenity_type: "school" } }] },
+    selectedBuilding: { lng: 1, lat: 2 },
+    currentMode: "house",
+    allAmenitiesData: null,
+    allAmenityTypes: [],
+    typesWithData: new Set(),
+  };
+
+  const amenityMode = browser.window.Urban95AmenityMode.create({
+    perf: { phase: function (name, callback) { calls.push("phase:" + name); return callback(); } },
+    logger: { warn: function () { calls.push("warn"); } },
+    state: {
+      getScoreMode: function () { return state.scoreMode; },
+      getCleanData: function () { return state.cleanData; },
+      getCleanTypes: function () { return ["park"]; },
+      getCleanTypesWithData: function () { return new Set(["park"]); },
+      getLegacyData: function () { return state.legacyData; },
+      getLegacyTypes: function () { return ["school"]; },
+      getLegacyTypesWithData: function () { return new Set(["school"]); },
+      setAllAmenitiesData: function (value) { state.allAmenitiesData = value; calls.push("setData"); },
+      setAllAmenityTypes: function (value) { state.allAmenityTypes = value; calls.push("setTypes"); },
+      setTypesWithData: function (value) { state.typesWithData = value; calls.push("setTypesWithData"); },
+      clearRadiusIds: function () { calls.push("clearRadius"); },
+      getCurrentMode: function () { return state.currentMode; },
+      getSelectedBuilding: function () { return state.selectedBuilding; },
+    },
+    ui: {
+      buildFilterItems: function () { calls.push("buildFilterItems"); },
+      syncFilterUiForScoreMode: function () { calls.push("syncFilter"); },
+      updateShowPointsToggleLabel: function () { calls.push("toggleLabel"); },
+    },
+    pointDataLoader: {
+      ensureExpandedPointDataLoaded: function () { calls.push("ensureExpanded"); return Promise.resolve(); },
+      canRefreshPointAnalysisAfterPointDataLoad: function () { return true; },
+    },
+    renderers: {
+      applyShowPointsToggle: function () { calls.push("applyShowPoints"); },
+      updateAmenitiesSource: function () { calls.push("amenitiesSource"); },
+      updateTreesSource: function () { calls.push("treesSource"); },
+      updateStreetLightsSource: function () { calls.push("lightsSource"); },
+      updateBuildingColors: function () { calls.push("buildingColors"); },
+      updateNeighborhoodSurfaceData: function () { calls.push("surfaceData"); },
+    },
+    selection: {
+      selectBuilding: function () { calls.push("selectBuilding"); },
+    },
+  });
+
+  await amenityMode.apply();
+
+  assert.equal(state.allAmenitiesData, state.legacyData);
+  assert.deepEqual(state.allAmenityTypes, ["school"]);
+  assert.deepEqual(Array.from(state.typesWithData), ["school"]);
+  assert.deepEqual(calls, [
+    "phase:applyScoreModeAmenities",
+    "setData",
+    "setTypes",
+    "setTypesWithData",
+    "clearRadius",
+    "buildFilterItems",
+    "syncFilter",
+    "toggleLabel",
+    "ensureExpanded",
+    "applyShowPoints",
+    "amenitiesSource",
+    "treesSource",
+    "lightsSource",
+    "buildingColors",
+    "surfaceData",
+    "selectBuilding",
+  ]);
+});
+
+test("amenity mode falls back to clean data and warns when expanded legacy amenities are empty", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/amenityMode.js", browser);
+
+  const calls = [];
+  const state = {
+    scoreMode: "expanded",
+    cleanData: { features: [{ properties: { amenity_type: "park" } }] },
+    legacyData: { features: [] },
+    selectedBuilding: { lng: 1, lat: 2 },
+    currentMode: "house",
+    allAmenitiesData: null,
+    allAmenityTypes: [],
+    typesWithData: new Set(),
+  };
+
+  const amenityMode = browser.window.Urban95AmenityMode.create({
+    perf: { phase: function (name, callback) { calls.push("phase:" + name); return callback(); } },
+    logger: { warn: function () { calls.push("warn"); } },
+    state: {
+      getScoreMode: function () { return state.scoreMode; },
+      getCleanData: function () { return state.cleanData; },
+      getCleanTypes: function () { return ["park"]; },
+      getCleanTypesWithData: function () { return new Set(["park"]); },
+      getLegacyData: function () { return state.legacyData; },
+      getLegacyTypes: function () { return ["school"]; },
+      getLegacyTypesWithData: function () { return new Set(["school"]); },
+      setAllAmenitiesData: function (value) { state.allAmenitiesData = value; calls.push("setData"); },
+      setAllAmenityTypes: function (value) { state.allAmenityTypes = value; calls.push("setTypes"); },
+      setTypesWithData: function (value) { state.typesWithData = value; calls.push("setTypesWithData"); },
+      clearRadiusIds: function () { calls.push("clearRadius"); },
+      getCurrentMode: function () { return state.currentMode; },
+      getSelectedBuilding: function () { return state.selectedBuilding; },
+    },
+    ui: {
+      buildFilterItems: function () { calls.push("buildFilterItems"); },
+      syncFilterUiForScoreMode: function () { calls.push("syncFilter"); },
+      updateShowPointsToggleLabel: function () { calls.push("toggleLabel"); },
+    },
+    pointDataLoader: {
+      ensureExpandedPointDataLoaded: function () { calls.push("ensureExpanded"); return Promise.resolve(); },
+      canRefreshPointAnalysisAfterPointDataLoad: function () { return true; },
+    },
+    renderers: {
+      applyShowPointsToggle: function () { calls.push("applyShowPoints"); },
+      updateAmenitiesSource: function () { calls.push("amenitiesSource"); },
+      updateTreesSource: function () { calls.push("treesSource"); },
+      updateStreetLightsSource: function () { calls.push("lightsSource"); },
+      updateBuildingColors: function () { calls.push("buildingColors"); },
+      updateNeighborhoodSurfaceData: function () { calls.push("surfaceData"); },
+    },
+    selection: {
+      selectBuilding: function () { calls.push("selectBuilding"); },
+    },
+  });
+
+  await amenityMode.apply();
+
+  assert.equal(state.allAmenitiesData, state.cleanData);
+  assert.deepEqual(state.allAmenityTypes, ["park"]);
+  assert.deepEqual(Array.from(state.typesWithData), ["park"]);
+  assert.deepEqual(calls, [
+    "phase:applyScoreModeAmenities",
+    "warn",
+    "setData",
+    "setTypes",
+    "setTypesWithData",
+    "clearRadius",
+    "buildFilterItems",
+    "syncFilter",
+    "toggleLabel",
+    "ensureExpanded",
+    "applyShowPoints",
+    "amenitiesSource",
+    "treesSource",
+    "lightsSource",
+    "buildingColors",
+    "surfaceData",
+    "selectBuilding",
+  ]);
+});
+
+test("control actions own score-mode, filter, walk-minute, escape, and heatmap reactions", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/controlActions.js", browser);
+
+  const calls = [];
+  const state = {
+    currentMode: "house",
+    scoreMode: "weighted",
+    selectedBuilding: { lng: 1, lat: 2 },
+    selectedNeighborhood: { properties: { id: 5 } },
+    canRefreshPointAnalysisAfterPointDataLoad: true,
+  };
+  const classListWithShow = {
+    contains: function (name) {
+      return name === "show";
+    },
+  };
+  const classListWithoutShow = {
+    contains: function () {
+      return false;
+    },
+  };
+
+  const actions = browser.window.Urban95ControlActions.create({
+    perf: {
+      session: function (name) {
+        calls.push("session:" + name);
+      },
+      phase: function (name, callback) {
+        calls.push("phase:" + name);
+        return callback();
+      },
+    },
+    state: {
+      getCurrentMode: function () {
+        return state.currentMode;
+      },
+      getSelectedBuilding: function () {
+        return state.selectedBuilding;
+      },
+      getSelectedNeighborhood: function () {
+        return state.selectedNeighborhood;
+      },
+      clearDerivedCaches: function () {
+        calls.push("clearDerivedCaches");
+      },
+      setIsochronesDeferred: function () {
+        calls.push("isoDeferred");
+      },
+      getIsochronesLoaded: function () {
+        return false;
+      },
+    },
+    pointDataLoader: {
+      canRefreshPointAnalysisAfterPointDataLoad: function () {
+        return state.canRefreshPointAnalysisAfterPointDataLoad;
+      },
+    },
+    loadingUi: {
+      showIsochroneLoadingScreen: function () {
+        calls.push("showIso");
+      },
+      getWaitingForIsochroneLoad: function () {
+        calls.push("waitingIso");
+        return false;
+      },
+      hideIsochroneLoadingScreen: function () {
+        calls.push("hideIso");
+      },
+      mark: function (name) {
+        calls.push("mark:" + name);
+      },
+    },
+    amenityMode: {
+      apply: function () {
+        calls.push("amenityApply");
+        return Promise.resolve();
+      },
+    },
+    renderers: {
+      applyShowPointsToggle: function () {
+        calls.push("showPoints");
+      },
+      updateAmenitiesSource: function () {
+        calls.push("amenities");
+      },
+      updateTreesSource: function () {
+        calls.push("trees");
+      },
+      updateStreetLightsSource: function () {
+        calls.push("lights");
+      },
+      updateBuildingColors: function () {
+        calls.push("buildings");
+      },
+      updateNeighborhoodSurfaceData: function () {
+        calls.push("surface");
+      },
+      updateNeighborhoodColors: function () {
+        calls.push("neighborhoodColors");
+      },
+    },
+    selection: {
+      loadIsochrones: function (options) {
+        calls.push("loadIso:" + String(options.background));
+      },
+      selectBuilding: function (_centroid, shouldAnimate) {
+        calls.push("selectBuilding:" + String(shouldAnimate));
+      },
+      updateRadiusInfo: function () {
+        calls.push("radiusInfo");
+      },
+      clearRadiusSelection: function () {
+        calls.push("clearRadius");
+      },
+    },
+    dashboards: {
+      showNeighborhoodModal: function () {
+        calls.push("showNeighborhood");
+      },
+      renderCitywideModal: function () {
+        calls.push("showCitywide");
+      },
+      updateCitywideModalTitle: function () {
+        calls.push("citywideTitle");
+      },
+      hideNeighborhoodModal: function () {
+        calls.push("hideNeighborhood");
+      },
+      hideCitywideModal: function () {
+        calls.push("hideCitywide");
+      },
+    },
+    scoreSidebar: {
+      isOpen: function () {
+        calls.push("scoreSidebarOpen");
+        return false;
+      },
+      hide: function () {
+        calls.push("scoreSidebarHide");
+      },
+    },
+    modeController: {
+      switchMode: function (mode) {
+        calls.push("switch:" + mode);
+      },
+    },
+    map: {
+      getLayer: function (id) {
+        calls.push("getLayer:" + id);
+        return { id: id };
+      },
+      setLayoutProperty: function (id, property, value) {
+        calls.push("heatmap " + value);
+      },
+    },
+    ui: {
+      getNeighborhoodModal: function () {
+        return { classList: classListWithShow };
+      },
+      getCitywideModal: function () {
+        return { classList: classListWithShow };
+      },
+    },
+  });
+
+  actions.onFilterSelectionChanged();
+  await actions.onScoreModeChanged("expanded");
+  state.scoreMode = "expanded";
+  await actions.onScoreModeChanged("weighted");
+  actions.onWalkMinutesChanged();
+  await actions.onModeToggleRequested("citywide");
+  actions.onHeatmapVisibilityChanged(false);
+  state.currentMode = "citywide";
+  actions.onEscape({ stopPropagation: function () { calls.push("stopPropagation"); } });
+
+  function assertSubsequence(sequence) {
+    let cursor = 0;
+    sequence.forEach(function (expected) {
+      const foundAt = calls.indexOf(expected, cursor);
+      assert.notEqual(foundAt, -1, "expected " + expected + " after " + calls.slice(0, cursor).join(", "));
+      cursor = foundAt + 1;
+    });
+  }
+
+  assertSubsequence([
+    "amenities",
+    "trees",
+    "lights",
+    "buildings",
+    "selectBuilding:false",
+    "surface",
+  ]);
+  assertSubsequence([
+    "session:score-model -> Amenities Focus",
+    "phase:scoreModelToggle:handler",
+    "showIso",
+    "loadIso:false",
+    "amenityApply",
+    "radiusInfo",
+  ]);
+  assertSubsequence([
+    "session:score-model -> Urban95",
+    "phase:scoreModelToggle:handler",
+    "waitingIso",
+    "isoDeferred",
+    "amenityApply",
+    "radiusInfo",
+    "buildings",
+    "surface",
+    "selectBuilding:true",
+  ]);
+  assertSubsequence([
+    "session:analysis mode -> citywide",
+    "phase:modeToggle:click",
+    "switch:citywide",
+    "getLayer:neighborhoods-surface",
+    "heatmap none",
+    "scoreSidebarOpen",
+    "hideCitywide",
+    "switch:house",
+  ]);
+
+  assert.ok(calls.includes("amenities"));
+  assert.ok(calls.includes("showIso"));
+  assert.ok(calls.includes("amenityApply"));
+  assert.ok(calls.includes("radiusInfo"));
+  assert.ok(calls.includes("switch:citywide"));
+  assert.ok(calls.includes("heatmap none"));
+  assert.ok(calls.includes("isoDeferred"));
+  assert.ok(!calls.includes("mark:isochrones"));
+});
+
+test("app dependency validation is exposed through one namespace without leaking helper globals", () => {
+  const dependenciesSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "core", "appDependencies.js"),
+    "utf8"
+  );
+  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+
+  assert.match(dependenciesSource, /^\(function \(\) \{/m);
+  assert.match(dependenciesSource, /window\.Urban95AppDependencies\s*=\s*\{/);
+  assert.match(appSource, /}\s*=\s*window\.Urban95AppDependencies;/);
+
+  [
+    /window\.requireNamespace\s*=/,
+    /window\.urban95RuntimeLoaders\s*=/,
+    /window\.createAppState\s*=/,
+    /window\.fetchJsonWithGzipFallback\s*=/,
+  ].forEach(function (pattern) {
+    assert.doesNotMatch(dependenciesSource, pattern);
+  });
+});
+
+test("icon loader registers amenity icons with fallback and non-fatal warnings", async () => {
+  const warnings = [];
+  const objectUrls = [];
+  const revokedUrls = [];
+  function FakeBlob(parts, options) {
+    this.parts = parts;
+    this.type = options && options.type;
+  }
+  const fakeUrl = {
+    createObjectURL(blob) {
+      objectUrls.push(blob);
+      return "blob:icon-" + objectUrls.length;
+    },
+    revokeObjectURL(url) {
+      revokedUrls.push(url);
+    },
+  };
+  function FakeImage() {
+    this.crossOrigin = null;
+  }
+  Object.defineProperty(FakeImage.prototype, "src", {
+    get() {
+      return this._src;
+    },
+    set(value) {
+      this._src = value;
+      if (typeof this.onload === "function") this.onload();
+    },
+  });
+
+  const mapImages = new Map();
+  const browser = createBrowserContext({
+    fetch(url) {
+      return Promise.resolve({
+        ok: true,
+        text() {
+          return Promise.resolve("<svg data-url=\"" + url + "\"></svg>");
+        },
+      });
+    },
+    Blob: FakeBlob,
+    URL: fakeUrl,
+    Image: FakeImage,
+  });
+
+  runBrowserScript("docs/js/map/iconLoader.js", browser);
+
+  const iconLoader = browser.window.Urban95IconLoader.create({
+    map: {
+      hasImage(name) {
+        return mapImages.has(name);
+      },
+      addImage(name, image, options) {
+        mapImages.set(name, { image, options });
+      },
+    },
+    iconsBase: "./icons",
+    scoreModel: {
+      AMENITY_TYPE_CONFIG: {
+        park: { icon: "park" },
+        school: { icon: "school" },
+      },
+      DEFAULT_CONFIG: { icon: "marker" },
+    },
+    fetch: browser.window.fetch,
+    Image: browser.window.Image,
+    Blob: browser.window.Blob,
+    URL: browser.window.URL,
+    logger: {
+      warn(message) {
+        warnings.push(message);
+      },
+    },
+  });
+
+  await iconLoader.loadAmenityIcons();
+
+  assert.deepEqual(Object.keys(iconLoader).sort(), ["areIconsLoaded", "loadAmenityIcons"]);
+  assert.deepEqual(Array.from(mapImages.keys()).sort(), ["marker", "park", "school"]);
+  ["marker", "park", "school"].forEach(function (name) {
+    assert.equal(mapImages.get(name).options.sdf, true);
+  });
+  assert.deepEqual(warnings, []);
+  assert.equal(iconLoader.areIconsLoaded(), true);
+});
+
+test("icon loader falls back to direct image loading when blob URL support is unavailable", async () => {
+  const warnings = [];
+  const fetchedUrls = [];
+  const imageUrls = [];
+  function FakeImage() {
+    this.crossOrigin = null;
+  }
+  Object.defineProperty(FakeImage.prototype, "src", {
+    get() {
+      return this._src;
+    },
+    set(value) {
+      this._src = value;
+      imageUrls.push(value);
+      if (typeof this.onload === "function") this.onload();
+    },
+  });
+
+  const mapImages = new Map();
+  const browser = createBrowserContext({
+    fetch(url) {
+      fetchedUrls.push(url);
+      return Promise.resolve({
+        ok: true,
+        text() {
+          return Promise.resolve("<svg></svg>");
+        },
+      });
+    },
+    Image: FakeImage,
+  });
+
+  runBrowserScript("docs/js/map/iconLoader.js", browser);
+
+  const iconLoader = browser.window.Urban95IconLoader.create({
+    map: {
+      hasImage(name) {
+        return mapImages.has(name);
+      },
+      addImage(name, image, options) {
+        mapImages.set(name, { image, options });
+      },
+    },
+    iconsBase: "./icons",
+    scoreModel: {
+      AMENITY_TYPE_CONFIG: {
+        "park playground": { icon: "park playground" },
+      },
+      DEFAULT_CONFIG: { icon: "marker/default" },
+    },
+    fetch: browser.window.fetch,
+    Image: browser.window.Image,
+    logger: {
+      warn(message) {
+        warnings.push(message);
+      },
+    },
+  });
+
+  await iconLoader.loadAmenityIcons();
+
+  assert.deepEqual(fetchedUrls, []);
+  assert.deepEqual(imageUrls.sort(), [
+    "./icons/marker%2Fdefault.svg",
+    "./icons/park%20playground.svg",
+  ]);
+  assert.deepEqual(Array.from(mapImages.keys()).sort(), ["marker/default", "park playground"]);
+  assert.deepEqual(warnings, []);
+  assert.equal(iconLoader.areIconsLoaded(), true);
+});
+
 test("startup module exposes Urban95Startup.run", () => {
   const startup = runCoreStartup();
   assert.ok(startup);
   assert.equal(typeof startup.run, "function");
 });
 
+test("loading UI owns progress, status, isochrone overlay, and timeout state", () => {
+  const browser = createBrowserContext({
+    setTimeout: function (callback) {
+      browser.timeoutCallback = callback;
+      return 1;
+    },
+  });
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
+
+  const loadingScreen = {
+    classList: {
+      names: new Set(),
+      contains(name) { return this.names.has(name); },
+      add(name) { this.names.add(name); },
+      remove(name) { this.names.delete(name); },
+    },
+  };
+  const loadingStatus = { textContent: "" };
+  const loadingProgressBar = { style: { width: "" } };
+  const warnings = [];
+
+  const loading = browser.window.Urban95LoadingUi.create({
+    elements: { loadingScreen, loadingStatus, loadingProgressBar },
+    logger: { warn: function () { warnings.push(Array.from(arguments)); } },
+    setTimeout: function (callback) {
+      browser.timeoutCallback = callback;
+      return 1;
+    },
+    timeoutMs: 10,
+  });
+
+  loading.setStatus("Loading buildings...");
+  assert.equal(loadingStatus.textContent, "Loading buildings...");
+  assert.equal(loading.state.icons, false);
+  loading.mark("icons");
+  loading.mark("buildings");
+  assert.equal(loading.state.icons, true);
+  assert.equal(loading.getLoadingState(), loading.state);
+  assert.equal(loadingProgressBar.style.width, "29%");
+  loading.showIsochroneLoadingScreen();
+  assert.equal(loading.getWaitingForIsochroneLoad(), true);
+  assert.equal(loadingProgressBar.style.width, "100%");
+  assert.equal(loadingStatus.textContent, "Loading walking areas for Amenities Focus...");
+  browser.timeoutCallback();
+  assert.equal(loadingScreen.classList.contains("hidden"), false);
+  assert.deepEqual(warnings, []);
+  loading.hideIsochroneLoadingScreen();
+  assert.equal(loading.getWaitingForIsochroneLoad(), false);
+  ["parks", "trees", "amenities", "isochrones", "mapReady"].forEach(function (key) { loading.mark(key); });
+  assert.equal(loadingProgressBar.style.width, "100%");
+});
+
+test("loading UI warns and force-hides when timeout fires before completion", () => {
+  const scheduled = [];
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
+
+  const loadingScreen = {
+    classList: {
+      names: new Set(),
+      contains(name) { return this.names.has(name); },
+      add(name) { this.names.add(name); },
+      remove(name) { this.names.delete(name); },
+    },
+  };
+  const warnings = [];
+  const loading = browser.window.Urban95LoadingUi.create({
+    elements: {
+      loadingScreen,
+      loadingStatus: { textContent: "" },
+      loadingProgressBar: { style: { width: "" } },
+    },
+    logger: { warn: function () { warnings.push(Array.from(arguments)); } },
+    setTimeout: function (callback, delay) {
+      scheduled.push({ callback: callback, delay: delay });
+      return scheduled.length;
+    },
+    timeoutMs: 10,
+  });
+
+  assert.equal(loadingScreen.classList.contains("hidden"), false);
+  assert.equal(scheduled.length, 1);
+  scheduled[0].callback();
+  assert.deepEqual(warnings, [["Loading timeout - forcing hide"]]);
+  assert.equal(scheduled.length, 2);
+  assert.equal(scheduled[1].delay, 300);
+  assert.equal(loadingScreen.classList.contains("hidden"), false);
+  scheduled[1].callback();
+  assert.equal(loadingScreen.classList.contains("hidden"), true);
+});
+
+test("loading UI does not warn on timeout after all loading keys are marked complete", () => {
+  const scheduled = [];
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
+
+  const loadingScreen = {
+    classList: {
+      names: new Set(),
+      contains(name) { return this.names.has(name); },
+      add(name) { this.names.add(name); },
+      remove(name) { this.names.delete(name); },
+    },
+  };
+  const warnings = [];
+  const loading = browser.window.Urban95LoadingUi.create({
+    elements: {
+      loadingScreen,
+      loadingStatus: { textContent: "" },
+      loadingProgressBar: { style: { width: "" } },
+    },
+    logger: { warn: function () { warnings.push(Array.from(arguments)); } },
+    setTimeout: function (callback, delay) {
+      scheduled.push({ callback: callback, delay: delay });
+      return scheduled.length;
+    },
+    timeoutMs: 10,
+  });
+
+  ["icons", "buildings", "parks", "trees", "amenities", "isochrones", "mapReady"].forEach(function (key) {
+    loading.mark(key);
+  });
+
+  assert.equal(scheduled.length, 2);
+  assert.equal(scheduled[1].delay, 300);
+  scheduled[0].callback();
+  assert.deepEqual(warnings, []);
+  assert.equal(loadingScreen.classList.contains("hidden"), false);
+  scheduled[1].callback();
+  assert.equal(loadingScreen.classList.contains("hidden"), true);
+});
+
 test("startup extraction keeps grouped dependency seams in source", () => {
-  const appSource = fs.readFileSync(
-    path.resolve(__dirname, "..", "..", "docs", "app.js"),
-    "utf8"
-  );
+  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
   const startupSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "core", "startup.js"),
     "utf8"
   );
+  const startupBridgeSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "core", "appStartupBridge.js"),
+    "utf8"
+  );
 
-  assert.match(appSource, /Urban95Startup\.run\(\s*\{/);
+  assert.match(appSource, /Urban95AppStartupBridge\.bindStartup\(\s*\{/);
   assert.doesNotMatch(appSource, /map\.on\("load",\s*async function/);
   [
     "state:",
     "runtime:",
-    "loading:",
+    "loadingUi:",
     "callbacks:",
     "renderers:",
     "selection:",
@@ -404,11 +1191,11 @@ test("startup extraction keeps grouped dependency seams in source", () => {
     assert.match(appSource, new RegExp(groupName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   });
   assert.doesNotMatch(appSource, /scoreData:/);
-  assert.match(appSource, /Urban95Startup\.run\(\{[\s\S]*\}\)\.catch\(function \(error\) \{/);
-  assert.match(appSource, /Urban95Logger\.error\("Failed to start app:", error\);/);
-  assert.doesNotMatch(appSource, /setCleanAmenitiesData\s*:/);
-  assert.doesNotMatch(appSource, /setLegacyAmenitiesData\s*:/);
-  assert.doesNotMatch(appSource, /setBuildingsData\s*:/);
+  assert.match(startupBridgeSource, /opts\.startup\.run\(\{[\s\S]*\}\)\.catch\(function \(error\) \{/);
+  assert.match(startupBridgeSource, /opts\.logger\.error\("Failed to start app:", error\);/);
+  assert.doesNotMatch(startupSource, /setCleanAmenitiesData\s*=/);
+  assert.doesNotMatch(startupSource, /setLegacyAmenitiesData\s*=/);
+  assert.doesNotMatch(startupSource, /setBuildingsData\s*=/);
   assert.match(startupSource, /window\.Urban95Startup\s*=\s*\{/);
   assert.match(startupSource, /run:\s*(?:async\s+)?function\s*\(/);
   assert.doesNotMatch(startupSource, /setCleanAmenitiesData\s*=\s*requireFunction/);
@@ -1150,7 +1937,7 @@ test("runtime orchestration helpers live in runtimeData instead of app coordinat
     assert.equal(typeof browser.window.Urban95RuntimeData[memberName], "function");
   });
 
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const appSource = readAppCoordinatorSource();
   assert.doesNotMatch(appSource, /function hasValidPointsLookupSources\s*\(/);
   assert.doesNotMatch(appSource, /function scanAmenityTypesFromFeatures\s*\(/);
   assert.doesNotMatch(appSource, /function warnIfBuildingScoresIncomplete\s*\(/);
@@ -1334,23 +2121,33 @@ test("dense polygon PMTiles preserve features instead of dropping densest tiles"
 
 test("selection and runtime modules preserve lookup-first analysis contracts", () => {
   const runtimeSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "js", "core", "runtimeData.js"), "utf8");
+  const selectionSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "map", "selection.js"),
+    "utf8"
+  );
   assert.match(runtimeSource, /loadBuildingsRuntimeData/);
   assert.match(runtimeSource, /loadIsochronesLookup/);
   assert.match(runtimeSource, /loadPointsLookup/);
 
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const appSource = readAppCoordinatorSource();
   const startupSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "core", "startup.js"),
     "utf8"
   );
-  assert.match(appSource, /Urban95Startup\.run\(\s*\{/);
+  assert.match(appSource, /Urban95AppStartupBridge\.bindStartup\(\s*\{/);
+  assert.match(appSource, /markIsochronesLoaded:\s*function\s*\(\)\s*\{\s*loadingUi\.mark\("isochrones"\);/);
   assert.match(startupSource, /loadBuildingsRuntimeData/);
   assert.match(startupSource, /loadPointsLookup/);
+  assert.match(selectionSource, /d\.markIsochronesLoaded\(\);[\s\S]*compact lookup ready/);
+  assert.match(selectionSource, /d\.markIsochronesLoaded\(\);[\s\S]*complete total/);
+  assert.match(selectionSource, /console\.error\("Failed to load isochrones:", err\);[\s\S]*d\.markIsochronesLoaded\(\);/);
+  assert.doesNotMatch(selectionSource, /getLoadingState\(\)\.isochrones\s*=\s*true/);
+  assert.doesNotMatch(appSource, /Urban95Selection\.configure\(\{[\s\S]*getLoadingState:/);
   assert.doesNotMatch(appSource, buildingRenderedFeaturesLayerPattern);
 });
 
 test("task-7 app coordinator wires map renderer and selection modules", () => {
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const appSource = readAppCoordinatorSource();
   const startupSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "core", "startup.js"),
     "utf8"
@@ -1359,8 +2156,8 @@ test("task-7 app coordinator wires map renderer and selection modules", () => {
     path.resolve(__dirname, "..", "..", "docs", "js", "map", "mapEvents.js"),
     "utf8"
   );
-  assert.match(appSource, /const Urban95MapRenderers = requireNamespace\(window, "Urban95MapRenderers"\);/);
-  assert.match(appSource, /const Urban95Selection = requireNamespace\(window, "Urban95Selection"\);/);
+  assert.match(appSource, /(?:const|var) Urban95MapRenderers = requireNamespace\(window, "Urban95MapRenderers"\);/);
+  assert.match(appSource, /(?:const|var) Urban95Selection = requireNamespace\(window, "Urban95Selection"\);/);
   assert.match(appSource, /Urban95MapRenderers\.configure\(\{/);
   assert.match(appSource, /Urban95Selection\.configure\(\{/);
   assert.match(appSource, /hasRadiusSelectionState:\s*function\s*\(\)\s*\{/);
@@ -1378,9 +2175,112 @@ test("task-7 app coordinator wires map renderer and selection modules", () => {
 });
 
 test("task-8 app coordinator wires the controls module", () => {
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
-  assert.match(appSource, /const Urban95Controls = requireNamespace\(window, "Urban95Controls"\);/);
+  const appSource = readAppCoordinatorSource();
+  assert.match(appSource, /(?:const|var) Urban95Controls = requireNamespace\(window, "Urban95Controls"\);/);
   assert.match(appSource, /controlsBinding = Urban95Controls\.bind\(\{/);
+});
+
+test("task-5 app coordinator passes focused grouped amenity mode dependencies", () => {
+  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const amenityModeCreateBlock = appSource.match(
+    /const amenityMode = Urban95AmenityMode\.create\(\{[\s\S]*?\n\}\);/
+  );
+
+  assert.ok(amenityModeCreateBlock, "app.js should create amenityMode with an explicit dependency block");
+  const amenityModeSource = amenityModeCreateBlock[0];
+
+  assert.match(
+    amenityModeSource,
+    /pointDataLoader:\s*\{\s*ensureExpandedPointDataLoaded:\s*pointDataLoader\.ensureExpandedPointDataLoaded,\s*canRefreshPointAnalysisAfterPointDataLoad:\s*pointDataLoader\.canRefreshPointAnalysisAfterPointDataLoad,\s*\}/s
+  );
+  assert.match(
+    amenityModeSource,
+    /renderers:\s*\{\s*applyShowPointsToggle:\s*Urban95MapRenderers\.applyShowPointsToggle,\s*updateAmenitiesSource:\s*Urban95MapRenderers\.updateAmenitiesSource,\s*updateTreesSource:\s*Urban95MapRenderers\.updateTreesSource,\s*updateStreetLightsSource:\s*Urban95MapRenderers\.updateStreetLightsSource,\s*updateBuildingColors:\s*Urban95MapRenderers\.updateBuildingColors,\s*updateNeighborhoodSurfaceData:\s*Urban95MapRenderers\.updateNeighborhoodSurfaceData,\s*\}/s
+  );
+  assert.match(
+    amenityModeSource,
+    /selection:\s*\{\s*selectBuilding:\s*Urban95Selection\.selectBuilding,\s*\}/s
+  );
+  assert.doesNotMatch(amenityModeSource, /pointDataLoader:\s*pointDataLoader/);
+  assert.doesNotMatch(amenityModeSource, /renderers:\s*Urban95MapRenderers/);
+  assert.doesNotMatch(amenityModeSource, /selection:\s*Urban95Selection/);
+});
+
+test("app.js is final coordinator only after ownership extraction", () => {
+  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const appLines = appSource.split(/\r?\n/).length;
+  const appOwnedHelperPattern = function (name) {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(
+      [
+        "\\bfunction\\s+" + escapedName + "\\b",
+        "\\b(?:const|let|var)\\s+" + escapedName + "\\s*=\\s*(?:async\\s+)?(?:function\\b|\\([^)]*\\)\\s*=>|[A-Za-z_$][\\w$]*\\s*=>)",
+        "\\b" + escapedName + "\\s*:\\s*(?:async\\s+)?(?:function\\b|\\([^)]*\\)\\s*=>|[A-Za-z_$][\\w$]*\\s*=>)",
+        "\\b" + escapedName + "\\s*\\([^)]*\\)\\s*\\{",
+      ].join("|")
+    );
+  };
+
+  assert.ok(
+    appLines <= 1200,
+    "docs/app.js should stay at or below 1200 lines after final coordinator extraction, got " + appLines
+  );
+
+  // Keep the plan's exact bans, but also catch common app-owned reassignment styles for the same helpers.
+  [
+    appOwnedHelperPattern("buildExplainScoreBreakdown"),
+    appOwnedHelperPattern("fillExplainSeries"),
+    appOwnedHelperPattern("renderHorizonIcon"),
+    appOwnedHelperPattern("horizonBarFillStyle"),
+    appOwnedHelperPattern("updateLoadingProgress"),
+    appOwnedHelperPattern("showIsochroneLoadingScreen"),
+    appOwnedHelperPattern("hideIsochroneLoadingScreen"),
+    appOwnedHelperPattern("loadAmenityIcons"),
+    appOwnedHelperPattern("applyScoreModeAmenities"),
+    appOwnedHelperPattern("handleControlsFilterSelectionChanged"),
+    appOwnedHelperPattern("handleControlsScoreModeChanged"),
+    appOwnedHelperPattern("handleControlsWalkMinutesChanged"),
+    appOwnedHelperPattern("handleControlsModeToggleRequested"),
+    appOwnedHelperPattern("handleControlsEscape"),
+    appOwnedHelperPattern("handleControlsHeatmapVisibilityChange"),
+    appOwnedHelperPattern("clearControlDerivedCaches"),
+    appOwnedHelperPattern("renderWeightedSubcategoryComparisonList"),
+    appOwnedHelperPattern("getCurrentScoreModelContext"),
+    appOwnedHelperPattern("getCurrentBuildingCleanFilteredScore"),
+    appOwnedHelperPattern("getCurrentBuildingOverallScore"),
+    appOwnedHelperPattern("collectCurrentBuildingScores"),
+    appOwnedHelperPattern("getWeightedAverageValueFromCurrentSelection"),
+    appOwnedHelperPattern("weightedNeighborhoodRankingRowsForCurrentSelection"),
+    appOwnedHelperPattern("getCitywideWeightedAverageScoreForCurrentSelection"),
+    appOwnedHelperPattern("getCurrentPercentileSeriesCacheKey"),
+    appOwnedHelperPattern("getCurrentBuildingAmenityStatKeysForMinutes"),
+    appOwnedHelperPattern("loadPointsLookup"),
+    appOwnedHelperPattern("loadAmenitiesGeojsonFallback"),
+    appOwnedHelperPattern("filterCleanManifestPointFeatures"),
+    appOwnedHelperPattern("getZoomForPolygon"),
+    appOwnedHelperPattern("getNeighborhoodAverageKey"),
+    appOwnedHelperPattern("getNeighborhoodPercentileKey"),
+    appOwnedHelperPattern("getScoreMinutes"),
+    appOwnedHelperPattern("normalizeSurfaceFilterKey"),
+    appOwnedHelperPattern("getNeighborhoodSurfaceScorePropertyKey"),
+    appOwnedHelperPattern("getNeighborhoodSurfaceColorExpression"),
+  ].forEach(function (pattern) {
+    assert.doesNotMatch(appSource, pattern);
+  });
+
+  [
+    /Urban95LoadingUi\.create\s*\(/,
+    /Urban95ScoreExplain\.create\s*\(/,
+    /Urban95ScoreSidebarChrome\.create\s*\(/,
+    /Urban95IconLoader\.create\s*\(/,
+    /Urban95AmenityMode\.create\s*\(/,
+    /Urban95ControlActions\.create\s*\(/,
+    /Urban95AppStartupBridge\.bindStartup\s*\(/,
+    /Urban95Controls\.bind\s*\(/,
+    /Urban95MapEvents\.bind\s*\(/,
+  ].forEach(function (pattern) {
+    assert.match(appSource, pattern);
+  });
 });
 
 test("mode orchestration lives in Urban95ModeController instead of app.js", () => {
@@ -1405,9 +2305,9 @@ test("mode orchestration lives in Urban95ModeController instead of app.js", () =
 });
 
 test("app coordinator delegates startup, modes, and map events", () => {
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const appSource = readAppCoordinatorSource();
 
-  assert.match(appSource, /Urban95Startup\.run\(/);
+  assert.match(appSource, /Urban95AppStartupBridge\.bindStartup\(/);
   assert.match(appSource, /Urban95ModeController\.create\(/);
   assert.match(appSource, /Urban95MapEvents\.bind\(/);
   assert.doesNotMatch(appSource, /map\.on\(\s*["']mousemove["']\s*,\s*["'][^"']*neighborhood/i);
@@ -1430,6 +2330,43 @@ test("mode controller uses explicit UI element injection instead of document loo
   assert.doesNotMatch(modeSource, /documentRef/);
   assert.doesNotMatch(modeSource, /getElementById/);
   assert.doesNotMatch(modeSource, /querySelector\s*\(/);
+});
+
+test("control actions uses explicit modal accessors instead of document lookups", () => {
+  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const controlActionsSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "controlActions.js"),
+    "utf8"
+  );
+
+  assert.match(
+    appSource,
+    /ui:\s*\{\s*getNeighborhoodModal:\s*function \(\) \{\s*return neighborhoodModalEl;\s*\},\s*getCitywideModal:\s*function \(\) \{\s*return citywideModalEl;\s*\},\s*\}/s
+  );
+  assert.match(controlActionsSource, /\["ui\.getNeighborhoodModal", ui\.getNeighborhoodModal\]/);
+  assert.match(controlActionsSource, /\["ui\.getCitywideModal", ui\.getCitywideModal\]/);
+  assert.match(controlActionsSource, /var getNeighborhoodModal = ui\.getNeighborhoodModal;/);
+  assert.match(controlActionsSource, /var getCitywideModal = ui\.getCitywideModal;/);
+  assert.doesNotMatch(controlActionsSource, /documentRef/);
+  assert.doesNotMatch(controlActionsSource, /getElementById/);
+  assert.doesNotMatch(controlActionsSource, /["']neighborhood-modal["']/);
+  assert.doesNotMatch(controlActionsSource, /["']citywide-modal["']/);
+});
+
+test("control actions no longer requires or receives state.getScoreMode", () => {
+  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const controlActionsSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "controlActions.js"),
+    "utf8"
+  );
+  const controlActionsCreateStart = appSource.indexOf("const controlActions = Urban95ControlActions.create({");
+  assert.notEqual(controlActionsCreateStart, -1);
+  const controlsBindStart = appSource.indexOf("controlsBinding = Urban95Controls.bind({", controlActionsCreateStart);
+  assert.notEqual(controlsBindStart, -1);
+  const controlActionsCreateBlock = appSource.slice(controlActionsCreateStart, controlsBindStart);
+
+  assert.doesNotMatch(controlActionsSource, /\["state\.getScoreMode", state\.getScoreMode\]/);
+  assert.doesNotMatch(controlActionsCreateBlock, /getScoreMode:\s*getScoreModeState,/);
 });
 
 function createModeControllerHarness(overrides) {
@@ -1742,15 +2679,22 @@ test("app constants are initialized before configure calls that read them", () =
 });
 
 test("amenities focus first switch loads isochrones in background until a building is selected", () => {
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
-  assert.match(
-    appSource,
-    /const shouldBlockForSelectedBuilding = !!selectedBuildingCentroid && !isochronesLoaded;/
+  const controlActionsSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "controlActions.js"),
+    "utf8"
   );
-  assert.match(appSource, /if \(shouldBlockForSelectedBuilding\) \{\s*showIsochroneLoadingScreen\(\);/);
+  assert.match(controlActionsSource, /if \(nextScoreMode !== "weighted"\) \{/);
   assert.match(
-    appSource,
-    /Urban95Selection\.loadIsochrones\(\{\s*background:\s*!shouldBlockForSelectedBuilding\s*\}\);/
+    controlActionsSource,
+    /var shouldBlockForSelectedBuilding =\s*!!state\.getSelectedBuilding\(\) && !state\.getIsochronesLoaded\(\);/
+  );
+  assert.match(
+    controlActionsSource,
+    /if \(shouldBlockForSelectedBuilding\) \{\s*loadingUi\.showIsochroneLoadingScreen\(\);/
+  );
+  assert.match(
+    controlActionsSource,
+    /selection\.loadIsochrones\(\{\s*background:\s*!shouldBlockForSelectedBuilding\s*\}\);/
   );
 });
 
@@ -2011,16 +2955,20 @@ test("selection clearRadiusSelection clears module-owned overlay data even when 
 });
 
 test("task-4 app coordinator uses exported building source/layer/state contracts", () => {
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const appSource = readAppCoordinatorSource();
   const selectionSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "map", "selection.js"),
     "utf8"
   );
-  assert.match(appSource, /const BUILDING_LAYER_CONTRACTS = resolveBuildingContracts\(\{/);
-  assert.match(appSource, /const BUILDINGS_MAP_SOURCE_ID = BUILDING_LAYER_CONTRACTS\.sourceId;/);
-  assert.match(appSource, /const BUILDINGS_FILL_LAYER_ID = BUILDING_LAYER_CONTRACTS\.fillLayerId;/);
-  assert.match(appSource, /const BUILDINGS_SELECTED_STATE_KEY = BUILDING_LAYER_CONTRACTS\.selectedStateKey;/);
-  assert.match(appSource, /\[BUILDINGS_MAP_SOURCE_ID\]\s*:\s*_urban95BuildingsSource/);
+  const mapShellSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "map", "mapShell.js"),
+    "utf8"
+  );
+  assert.match(appSource, /(?:const|var) BUILDING_LAYER_CONTRACTS = resolveBuildingContracts\(\{/);
+  assert.match(appSource, /(?:const|var) BUILDINGS_MAP_SOURCE_ID = BUILDING_LAYER_CONTRACTS\.sourceId;/);
+  assert.match(appSource, /(?:const|var) BUILDINGS_FILL_LAYER_ID = BUILDING_LAYER_CONTRACTS\.fillLayerId;/);
+  assert.match(appSource, /(?:const|var) BUILDINGS_SELECTED_STATE_KEY = BUILDING_LAYER_CONTRACTS\.selectedStateKey;/);
+  assert.match(mapShellSource, /\[opts\.buildingsMapSourceId \|\| "buildings"\]: opts\.buildingsSource/);
   assert.match(appSource, /buildingsSelectedStateKey:\s*BUILDINGS_SELECTED_STATE_KEY/);
   assert.match(selectionSource, /Object\.fromEntries\(\[\[d\.buildingsSelectedStateKey,\s*false\]\]\)/);
   assert.match(selectionSource, /Object\.fromEntries\(\[\[d\.buildingsSelectedStateKey,\s*true\]\]\)/);
@@ -2167,12 +3115,12 @@ test("controls bind validates dependencies and returns the coordinator surface",
 });
 
 test("task-3 app coordinator binds score model helpers without reimplementing extracted pure helpers", () => {
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  const appSource = readAppCoordinatorSource();
   assert.match(appSource, /function requireNamespace\s*\(/);
   assert.match(appSource, /function requireScoreModelMember\s*\(/);
-  assert.match(appSource, /const Urban95ScoreModel = requireNamespace\(window, "Urban95ScoreModel"\);/);
-  assert.match(appSource, /const percentileBreakpoints = requireScoreModelMember\(Urban95ScoreModel, "percentileBreakpoints"\);/);
-  assert.match(appSource, /const formatMetricNumber = requireScoreModelMember\(Urban95ScoreModel, "formatMetricNumber"\);/);
+  assert.match(appSource, /(?:const|var) Urban95ScoreModel = requireNamespace\(window, "Urban95ScoreModel"\);/);
+  assert.match(appSource, /(?:const|var) percentileBreakpoints = requireScoreModelMember\(Urban95ScoreModel, "percentileBreakpoints"\);/);
+  assert.match(appSource, /(?:const|var) formatMetricNumber = requireScoreModelMember\(Urban95ScoreModel, "formatMetricNumber"\);/);
 
   assert.doesNotMatch(appSource, /function percentileBreakpoints\s*\(/);
   assert.doesNotMatch(appSource, /function buildHistogramDistributionFromScores\s*\(/);
@@ -2186,11 +3134,19 @@ test("task-3 app coordinator binds score model helpers without reimplementing ex
 });
 
 test("task-5 app coordinator wires the score sidebar module instead of keeping local sidebar logic", () => {
-  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
-  assert.match(appSource, /const Urban95ScoreSidebar = requireNamespace\(window, "Urban95ScoreSidebar"\);/);
+  const appSource = readAppCoordinatorSource();
+  const controlActionsSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "controlActions.js"),
+    "utf8"
+  );
+  assert.match(appSource, /(?:const|var) Urban95ScoreSidebar = requireNamespace\(window, "Urban95ScoreSidebar"\);/);
   assert.match(appSource, /Urban95ScoreSidebar\.configure\(\{/);
-  assert.match(appSource, /Urban95ScoreSidebar\.isOpen\(\)/);
-  assert.match(appSource, /Urban95ScoreSidebar\.hide\(\)/);
+  assert.match(
+    appSource,
+    /scoreSidebar:\s*\{\s*isOpen:\s*Urban95ScoreSidebar\.isOpen,\s*hide:\s*Urban95ScoreSidebar\.hide,\s*\}/s
+  );
+  assert.match(controlActionsSource, /scoreSidebar\.isOpen\(\)/);
+  assert.match(controlActionsSource, /scoreSidebar\.hide\(\)/);
   assert.doesNotMatch(appSource, /function renderScoreExplainSidebarWeighted\s*\(/);
   assert.doesNotMatch(appSource, /function showScoreExplainSidebar\s*\(/);
   assert.doesNotMatch(appSource, /function hideScoreExplainSidebar\s*\(/);
@@ -2265,11 +3221,360 @@ test("task-5 app coordinator injects sidebar chrome and uses non-focus-stealing 
   assert.match(appSource, /bodyEl:\s*scoreExplainSidebarBodyEl/);
   assert.match(appSource, /closeButtonEl:\s*scoreExplainSidebarCloseButtonEl/);
   assert.match(appSource, /backdropEl:\s*scoreExplainBackdropEl/);
-  assert.match(appSource, /setSidebarPadding:\s*setScoreSidebarMapPadding/);
-  assert.match(appSource, /restoreFocusAfterHide:\s*focusMapAfterScoreSidebar/);
+  assert.match(appSource, /const scoreSidebarChrome = Urban95ScoreSidebarChrome\.create\(\{/);
+  assert.match(appSource, /setSidebarPadding:\s*scoreSidebarChrome\.setSidebarPadding/);
+  assert.match(appSource, /restoreFocusAfterHide:\s*scoreSidebarChrome\.restoreFocusAfterHide/);
+  assert.match(appSource, /scoreExplainIconNeutral:\s*scoreExplain\.scoreExplainIconNeutral/);
   assert.match(appSource, /syncScoreSidebar:\s*Urban95ScoreSidebar\.sync/);
   assert.match(appSource, /hideScoreSidebar:\s*Urban95ScoreSidebar\.hide/);
   assert.match(selectionSource, /d\.hideScoreSidebar\(\{\s*restoreFocus:\s*false\s*\}\)/);
+});
+
+test("score sidebar chrome owns map padding and focus restoration", () => {
+  const mapCalls = [];
+  const canvas = {
+    attrs: {},
+    focusCalls: [],
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
+    focus(options) {
+      this.focusCalls.push(options);
+    },
+  };
+  const mapElement = {
+    attrs: {},
+    focusCalls: [],
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
+    focus(options) {
+      this.focusCalls.push(options);
+    },
+  };
+  const browser = createBrowserContext({
+    matchMedia() {
+      return { matches: false };
+    },
+    document: {
+      getElementById(id) {
+        if (id === "map") return mapElement;
+        return null;
+      },
+    },
+  });
+  const map = {
+    currentPadding: { top: 12, right: 24, bottom: 36, left: 48 },
+    getPadding() {
+      mapCalls.push({ type: "getPadding" });
+      return this.currentPadding;
+    },
+    setPadding(nextPadding) {
+      mapCalls.push({ type: "setPadding", value: nextPadding });
+      this.currentPadding = Object.assign({}, nextPadding);
+    },
+    resize() {
+      mapCalls.push({ type: "resize" });
+    },
+    getCanvas() {
+      mapCalls.push({ type: "getCanvas" });
+      return canvas;
+    },
+  };
+
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+
+  const chrome = browser.window.Urban95ScoreSidebarChrome.create({
+    map: map,
+    document: browser.window.document,
+    matchMedia: browser.window.matchMedia,
+  });
+
+  const before = JSON.parse(JSON.stringify(map.currentPadding));
+  chrome.setSidebarPadding(true, 360);
+  chrome.setSidebarPadding(false, 0);
+  chrome.restoreFocusAfterHide();
+
+  assert.equal(typeof chrome.cloneMapPadding, "undefined");
+  assert.deepEqual(before, { top: 12, right: 24, bottom: 36, left: 48 });
+  assert.deepEqual(JSON.parse(JSON.stringify(mapCalls)), [
+    { type: "getPadding" },
+    { type: "setPadding", value: { top: 12, right: 360, bottom: 36, left: 48 } },
+    { type: "resize" },
+    { type: "setPadding", value: { top: 12, right: 24, bottom: 36, left: 48 } },
+    { type: "resize" },
+    { type: "getCanvas" },
+  ]);
+  assert.deepEqual(canvas.attrs, { tabindex: "-1" });
+  assert.deepEqual(JSON.parse(JSON.stringify(canvas.focusCalls)), [{ preventScroll: true }]);
+  assert.deepEqual(mapElement.focusCalls, []);
+});
+
+test("score explanation create fails fast when a required scoreModel member is missing", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
+
+  assert.throws(
+    () =>
+      browser.window.Urban95ScoreExplain.create({
+        scoreModel: {
+          CLEAN_SCORE_COMPONENTS: [],
+          CLEAN_WEIGHTS: {},
+          WEIGHTED_CATEGORY_COMPONENTS: [],
+          WEIGHTED_CATEGORY_BY_STEM: {},
+          WEIGHTED_SUBCATEGORY_COMPONENTS: {},
+          getAmenityConfig() {
+            return { icon: "marker" };
+          },
+          filterTypeToCleanWeightKey() {
+            return null;
+          },
+          hasCleanPtsBreakdown() {
+            return false;
+          },
+          cleanPtsPropertyName() {
+            return "";
+          },
+          getFilteredContributionForType() {
+            return 0;
+          },
+          amenityTypeToBuildingStatKey(type) {
+            return type;
+          },
+          getExpandedContributionForType() {
+            return 0;
+          },
+          formatScoreInteger(value) {
+            return String(value);
+          },
+          getPercentileSeriesCacheKey() {
+            return "k";
+          },
+          computePercentileRank() {
+            return 0;
+          },
+        },
+        iconsBase: "./icons",
+        state: {
+          getScoreMode() {
+            return "weighted";
+          },
+          getScoreMinutes() {
+            return 10;
+          },
+          getWalkMinutes() {
+            return 10;
+          },
+          getSelectedAmenityTypes() {
+            return new Set();
+          },
+          getAllFilterTypes() {
+            return [];
+          },
+          getBuildingsData() {
+            return { features: [] };
+          },
+          getLatestRadiusCounts() {
+            return {};
+          },
+          hasPercentileSeries() {
+            return false;
+          },
+          getPercentileSeries() {
+            return null;
+          },
+          setPercentileSeries() {},
+          getBuildingAmenityStatKeysForMinutes() {
+            return new Set();
+          },
+          getBuildingOverallScore() {
+            return 0;
+          },
+        },
+      }),
+    /Urban95ScoreExplain\.create requires scoreModel\.formatMetricNumber \(function\)/
+  );
+});
+
+test("score explanation module builds weighted breakdowns without app.js helpers", () => {
+  const browser = createBrowserContext();
+  const explainSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "scoring", "scoreExplain.js"),
+    "utf8"
+  );
+  runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
+
+  const state = {
+    scoreMode: "weighted",
+    scoreMinutes: 10,
+    walkMinutes: 10,
+    selectedAmenityTypes: new Set(["nature"]),
+    allFilterTypes: ["nature"],
+    buildingsData: { features: [] },
+    latestRadiusCounts: {},
+    percentileSeries: Object.create(null),
+  };
+  const fakeScoreModel = {
+    WEIGHTED_CATEGORY_COMPONENTS: [
+      { stem: "nature", label: "Nature", weight: 1, color: "#7CB342" },
+    ],
+    WEIGHTED_CATEGORY_BY_STEM: {
+      nature: { stem: "nature", label: "Nature", weight: 1, color: "#7CB342" },
+    },
+    WEIGHTED_SUBCATEGORY_COMPONENTS: {
+      nature: [{ stem: "parks", label: "Parks", weight: 1 }],
+    },
+    CLEAN_SCORE_COMPONENTS: [],
+    CLEAN_WEIGHTS: {},
+    getAmenityConfig() {
+      return { icon: "marker", color: "#64748b", label: "Other" };
+    },
+    amenityTypeToBuildingStatKey(type) {
+      return type;
+    },
+    getExpandedContributionForType() {
+      return 0;
+    },
+    getFilteredContributionForType() {
+      return 0;
+    },
+    filterTypeToCleanWeightKey() {
+      return null;
+    },
+    hasCleanPtsBreakdown() {
+      return false;
+    },
+    cleanPtsPropertyName() {
+      return "";
+    },
+    getPercentileSeriesCacheKey(minutes) {
+      return "weighted:" + minutes;
+    },
+    computePercentileRank() {
+      return null;
+    },
+    formatMetricNumber(value) {
+      return String(Math.round(Number(value) || 0));
+    },
+    formatScoreInteger(value) {
+      return String(Math.round(Number(value) || 0));
+    },
+    getBuildingOverallScore() {
+      return 72;
+    },
+  };
+  const explain = browser.window.Urban95ScoreExplain.create({
+    scoreModel: fakeScoreModel,
+    iconsBase: "./icons",
+    state: {
+      getScoreMode() {
+        return state.scoreMode;
+      },
+      getScoreMinutes() {
+        return state.scoreMinutes;
+      },
+      getWalkMinutes() {
+        return state.walkMinutes;
+      },
+      getSelectedAmenityTypes() {
+        return state.selectedAmenityTypes;
+      },
+      getAllFilterTypes() {
+        return state.allFilterTypes;
+      },
+      getBuildingsData() {
+        return state.buildingsData;
+      },
+      getLatestRadiusCounts() {
+        return state.latestRadiusCounts;
+      },
+      hasPercentileSeries(cacheKey) {
+        return Object.prototype.hasOwnProperty.call(state.percentileSeries, cacheKey);
+      },
+      getPercentileSeries(cacheKey) {
+        return state.percentileSeries[cacheKey];
+      },
+      setPercentileSeries(cacheKey, value) {
+        state.percentileSeries[cacheKey] = value;
+      },
+      getBuildingAmenityStatKeysForMinutes() {
+        return new Set();
+      },
+      getBuildingOverallScore(props, minutes) {
+        return fakeScoreModel.getBuildingOverallScore(props, minutes);
+      },
+    },
+  });
+  const props = {
+    score_weighted_10min: 72,
+    score_weighted_nature_10min: 72,
+    score_weighted_sub_nature_parks_10min: 55,
+  };
+
+  const breakdown = explain.buildExplainScoreBreakdown(props);
+
+  assert.equal(breakdown.overallScoreLabel, "72");
+  assert.equal(breakdown.weightedCategories.length, 1);
+  assert.equal(breakdown.weightedCategories[0].subrows[0].value, 55);
+  assert.equal(
+    breakdown.formulaLine,
+    "Urban95 score = (0.20×Environmental Quality) + (0.15×Nature) + (0.15×Play) + (0.25×Safety & Mobility) + (0.25×Family Services)."
+  );
+  assert.match(explainSource, /weight \+ " pts × \("/);
+  assert.match(explainSource, /Amenities Focus index = POI count \+ \\u00bc× trees \+ \\u00bc× street lights\./);
+  assert.match(explainSource, /Partial Amenities Focus index = sum of selected POI counts plus \\u00bc× trees and \\u00bc× lights when selected\./);
+  assert.equal(
+    breakdown.weightedCategories[0].subrows[0].valueLabel,
+    "55 / 100"
+  );
+  assert.equal(explain.getWeightedCategoryIcon("nature"), "park");
+  assert.equal(typeof explain.renderHorizonIcon, "undefined");
+  assert.equal(typeof explain.buildFilteredFormulaLine, "undefined");
+  assert.equal(typeof explain.parseColorChannels, "undefined");
+  assert.equal(typeof explain.channelsToCss, "undefined");
+  assert.equal(typeof explain.mixChannels, "undefined");
+  assert.equal(typeof explain.mixColorWithWhite, "undefined");
+  assert.equal(typeof explain.fillExplainSeries, "undefined");
+  assert.equal(typeof explain.getPercentileSeriesForMinutes, "undefined");
+  assert.equal(typeof explain.percentileForSeries, "undefined");
+  assert.match(
+    explain.renderHorizonLabelCell("Nature", "park", "", "#7CB342"),
+    /horizon-icon/
+  );
+});
+
+test("score sidebar chrome create fails fast when map is missing required methods", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+  const documentStub = {
+    getElementById() {
+      return null;
+    },
+  };
+
+  assert.throws(
+    () =>
+      browser.window.Urban95ScoreSidebarChrome.create({
+        map: {
+          resize() {},
+        },
+        document: documentStub,
+        matchMedia: browser.window.matchMedia,
+      }),
+    /Urban95ScoreSidebarChrome\.create requires map\.setPadding \(function\)/
+  );
+
+  assert.throws(
+    () =>
+      browser.window.Urban95ScoreSidebarChrome.create({
+        map: {
+          setPadding() {},
+        },
+        document: documentStub,
+        matchMedia: browser.window.matchMedia,
+      }),
+    /Urban95ScoreSidebarChrome\.create requires map\.resize \(function\)/
+  );
 });
 
 test("app.js fails fast when Urban95ScoreModel is missing", () => {
@@ -2376,7 +3681,7 @@ test("app.js fails fast when Urban95Logger is missing", () => {
   delete browser.window.Urban95Logger;
 
   assert.throws(
-    () => runBrowserScript("docs/app.js", browser),
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
     /window\.Urban95Logger is required before docs\/app\.js/
   );
 });
@@ -2440,8 +3745,84 @@ test("app.js fails fast when Urban95Startup is missing", () => {
   delete browser.window.Urban95Startup;
 
   assert.throws(
-    () => runBrowserScript("docs/app.js", browser),
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
     /window\.Urban95Startup is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95LoadingUi is missing", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  runBrowserScript("docs/js/core/loaders.js", browser);
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+  runBrowserScript("docs/js/core/logger.js", browser);
+  runBrowserScript("docs/js/core/startup.js", browser);
+
+  assert.throws(
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
+    /window\.Urban95LoadingUi is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95LoadingUi.create is missing", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  runBrowserScript("docs/js/core/loaders.js", browser);
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+  runBrowserScript("docs/js/core/logger.js", browser);
+  runBrowserScript("docs/js/core/startup.js", browser);
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
+  browser.window.Urban95LoadingUi = {};
+
+  assert.throws(
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
+    /Urban95LoadingUi\.create is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95LoadingUi.create has the wrong type", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  runBrowserScript("docs/js/core/loaders.js", browser);
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+  runBrowserScript("docs/js/core/logger.js", browser);
+  runBrowserScript("docs/js/core/startup.js", browser);
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
+  browser.window.Urban95LoadingUi.create = 123;
+
+  assert.throws(
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
+    /Urban95LoadingUi\.create must be a function before docs\/app\.js/
   );
 });
 
@@ -2525,7 +3906,15 @@ function loadAppStatePrerequisites(browser) {
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/scoring/scoreContext.js", browser);
+  runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+  runBrowserScript("docs/js/ui/amenityMode.js", browser);
+  runBrowserScript("docs/js/ui/controlActions.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
+  runBrowserScript("docs/js/map/mapShell.js", browser);
+  runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
+  runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
@@ -2552,6 +3941,50 @@ test("app.js fails fast when Urban95AppState is missing", () => {
   assert.throws(
     () => runAppScript(browser),
     /window\.Urban95AppState is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95IconLoader is missing", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  loadAppCoordinatorNamespaces(browser);
+  loadAppStatePrerequisites(browser);
+  runBrowserScript("docs/js/core/appState.js", browser);
+  browser.window.Urban95IconLoader = undefined;
+
+  assert.throws(
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
+    /window\.Urban95IconLoader is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95IconLoader.create has the wrong type", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  loadAppCoordinatorNamespaces(browser);
+  loadAppStatePrerequisites(browser);
+  runBrowserScript("docs/js/core/appState.js", browser);
+  browser.window.Urban95IconLoader = { create: 123 };
+
+  assert.throws(
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
+    /Urban95IconLoader\.create must be a function before docs\/app\.js/
   );
 });
 
@@ -2739,9 +4172,19 @@ function loadModeControllerAppPrerequisites(browser) {
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/logger.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
+  runBrowserScript("docs/js/core/pointDataSources.js", browser);
   runBrowserScript("docs/js/core/startup.js", browser);
+  runBrowserScript("docs/js/core/loadingUi.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/scoring/scoreContext.js", browser);
+  runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+  runBrowserScript("docs/js/ui/amenityMode.js", browser);
+  runBrowserScript("docs/js/ui/controlActions.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
+  runBrowserScript("docs/js/map/mapShell.js", browser);
+  runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
+  runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
@@ -2762,7 +4205,7 @@ test("app.js fails fast when Urban95ModeController is missing", () => {
   loadModeControllerAppPrerequisites(browser);
 
   assert.throws(
-    () => runBrowserScript("docs/app.js", browser),
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
     /window\.Urban95ModeController is required before docs\/app\.js/
   );
 });
@@ -2782,7 +4225,7 @@ test("app.js fails fast when Urban95ModeController.create is missing", () => {
   browser.window.Urban95ModeController = {};
 
   assert.throws(
-    () => runBrowserScript("docs/app.js", browser),
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
     /Urban95ModeController\.create is required before docs\/app\.js/
   );
 });
@@ -2802,7 +4245,7 @@ test("app.js fails fast when Urban95ModeController.create has the wrong type", (
   browser.window.Urban95ModeController = { create: 123 };
 
   assert.throws(
-    () => runBrowserScript("docs/app.js", browser),
+    () => runBrowserScript("docs/js/core/appDependencies.js", browser),
     /Urban95ModeController\.create must be a function before docs\/app\.js/
   );
 });
