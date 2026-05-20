@@ -32,7 +32,10 @@ test("index loads core frontend modules before app.js", () => {
   assert.ok(requireScriptIndex(scripts, "./js/core/config.js") < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/core/dataArtifacts.js") < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/core/loaders.js") < appIndex);
-  assert.ok(requireScriptIndex(scripts, "./js/core/runtimeData.js") < appIndex);
+  const runtimeIndex = requireScriptIndex(scripts, "./js/core/runtimeData.js");
+  const appStateIndex = requireScriptIndex(scripts, "./js/core/appState.js");
+  assert.ok(runtimeIndex < appStateIndex);
+  assert.ok(appStateIndex < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/core/perfPanel.js") < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/scoring/scoreModel.js") < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/map/mapLayers.js") < appIndex);
@@ -151,6 +154,333 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95Dashboards.renderCitywideCharts, "function");
 });
 
+test("app state exposes focused mutable state contracts", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/appState.js", browser);
+
+  const state = browser.window.Urban95AppState.create();
+  assert.equal(state.getScoreMode(), "weighted");
+  assert.equal(state.getWalkMinutes(), 5);
+
+  state.setScoreMode("expanded");
+  state.setWalkMinutes(10);
+  state.setSelectedAmenityTypes(new Set(["trees"]));
+  state.setAllFilterTypes(["trees", "street-lights"]);
+  const selectedTypes = state.getSelectedAmenityTypes();
+  selectedTypes.add("street-lights");
+  const filterTypes = state.getAllFilterTypes();
+  filterTypes.push("school");
+
+  assert.equal(state.getScoreMode(), "expanded");
+  assert.equal(state.getWalkMinutes(), 10);
+  assert.deepEqual(Array.from(state.getSelectedAmenityTypes()), ["trees"]);
+  assert.deepEqual(state.getAllFilterTypes(), ["trees", "street-lights"]);
+
+  state.setAmenitiesInRadiusIds(new Set(["a"]));
+  const radiusIds = state.getAmenitiesInRadiusIds();
+  radiusIds.add("b");
+  assert.deepEqual(Array.from(state.getAmenitiesInRadiusIds()), ["a"]);
+
+  state.setLatestRadiusCounts({ trees: 3 });
+  const counts = state.getLatestRadiusCounts();
+  counts.trees = 99;
+  assert.equal(state.getLatestRadiusCounts().trees, 3);
+
+  state.setPercentileSeries("x", { overall: [1] });
+  const cachedSeries = state.getPercentileSeries("x");
+  cachedSeries.overall.push(2);
+  assert.deepEqual(state.getPercentileSeries("x").overall, [1]);
+
+  state.setBuildingAmenityStatKeys("y", new Set(["z"]));
+  const cachedStatKeys = state.getBuildingAmenityStatKeys("y");
+  cachedStatKeys.add("w");
+  assert.deepEqual(Array.from(state.getBuildingAmenityStatKeys("y")), ["z"]);
+
+  assert.equal(state.getPercentileSeriesCacheSize(), 1);
+  assert.equal(state.getBuildingAmenityStatKeyCacheSize(), 1);
+  state.clearDerivedCaches();
+
+  assert.equal(state.getPercentileSeriesCacheSize(), 0);
+  assert.equal(state.getBuildingAmenityStatKeyCacheSize(), 0);
+});
+
+test("config exposes authoritative runtime and fallback URLs", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+      buildings_lookup: {
+        status: "built",
+        output: "./data/custom_buildings_lookup.json",
+        source_layer: "buildings_lookup",
+      },
+      isochrones_lookup: {
+        status: "built",
+        output: "./data/custom_isochrones_lookup.json",
+        source_layer: "isochrones_lookup",
+      },
+      points_lookup: {
+        status: "built",
+        output: "./data/custom_points_lookup.json",
+        source_layer: "points_lookup",
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+
+  assert.equal(browser.window.Urban95Config.urls.buildings, "./data/buildings_accessibility.geojson");
+  assert.equal(browser.window.Urban95Config.urls.trees, "./data/trees.geojson");
+  assert.equal(browser.window.Urban95Config.urls.streetLights, "./data/street_lights.geojson");
+  assert.equal(browser.window.Urban95Config.generatedFallbacks.buildingsLookup, "./data/buildings_lookup.json");
+  assert.equal(browser.window.Urban95Config.generatedFallbacks.isochronesLookup, "./data/isochrones_lookup.json");
+  assert.equal(browser.window.Urban95Config.generatedFallbacks.pointsLookup, "./data/points_lookup.json");
+  assert.equal(browser.window.Urban95Config.generatedFallbacks.buildingsPmtiles, "./data/buildings_accessibility.pmtiles");
+  assert.equal(browser.window.Urban95Config.generatedFallbacks.neighborhoodSurfacePmtiles, "./data/neighborhood_surface.pmtiles");
+  assert.equal(browser.window.Urban95Config.generatedFallbacks.treesPmtiles, "./data/trees.pmtiles");
+  assert.equal(browser.window.Urban95Config.generatedFallbacks.streetLightsPmtiles, "./data/street_lights.pmtiles");
+  assert.equal(browser.window.Urban95Config.mapContracts.buildingSourceLayerFallback, "buildings");
+  assert.equal(
+    browser.window.Urban95Config.mapContracts.neighborhoodSurfaceSourceLayerFallback,
+    "neighborhood_surface"
+  );
+  assert.equal(browser.window.Urban95DataArtifacts.urls.buildingsLookup, "./data/custom_buildings_lookup.json");
+  assert.equal(browser.window.Urban95DataArtifacts.urls.isochronesLookup, "./data/custom_isochrones_lookup.json");
+  assert.equal(browser.window.Urban95DataArtifacts.urls.pointsLookup, "./data/custom_points_lookup.json");
+});
+
+test("runtime data validates point lookup sources and scans amenity types", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const runtime = browser.window.Urban95RuntimeData;
+  assert.equal(runtime.hasValidPointsLookupSources(null), false);
+  assert.equal(runtime.hasValidPointsLookupSources({ sources: { amenities: [] } }), false);
+  assert.equal(
+    runtime.hasValidPointsLookupSources({
+      sources: {
+        amenities_clean: [{ lng: 34.8, lat: 31.2, type: "school" }],
+      },
+    }),
+    true
+  );
+
+  const scan = runtime.scanAmenityTypesFromFeatures({
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: { amenity_type: "school" } },
+      { type: "Feature", properties: { amenity_type: "school" } },
+      { type: "Feature", properties: { amenity_type: "park" } },
+    ],
+  });
+  assert.deepEqual(Array.from(scan.types), ["park", "school"]);
+  assert.deepEqual(Array.from(scan.tw), ["park", "school"]);
+});
+
+test("runtime data warns when building score columns are incomplete", () => {
+  const warnings = [];
+  const browser = createBrowserContext({
+    console: {
+      ...console,
+      warn(message) {
+        warnings.push(String(message));
+      },
+    },
+  });
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  browser.window.Urban95RuntimeData.warnIfBuildingScoresIncomplete({
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          building_id: 1,
+          num_trees_5min: 2,
+        },
+      },
+    ],
+  });
+
+  assert.ok(warnings.some((message) => message.includes("num_street_lights_*")));
+  assert.ok(warnings.some((message) => message.includes("score_weighted_*")));
+  assert.ok(warnings.some((message) => message.includes("score_weighted_sub_*")));
+});
+
+test("runtime point-data loader owns point source state and exposes loaded data", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const fetched = [];
+  const loader = browser.window.Urban95RuntimeData.createPointDataLoader({
+    urls: {
+      trees: "./data/trees.geojson",
+      streetLights: "./data/street_lights.geojson",
+    },
+    getScoreMode: () => "expanded",
+    fetchJsonWithGzipFallback(url) {
+      fetched.push(url);
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "trees" } }],
+      });
+    },
+    hasGeneratedArtifact: () => false,
+    onSkippedTreesGeojson() {},
+    onSkippedStreetLightsGeojson() {},
+    onPointDataLoaded() {},
+    onPointDataError(kind, err) {
+      throw err;
+    },
+  });
+
+  assert.equal(loader.getTreesDataSource(), "none");
+  await loader.ensureExpandedPointDataLoaded();
+  assert.deepEqual(fetched, ["./data/trees.geojson", "./data/street_lights.geojson"]);
+  assert.equal(loader.getTreesDataSource(), "geojson");
+  assert.equal(loader.getStreetLightsDataSource(), "geojson");
+  assert.equal(loader.getAllTreesData().features.length, 1);
+  assert.equal(loader.getAllStreetLightsData().features.length, 1);
+  assert.equal(loader.canRefreshPointAnalysisAfterPointDataLoad(), true);
+});
+
+test("runtime point-data loader upgrades lookup point state to authoritative geojson in expanded mode", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const fetched = [];
+  const loadedKinds = [];
+  const loader = browser.window.Urban95RuntimeData.createPointDataLoader({
+    urls: {
+      trees: "./data/trees.geojson",
+      streetLights: "./data/street_lights.geojson",
+    },
+    getScoreMode: () => "expanded",
+    fetchJsonWithGzipFallback(url) {
+      fetched.push(url);
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { source: url } }],
+      });
+    },
+    hasGeneratedArtifact: () => true,
+    onSkippedTreesGeojson() {},
+    onSkippedStreetLightsGeojson() {},
+    onPointDataLoaded(kind) {
+      loadedKinds.push(kind);
+    },
+    onPointDataError(kind, err) {
+      throw err;
+    },
+  });
+
+  loader.setPointLookupData({
+    trees: { type: "FeatureCollection", features: [{ type: "Feature", properties: { source: "lookup-trees" } }] },
+    streetLights: {
+      type: "FeatureCollection",
+      features: [{ type: "Feature", properties: { source: "lookup-lights" } }],
+    },
+  });
+
+  assert.equal(loader.getTreesDataSource(), "lookup");
+  assert.equal(loader.getStreetLightsDataSource(), "lookup");
+  assert.equal(loader.canRefreshPointAnalysisAfterPointDataLoad(), false);
+
+  await loader.ensureExpandedPointDataLoaded();
+
+  assert.deepEqual(fetched, ["./data/trees.geojson", "./data/street_lights.geojson"]);
+  assert.deepEqual(loadedKinds, ["trees", "street-lights"]);
+  assert.equal(loader.getTreesDataSource(), "geojson");
+  assert.equal(loader.getStreetLightsDataSource(), "geojson");
+  assert.equal(loader.getAllTreesData().features[0].properties.source, "./data/trees.geojson");
+  assert.equal(
+    loader.getAllStreetLightsData().features[0].properties.source,
+    "./data/street_lights.geojson"
+  );
+  assert.equal(loader.canRefreshPointAnalysisAfterPointDataLoad(), true);
+});
+
+test("runtime orchestration helpers live in runtimeData instead of app coordinator", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  [
+    "hasValidPointsLookupSources",
+    "scanAmenityTypesFromFeatures",
+    "warnIfBuildingScoresIncomplete",
+  ].forEach(function (memberName) {
+    assert.equal(typeof browser.window.Urban95RuntimeData[memberName], "function");
+  });
+
+  const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
+  assert.doesNotMatch(appSource, /function hasValidPointsLookupSources\s*\(/);
+  assert.doesNotMatch(appSource, /function scanAmenityTypesFromFeatures\s*\(/);
+  assert.doesNotMatch(appSource, /function warnIfBuildingScoresIncomplete\s*\(/);
+  assert.match(
+    appSource,
+    /requireNamespaceMember\(urban95RuntimeData,\s*"Urban95RuntimeData",\s*"hasValidPointsLookupSources",\s*"function"\)/
+  );
+  assert.match(
+    appSource,
+    /requireNamespaceMember\(urban95RuntimeData,\s*"Urban95RuntimeData",\s*"warnIfBuildingScoresIncomplete",\s*"function"\)/
+  );
+  assert.match(
+    appSource,
+    /requireNamespaceMember\(urban95RuntimeData,\s*"Urban95RuntimeData",\s*"scanAmenityTypesFromFeatures",\s*"function"\)/
+  );
+});
+
+test("data artifacts fail fast when generated fallback config is incomplete", () => {
+  const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  delete browser.window.Urban95Config.generatedFallbacks.pointsLookup;
+
+  assert.throws(
+    () => runBrowserScript("docs/js/core/dataArtifacts.js", browser),
+    /Urban95Config\.generatedFallbacks\.pointsLookup is required before dataArtifacts\.js/
+  );
+});
+
+test("data artifacts fail fast when config is missing", () => {
+  const browser = createBrowserContext();
+
+  assert.throws(
+    () => runBrowserScript("docs/js/core/dataArtifacts.js", browser),
+    /window\.Urban95Config is required before dataArtifacts\.js/
+  );
+});
+
+test("data artifacts resolve generated fallback URLs from config", () => {
+  const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  browser.window.Urban95Config.generatedFallbacks = {
+    buildingsLookup: "./custom/buildings_lookup.json",
+    isochronesLookup: "./custom/isochrones_lookup.json",
+    pointsLookup: "./custom/points_lookup.json",
+    buildingsPmtiles: "./custom/buildings.pmtiles",
+    neighborhoodSurfacePmtiles: "./custom/neighborhood_surface.pmtiles",
+    treesPmtiles: "./custom/trees.pmtiles",
+    streetLightsPmtiles: "./custom/street_lights.pmtiles",
+  };
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(browser.window.Urban95DataArtifacts.urls)), {
+    buildingsLookup: "./custom/buildings_lookup.json",
+    isochronesLookup: "./custom/isochrones_lookup.json",
+    pointsLookup: "./custom/points_lookup.json",
+    buildingsPmtiles: "./custom/buildings.pmtiles",
+    neighborhoodSurfacePmtiles: "./custom/neighborhood_surface.pmtiles",
+    treesPmtiles: "./custom/trees.pmtiles",
+    streetLightsPmtiles: "./custom/street_lights.pmtiles",
+  });
+});
+
 test("map layer factories honor explicit field-level API", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/map/mapLayers.js", browser);
@@ -194,6 +524,59 @@ test("map layer factories honor explicit field-level API", () => {
   assert.equal(selectedLayer["source-layer"], "custom-layer");
   assert.match(JSON.stringify(selectedLayer.paint["line-width"]), /custom_selected/);
   assert.match(JSON.stringify(selectedLayer.paint["line-opacity"]), /custom_selected/);
+});
+
+test("building fill layer default expression does not require map contracts", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapLayers.js", browser);
+
+  const fillLayer = browser.window.Urban95MapLayers.createBuildingsFillLayer({});
+
+  assert.equal(fillLayer.id, "buildings-fill");
+  assert.deepEqual(JSON.parse(JSON.stringify(fillLayer.paint["fill-color"].slice(0, 4))), [
+    "interpolate",
+    ["linear"],
+    ["coalesce", ["feature-state", "sym_pct"], 0],
+    0,
+  ]);
+});
+
+test("map layer contracts use config-owned source-layer fallbacks", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapLayers.js", browser);
+
+  const contracts = browser.window.Urban95MapLayers.resolveBuildingContracts({
+    config: {
+      mapContracts: {
+        buildingSourceLayerFallback: "custom_buildings_layer",
+      },
+    },
+    artifacts: {
+      sourceLayer(_artifactName, fallbackLayer) {
+        return fallbackLayer;
+      },
+    },
+  });
+
+  assert.equal(contracts.vectorLayerId, "custom_buildings_layer");
+});
+
+test("map layer contracts require config-owned building source-layer fallback", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapLayers.js", browser);
+
+  assert.throws(
+    () =>
+      browser.window.Urban95MapLayers.resolveBuildingContracts({
+        config: { mapContracts: {} },
+        artifacts: {
+          sourceLayer(_artifactName, fallbackLayer) {
+            return fallbackLayer;
+          },
+        },
+      }),
+    /Urban95Config\.mapContracts\.buildingSourceLayerFallback is required before mapLayers\.js/
+  );
 });
 
 test("dense polygon PMTiles preserve features instead of dropping densest tiles", () => {
@@ -283,46 +666,20 @@ test("amenities focus first switch loads isochrones in background until a buildi
 
 test("amenities focus waits for authoritative tree and street-light GeoJSON before reselecting", () => {
   const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
-  assert.match(appSource, /let treesGeojsonLoadPromise = null;/);
-  assert.match(appSource, /let streetLightsGeojsonLoadPromise = null;/);
-  assert.match(appSource, /if \(treesGeojsonLoadInFlight\) return treesGeojsonLoadPromise \|\| Promise\.resolve\(null\);/);
-  assert.match(appSource, /return Promise\.all\(pointDataLoads\)\.then\(function \(\) \{/);
-  assert.match(
-    appSource,
-    /return ensureExpandedPointDataLoaded\(\)\.then\(function \(\) \{[\s\S]*Urban95Selection\.selectBuilding\(selectedBuildingCentroid,\s*false\);[\s\S]*\}\);/
+  const runtimeSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "core", "runtimeData.js"),
+    "utf8"
   );
-  assert.match(
-    appSource,
-    /applyScoreModeAmenities\(\)\.then\(function \(\) \{[\s\S]*Urban95Selection\.updateRadiusInfo\(\);[\s\S]*\}\);/
-  );
-  assert.match(appSource, /function canRefreshPointAnalysisAfterPointDataLoad\(\) \{/);
-  assert.match(
-    appSource,
-    /treesDataSource === "geojson" && streetLightsDataSource === "geojson"/
-  );
-  assert.match(
-    appSource,
-    /if \(selectedBuildingCentroid && canRefreshPointAnalysisAfterPointDataLoad\(\)\) \{[\s\S]*Urban95Selection\.selectBuilding\(selectedBuildingCentroid,\s*false\);/
-  );
-  const treesLoaderBlock = appSource.slice(
-    appSource.indexOf("function loadTreesIfNeeded()"),
-    appSource.indexOf("function loadStreetLightsIfNeeded()")
-  );
-  const streetLightsLoaderBlock = appSource.slice(
-    appSource.indexOf("function loadStreetLightsIfNeeded()"),
-    appSource.indexOf("function ensureExpandedPointDataLoaded()")
-  );
-  const guardedLoaderRefresh =
-    /if \(selectedBuildingCentroid && canRefreshPointAnalysisAfterPointDataLoad\(\)\) \{\s*Urban95Selection\.selectBuilding\(selectedBuildingCentroid,\s*false\);/;
-  assert.match(treesLoaderBlock, guardedLoaderRefresh);
-  assert.match(streetLightsLoaderBlock, guardedLoaderRefresh);
+  assert.match(runtimeSource, /createPointDataLoader/);
+  assert.match(appSource, /createPointDataLoader/);
+  assert.match(appSource, /pointDataLoader\./);
   assert.doesNotMatch(
-    treesLoaderBlock,
-    /if \(selectedBuildingCentroid\) \{\s*Urban95Selection\.selectBuilding\(selectedBuildingCentroid,\s*false\);/
+    appSource,
+    /function loadTreesIfNeeded\s*\(/
   );
   assert.doesNotMatch(
-    streetLightsLoaderBlock,
-    /if \(selectedBuildingCentroid\) \{\s*Urban95Selection\.selectBuilding\(selectedBuildingCentroid,\s*false\);/
+    appSource,
+    /function loadStreetLightsIfNeeded\s*\(/
   );
 });
 
@@ -650,8 +1007,10 @@ test("controls bind validates dependencies and returns the coordinator surface",
     urban95PointToggles: makeElement(),
     amenityPointsToggleWrap: makeElement(),
   };
-  let selectedAmenityTypes = new Set(["trees"]);
-  let allFilterTypes = ["trees", "street-lights"];
+  runBrowserScript("docs/js/core/appState.js", browser);
+  const appState = browser.window.Urban95AppState.create();
+  appState.setSelectedAmenityTypes(new Set(["trees"]));
+  appState.setAllFilterTypes(["trees", "street-lights"]);
   const binding = browser.window.Urban95Controls.bind({
     elements,
     scoreModel: browser.window.Urban95ScoreModel,
@@ -659,20 +1018,22 @@ test("controls bind validates dependencies and returns the coordinator surface",
       return {
         scoreMode: "weighted",
         currentMode: "house",
-        selectedAmenityTypes,
-        allFilterTypes,
-        lastFilterRadioSelection: "all",
+        selectedAmenityTypes: appState.getSelectedAmenityTypes(),
+        allFilterTypes: appState.getAllFilterTypes(),
+        lastFilterRadioSelection: appState.getLastFilterRadioSelection(),
       };
     },
     setScoreMode() {},
     setWalkMinutes() {},
     setSelectedAmenityTypes(value) {
-      selectedAmenityTypes = value;
+      appState.setSelectedAmenityTypes(value);
     },
     setAllFilterTypes(value) {
-      allFilterTypes = value;
+      appState.setAllFilterTypes(value);
     },
-    setLastFilterRadioSelection() {},
+    setLastFilterRadioSelection(value) {
+      appState.setLastFilterRadioSelection(value);
+    },
     getTypesWithData() {
       return new Set();
     },
@@ -837,8 +1198,83 @@ test("app.js fails fast when Urban95ScoreModel is missing", () => {
   );
 });
 
+test("app.js fails fast when Urban95Config is missing", () => {
+  const browser = createBrowserContext();
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /window\.Urban95Config is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95DataArtifacts is missing", () => {
+  const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /window\.Urban95DataArtifacts is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when a required Urban95DataArtifacts member is missing", () => {
+  const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  delete browser.window.Urban95DataArtifacts.hasGeneratedArtifact;
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /Urban95DataArtifacts\.hasGeneratedArtifact is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when a required Urban95DataArtifacts member has the wrong type", () => {
+  const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  browser.window.Urban95DataArtifacts.sourceLayer = 123;
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /Urban95DataArtifacts\.sourceLayer must be a function before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when a required generated URL is missing", () => {
+  const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  delete browser.window.Urban95DataArtifacts.urls.pointsLookup;
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /Urban95DataArtifacts\.urls\.pointsLookup is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when a required map contract is missing", () => {
+  const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  delete browser.window.Urban95Config.mapContracts.neighborhoodSurfaceSourceLayerFallback;
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /Urban95Config\.mapContracts\.neighborhoodSurfaceSourceLayerFallback is required before docs\/app\.js/
+  );
+});
+
 test("app.js fails fast when Urban95Loaders is missing", () => {
   const browser = createBrowserContext();
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
 
   assert.throws(
     () => runBrowserScript("docs/app.js", browser),
@@ -849,6 +1285,8 @@ test("app.js fails fast when Urban95Loaders is missing", () => {
 test("app.js fails fast when a required Urban95Loaders member is missing", () => {
   const browser = createBrowserContext();
 
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
   runBrowserScript("docs/js/core/loaders.js", browser);
   delete browser.window.Urban95Loaders.ensureDeckGlLoaded;
 
@@ -861,12 +1299,143 @@ test("app.js fails fast when a required Urban95Loaders member is missing", () =>
 test("app.js fails fast when a required Urban95Loaders member has the wrong type", () => {
   const browser = createBrowserContext();
 
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
   runBrowserScript("docs/js/core/loaders.js", browser);
   browser.window.Urban95Loaders.ensureDeckGlLoaded = 123;
 
   assert.throws(
     () => runBrowserScript("docs/app.js", browser),
     /Urban95Loaders\.ensureDeckGlLoaded must be a function before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95RuntimeData is missing", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  runBrowserScript("docs/js/core/loaders.js", browser);
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /window\.Urban95RuntimeData is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when a required Urban95RuntimeData member is missing", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  runBrowserScript("docs/js/core/loaders.js", browser);
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+  delete browser.window.Urban95RuntimeData.featureCollectionFromPointRecords;
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /Urban95RuntimeData\.featureCollectionFromPointRecords is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when required Task 3 Urban95RuntimeData members are missing", () => {
+  [
+    "hasValidPointsLookupSources",
+    "warnIfBuildingScoresIncomplete",
+    "scanAmenityTypesFromFeatures",
+  ].forEach(function (memberName) {
+    const browser = createBrowserContext({
+      URBAN95_GENERATED_ARTIFACTS: {
+        buildings: {
+          status: "built",
+          output: "./data/buildings_accessibility.pmtiles",
+          source_layer: "buildings",
+        },
+      },
+    });
+
+    runBrowserScript("docs/js/core/config.js", browser);
+    runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+    runBrowserScript("docs/js/core/loaders.js", browser);
+    runBrowserScript("docs/js/core/runtimeData.js", browser);
+    delete browser.window.Urban95RuntimeData[memberName];
+
+    assert.throws(
+      () => runBrowserScript("docs/app.js", browser),
+      new RegExp("Urban95RuntimeData\\." + memberName + " is required before docs\\/app\\.js")
+    );
+  });
+});
+
+function loadAppStatePrerequisites(browser) {
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  runBrowserScript("docs/js/core/loaders.js", browser);
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+  runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/map/mapLayers.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
+  runBrowserScript("docs/js/ui/infoModal.js", browser);
+  runBrowserScript("docs/js/ui/dashboards.js", browser);
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+  runBrowserScript("docs/js/map/selection.js", browser);
+  runBrowserScript("docs/js/ui/controls.js", browser);
+}
+
+test("app.js fails fast when Urban95AppState is missing", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  loadAppStatePrerequisites(browser);
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /window\.Urban95AppState is required before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when Urban95AppState.create has the wrong type", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  loadAppStatePrerequisites(browser);
+  runBrowserScript("docs/js/core/appState.js", browser);
+  browser.window.Urban95AppState.create = 123;
+
+  assert.throws(
+    () => runBrowserScript("docs/app.js", browser),
+    /Urban95AppState\.create must be a function before docs\/app\.js/
   );
 });
 

@@ -29,16 +29,35 @@
     var sourceId = (config.sources && config.sources.buildings) || "buildings";
     var fillLayerId = (config.layers && config.layers.buildingsFill) || "buildings-fill";
     var selectedLayerId =
-      (config.layers && config.layers.buildingsSelected) || "buildings-selected-outline-vector";
-    var vectorLayerId = sourceLayerFor(artifacts, "buildings", "buildings");
+      (config.layers && config.layers.buildingsSelected) || "buildings-selected";
+    var mapContracts = config.mapContracts || {};
+    if (!mapContracts.buildingSourceLayerFallback) {
+      throw new Error("Urban95Config.mapContracts.buildingSourceLayerFallback is required before mapLayers.js");
+    }
+    var vectorLayerId = sourceLayerFor(artifacts, "buildings", mapContracts.buildingSourceLayerFallback);
     var symPctStateKey =
       (config.stateKeys && config.stateKeys.buildingScorePercent) || "sym_pct";
     var selectedStateKey =
       (config.stateKeys && config.stateKeys.buildingSelected) || "selected";
-    var fillColorExpression = [
+    var fillColorExpression = createBuildingFillColorExpression(symPctStateKey);
+
+    return {
+      sourceId: sourceId,
+      fillLayerId: fillLayerId,
+      selectedLayerId: selectedLayerId,
+      vectorLayerId: vectorLayerId,
+      symPctStateKey: symPctStateKey,
+      selectedStateKey: selectedStateKey,
+      fillColorExpression: fillColorExpression,
+    };
+  }
+
+  function createBuildingFillColorExpression(symPctStateKey) {
+    var stateKey = symPctStateKey || "sym_pct";
+    return [
       "interpolate",
       ["linear"],
-      ["coalesce", ["feature-state", symPctStateKey], 0],
+      ["coalesce", ["feature-state", stateKey], 0],
       0,
       "#ef4444",
       25,
@@ -50,16 +69,6 @@
       100,
       "#22c55e",
     ];
-
-    return {
-      sourceId: sourceId,
-      fillLayerId: fillLayerId,
-      selectedLayerId: selectedLayerId,
-      vectorLayerId: vectorLayerId,
-      symPctStateKey: symPctStateKey,
-      selectedStateKey: selectedStateKey,
-      fillColorExpression: fillColorExpression,
-    };
   }
 
   function createPmtilesProtocol() {
@@ -89,7 +98,7 @@
     var layerId = opts.layerId || "buildings-fill";
     var sourceId = opts.sourceId || "buildings";
     var sourceLayer = opts.sourceLayer;
-    var fillColorExpression = opts.fillColorExpression || resolveBuildingContracts({}).fillColorExpression;
+    var fillColorExpression = opts.fillColorExpression || createBuildingFillColorExpression();
     var layer = {
       id: layerId,
       type: "fill",
@@ -108,7 +117,7 @@
 
   function createBuildingsSelectedLayer(options) {
     var opts = options || {};
-    var layerId = opts.layerId || "buildings-selected-outline-vector";
+    var layerId = opts.layerId || "buildings-selected";
     var sourceId = opts.sourceId || "buildings";
     var sourceLayer = opts.sourceLayer;
     var selectedStateKey = opts.selectedStateKey || "selected";

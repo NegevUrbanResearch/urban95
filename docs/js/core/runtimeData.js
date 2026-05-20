@@ -93,6 +93,62 @@
     };
   }
 
+  function hasValidPointsLookupSources(lookup) {
+    var sources = lookup && lookup.sources;
+    return Boolean(sources && Array.isArray(sources.amenities_clean));
+  }
+
+  function warnIfBuildingScoresIncomplete(fc) {
+    if (!fc || !fc.features || fc.features.length === 0) return;
+    var p = fc.features[0].properties || {};
+    var keys = Object.keys(p);
+    var hasStreet = keys.some(function (key) {
+      return key.indexOf("num_street_lights_") === 0;
+    });
+    var hasExpanded = keys.some(function (key) {
+      return key.indexOf("score_expanded_") === 0;
+    });
+    var hasWeighted = keys.some(function (key) {
+      return key.indexOf("score_weighted_") === 0;
+    });
+    var hasWeightedSubscores = keys.some(function (key) {
+      return key.indexOf("score_weighted_sub_") === 0;
+    });
+    if (!hasStreet || !hasExpanded) {
+      console.warn(
+        "[urban95] buildings_accessibility.geojson is missing num_street_lights_* or score_expanded_*. Legacy expanded scores and street-light percentiles need a fresh preprocess run."
+      );
+    }
+    if (!hasWeighted) {
+      console.warn(
+        "[urban95] buildings_accessibility.geojson has no score_weighted_* properties. Urban95 mode needs a fresh preprocess run."
+      );
+    }
+    if (!hasWeightedSubscores) {
+      console.warn(
+        "[urban95] buildings_accessibility.geojson has no score_weighted_sub_* properties. Urban95 explain details will be partial until you regenerate outputs with src/preprocess_accessibility.py."
+      );
+    }
+  }
+
+  function scanAmenityTypesFromFeatures(fc) {
+    var typeCounts = {};
+    ((fc && fc.features) || []).forEach(function (feature) {
+      var type = (feature.properties && feature.properties.amenity_type) || "";
+      if (type) {
+        typeCounts[type] = (typeCounts[type] || 0) + 1;
+      }
+    });
+    var types = Object.keys(typeCounts).sort();
+    var typesWithData = new Set();
+    types.forEach(function (type) {
+      if (typeCounts[type] > 0) {
+        typesWithData.add(type);
+      }
+    });
+    return { types: types, tw: typesWithData };
+  }
+
   function createLoaders(fetchJsonWithGzipFallback, urls, fallbackUrls) {
     function loadBuildingsRuntimeData() {
       return fetchJsonWithGzipFallback(urls.buildingsLookup, { required: false })
@@ -129,10 +185,145 @@
     };
   }
 
+  function createPointDataLoader(deps) {
+    var allTreesData = null;
+    var allStreetLightsData = null;
+    var treesDataSource = "none";
+    var streetLightsDataSource = "none";
+    var treesLoadStarted = false;
+    var streetLightsLoadStarted = false;
+    var treesGeojsonLoadInFlight = false;
+    var streetLightsGeojsonLoadInFlight = false;
+    var treesGeojsonLoadPromise = null;
+    var streetLightsGeojsonLoadPromise = null;
+
+    function loadTreesIfNeeded() {
+      var scoreMode = deps.getScoreMode();
+      var needsAuthoritativeGeojson = scoreMode === "expanded" && treesDataSource !== "geojson";
+      if (treesGeojsonLoadInFlight) return treesGeojsonLoadPromise || Promise.resolve(null);
+      if (
+        (treesLoadStarted && treesDataSource !== "lookup") ||
+        (allTreesData && !needsAuthoritativeGeojson)
+      ) {
+        return Promise.resolve(null);
+      }
+      if (deps.hasGeneratedArtifact("trees") && scoreMode === "weighted") {
+        deps.onSkippedTreesGeojson();
+        return Promise.resolve(null);
+      }
+
+      treesLoadStarted = true;
+      treesGeojsonLoadInFlight = true;
+      treesGeojsonLoadPromise = deps.fetchJsonWithGzipFallback(deps.urls.trees)
+        .then(function (treesData) {
+          if (!treesData) throw new Error("Empty tree data");
+          allTreesData = treesData;
+          treesDataSource = "geojson";
+          deps.onPointDataLoaded("trees", treesData);
+          return loadStreetLightsIfNeeded();
+        })
+        .catch(function (err) {
+          deps.onPointDataError("trees", err);
+          treesLoadStarted = false;
+        })
+        .finally(function () {
+          treesGeojsonLoadInFlight = false;
+          treesGeojsonLoadPromise = null;
+        });
+      return treesGeojsonLoadPromise;
+    }
+
+    function loadStreetLightsIfNeeded() {
+      var scoreMode = deps.getScoreMode();
+      var needsAuthoritativeGeojson =
+        scoreMode === "expanded" && streetLightsDataSource !== "geojson";
+      if (streetLightsGeojsonLoadInFlight) {
+        return streetLightsGeojsonLoadPromise || Promise.resolve(null);
+      }
+      if (
+        (streetLightsLoadStarted && streetLightsDataSource !== "lookup") ||
+        (allStreetLightsData && !needsAuthoritativeGeojson)
+      ) {
+        return Promise.resolve(null);
+      }
+      if (deps.hasGeneratedArtifact("street_lights") && scoreMode === "weighted") {
+        deps.onSkippedStreetLightsGeojson();
+        return Promise.resolve(null);
+      }
+
+      streetLightsLoadStarted = true;
+      streetLightsGeojsonLoadInFlight = true;
+      streetLightsGeojsonLoadPromise = deps.fetchJsonWithGzipFallback(deps.urls.streetLights)
+        .then(function (data) {
+          if (!data) throw new Error("Empty street light data");
+          allStreetLightsData = data;
+          streetLightsDataSource = "geojson";
+          deps.onPointDataLoaded("street-lights", data);
+        })
+        .catch(function (err) {
+          deps.onPointDataError("street-lights", err);
+          streetLightsLoadStarted = false;
+        })
+        .finally(function () {
+          streetLightsGeojsonLoadInFlight = false;
+          streetLightsGeojsonLoadPromise = null;
+        });
+      return streetLightsGeojsonLoadPromise;
+    }
+
+    function ensureExpandedPointDataLoaded() {
+      var loads = [];
+      if (deps.getScoreMode() !== "expanded") return Promise.resolve(null);
+      if (treesDataSource !== "geojson") loads.push(loadTreesIfNeeded());
+      if (streetLightsDataSource !== "geojson") loads.push(loadStreetLightsIfNeeded());
+      if (loads.length === 0) return Promise.resolve(null);
+      return Promise.all(loads).then(function () {
+        return null;
+      });
+    }
+
+    function canRefreshPointAnalysisAfterPointDataLoad() {
+      return (
+        deps.getScoreMode() !== "expanded" ||
+        (treesDataSource === "geojson" && streetLightsDataSource === "geojson")
+      );
+    }
+
+    function setPointLookupData(data) {
+      var value = data || {};
+      if (value.trees) {
+        allTreesData = value.trees;
+        treesLoadStarted = true;
+        treesDataSource = "lookup";
+      }
+      if (value.streetLights) {
+        allStreetLightsData = value.streetLights;
+        streetLightsLoadStarted = true;
+        streetLightsDataSource = "lookup";
+      }
+    }
+
+    return {
+      loadTreesIfNeeded: loadTreesIfNeeded,
+      loadStreetLightsIfNeeded: loadStreetLightsIfNeeded,
+      ensureExpandedPointDataLoaded: ensureExpandedPointDataLoaded,
+      canRefreshPointAnalysisAfterPointDataLoad: canRefreshPointAnalysisAfterPointDataLoad,
+      setPointLookupData: setPointLookupData,
+      getAllTreesData: function () { return allTreesData; },
+      getAllStreetLightsData: function () { return allStreetLightsData; },
+      getTreesDataSource: function () { return treesDataSource; },
+      getStreetLightsDataSource: function () { return streetLightsDataSource; },
+    };
+  }
+
   window.Urban95RuntimeData = {
     normalizeBuildingLookup: normalizeBuildingLookup,
     featureCollectionFromPointRecords: featureCollectionFromPointRecords,
     compactIsochroneFeature: compactIsochroneFeature,
+    hasValidPointsLookupSources: hasValidPointsLookupSources,
+    warnIfBuildingScoresIncomplete: warnIfBuildingScoresIncomplete,
+    scanAmenityTypesFromFeatures: scanAmenityTypesFromFeatures,
     createLoaders: createLoaders,
+    createPointDataLoader: createPointDataLoader,
   };
 })();

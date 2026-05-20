@@ -1,49 +1,40 @@
 /* global maplibregl, turf, deck, pmtiles */
 
-const Urban95Config = window.Urban95Config || {};
-const BASE = Urban95Config.BASE || "./data";
-const GENERATED_ARTIFACTS = window.Urban95DataArtifacts || {};
-const GENERATED_URLS = GENERATED_ARTIFACTS.urls || {};
-const CONFIG_URLS = Urban95Config.urls || {};
-const ICONS_BASE = Urban95Config.ICONS_BASE || "./icons";
-const BUILDINGS_URL = CONFIG_URLS.buildings || BASE + "/buildings_accessibility.geojson";
-const BUILDINGS_LOOKUP_URL = GENERATED_URLS.buildingsLookup || BASE + "/buildings_lookup.json";
-const PARKS_URL = CONFIG_URLS.parks || BASE + "/parks.geojson";
-const TREES_URL = CONFIG_URLS.trees || BASE + "/trees.geojson";
-const STREET_LIGHTS_URL = CONFIG_URLS.streetLights || BASE + "/street_lights.geojson";
-const AMENITIES_CLEAN_URL = CONFIG_URLS.amenitiesClean || BASE + "/amenities_new.geojson";
-const AMENITIES_LEGACY_URL = CONFIG_URLS.amenitiesLegacy || BASE + "/amenities_all.geojson";
-const ISOCHRONES_URL = CONFIG_URLS.isochrones || BASE + "/isochrones.geojson";
-const ISOCHRONES_LOOKUP_URL = GENERATED_URLS.isochronesLookup || BASE + "/isochrones_lookup.json";
-const POINTS_LOOKUP_URL = GENERATED_URLS.pointsLookup || BASE + "/points_lookup.json";
-const NEIGHBORHOODS_URL = CONFIG_URLS.neighborhoods || BASE + "/neighborhoods.geojson";
-const NEIGHBORHOOD_SURFACE_URL =
-  CONFIG_URLS.neighborhoodSurface || BASE + "/neighborhood_surface.geojson";
-const BUILDINGS_PMTILES_URL = GENERATED_URLS.buildingsPmtiles || BASE + "/buildings_accessibility.pmtiles";
+const Urban95Config = requireNamespace(window, "Urban95Config");
+const GENERATED_ARTIFACTS = requireNamespace(window, "Urban95DataArtifacts");
+const CONFIG_URLS = requireNamespaceMember(Urban95Config, "Urban95Config", "urls", "object");
+const GENERATED_URLS =
+  requireNamespaceMember(GENERATED_ARTIFACTS, "Urban95DataArtifacts", "urls", "object");
+const MAP_CONTRACTS = requireNamespaceMember(Urban95Config, "Urban95Config", "mapContracts", "object");
+const ICONS_BASE = requireNamespaceMember(Urban95Config, "Urban95Config", "ICONS_BASE");
+const BUILDINGS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "buildings");
+const BUILDINGS_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "buildingsLookup");
+const PARKS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "parks");
+const TREES_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "trees");
+const STREET_LIGHTS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "streetLights");
+const AMENITIES_CLEAN_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "amenitiesClean");
+const AMENITIES_LEGACY_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "amenitiesLegacy");
+const ISOCHRONES_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "isochrones");
+const ISOCHRONES_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "isochronesLookup");
+const POINTS_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "pointsLookup");
+const NEIGHBORHOODS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "neighborhoods");
+const NEIGHBORHOOD_SURFACE_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "neighborhoodSurface");
+const BUILDINGS_PMTILES_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "buildingsPmtiles");
 const NEIGHBORHOOD_SURFACE_PMTILES_URL =
-  GENERATED_URLS.neighborhoodSurfacePmtiles || BASE + "/neighborhood_surface.pmtiles";
-const TREES_PMTILES_URL = GENERATED_URLS.treesPmtiles || BASE + "/trees.pmtiles";
-const STREET_LIGHTS_PMTILES_URL = GENERATED_URLS.streetLightsPmtiles || BASE + "/street_lights.pmtiles";
-const NEIGHBORHOOD_CHARTS_URL = CONFIG_URLS.neighborhoodCharts || BASE + "/neighborhood_charts.json";
-const CITYWIDE_STATS_URL = CONFIG_URLS.citywideStats || BASE + "/citywide_stats.json";
+  requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "neighborhoodSurfacePmtiles");
+const TREES_PMTILES_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "treesPmtiles");
+const STREET_LIGHTS_PMTILES_URL =
+  requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "streetLightsPmtiles");
+const NEIGHBORHOOD_CHARTS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "neighborhoodCharts");
+const CITYWIDE_STATS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "citywideStats");
+const NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK =
+  requireStringMember(MAP_CONTRACTS, "Urban95Config.mapContracts", "neighborhoodSurfaceSourceLayerFallback");
 const hasGeneratedArtifact =
-  GENERATED_ARTIFACTS.hasGeneratedArtifact ||
-  function () {
-    return false;
-  };
+  requireNamespaceMember(GENERATED_ARTIFACTS, "Urban95DataArtifacts", "hasGeneratedArtifact", "function");
 const sourceLayer =
-  GENERATED_ARTIFACTS.sourceLayer ||
-  function (_artifactName, fallbackLayer) {
-    return fallbackLayer;
-  };
+  requireNamespaceMember(GENERATED_ARTIFACTS, "Urban95DataArtifacts", "sourceLayer", "function");
 const vectorSourceOrGeojson =
-  GENERATED_ARTIFACTS.vectorSourceOrGeojson ||
-  function (_artifactName, _pmtilesPath, fallbackData) {
-    return {
-      type: "geojson",
-      data: fallbackData || { type: "FeatureCollection", features: [] },
-    };
-  };
+  requireNamespaceMember(GENERATED_ARTIFACTS, "Urban95DataArtifacts", "vectorSourceOrGeojson", "function");
 
 function requireNamespace(rootObject, namespacePath) {
   const value = rootObject && rootObject[namespacePath];
@@ -65,6 +56,10 @@ function requireNamespaceMember(namespaceObject, namespaceName, memberName, expe
   return namespaceObject[memberName];
 }
 
+function requireStringMember(namespaceObject, namespaceName, memberName) {
+  return requireNamespaceMember(namespaceObject, namespaceName, memberName, "string");
+}
+
 function requireScoreModelMember(scoreModel, memberName) {
   return requireNamespaceMember(scoreModel, "Urban95ScoreModel", memberName);
 }
@@ -82,43 +77,24 @@ const ensureDeckGlLoaded =
 const ensureChartJsLoaded =
   requireNamespaceMember(Urban95Loaders, "Urban95Loaders", "ensureChartJsLoaded", "function");
 
-const urban95RuntimeData =
-  window.Urban95RuntimeData && typeof window.Urban95RuntimeData.createLoaders === "function"
-    ? window.Urban95RuntimeData
-    : null;
+const urban95RuntimeData = requireNamespace(window, "Urban95RuntimeData");
+const createRuntimeLoaders =
+  requireNamespaceMember(urban95RuntimeData, "Urban95RuntimeData", "createLoaders", "function");
 const compactIsochroneFeature =
-  urban95RuntimeData && typeof urban95RuntimeData.compactIsochroneFeature === "function"
-    ? urban95RuntimeData.compactIsochroneFeature
-    : function () {
-        return null;
-      };
+  requireNamespaceMember(urban95RuntimeData, "Urban95RuntimeData", "compactIsochroneFeature", "function");
 const featureCollectionFromPointRecords =
-  urban95RuntimeData && typeof urban95RuntimeData.featureCollectionFromPointRecords === "function"
-    ? urban95RuntimeData.featureCollectionFromPointRecords
-    : function (records) {
-        return {
-          type: "FeatureCollection",
-          features: (records || [])
-            .map(function (record, index) {
-              var lng = Number(record && record.lng);
-              var lat = Number(record && record.lat);
-              if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
-              return {
-                type: "Feature",
-                geometry: { type: "Point", coordinates: [lng, lat] },
-                properties: {
-                  amenity_type: record && record.type,
-                  name: record && record.name ? record.name : "",
-                  _lookupIndex: index,
-                },
-              };
-            })
-            .filter(Boolean),
-        };
-      };
+  requireNamespaceMember(urban95RuntimeData, "Urban95RuntimeData", "featureCollectionFromPointRecords", "function");
+const hasValidPointsLookupSources =
+  requireNamespaceMember(urban95RuntimeData, "Urban95RuntimeData", "hasValidPointsLookupSources", "function");
+const warnIfBuildingScoresIncomplete =
+  requireNamespaceMember(urban95RuntimeData, "Urban95RuntimeData", "warnIfBuildingScoresIncomplete", "function");
+const scanAmenityTypesFromFeatures =
+  requireNamespaceMember(urban95RuntimeData, "Urban95RuntimeData", "scanAmenityTypesFromFeatures", "function");
+const createPointDataLoader =
+  requireNamespaceMember(urban95RuntimeData, "Urban95RuntimeData", "createPointDataLoader", "function");
 
-const urban95RuntimeLoaders = urban95RuntimeData
-  ? urban95RuntimeData.createLoaders(fetchJsonWithGzipFallback, {
+const urban95RuntimeLoaders =
+  createRuntimeLoaders(fetchJsonWithGzipFallback, {
       buildingsLookup: BUILDINGS_LOOKUP_URL,
       isochronesLookup: ISOCHRONES_LOOKUP_URL,
       pointsLookup: POINTS_LOOKUP_URL,
@@ -131,18 +107,7 @@ const urban95RuntimeLoaders = urban95RuntimeData
       isochrones: ISOCHRONES_URL,
       amenitiesClean: AMENITIES_CLEAN_URL,
       amenitiesLegacy: AMENITIES_LEGACY_URL,
-    })
-  : {
-      loadBuildingsRuntimeData: function () {
-        return fetchJsonWithGzipFallback(BUILDINGS_URL);
-      },
-      loadPointsLookup: function () {
-        return fetchJsonWithGzipFallback(POINTS_LOOKUP_URL, { required: false });
-      },
-      loadIsochronesLookup: function () {
-        return fetchJsonWithGzipFallback(ISOCHRONES_LOOKUP_URL, { required: false });
-      },
-    };
+    });
 
 const Urban95ScoreModel = requireNamespace(window, "Urban95ScoreModel");
 const AMENITY_TYPE_CONFIG = requireScoreModelMember(Urban95ScoreModel, "AMENITY_TYPE_CONFIG");
@@ -332,6 +297,98 @@ const Urban95Selection = requireNamespace(window, "Urban95Selection");
 });
 const Urban95Controls = requireNamespace(window, "Urban95Controls");
 requireNamespaceMember(Urban95Controls, "Urban95Controls", "bind", "function");
+const Urban95AppState = requireNamespace(window, "Urban95AppState");
+const createAppState =
+  requireNamespaceMember(Urban95AppState, "Urban95AppState", "create", "function");
+const appState = createAppState();
+
+function getScoreModeState() {
+  return appState.getScoreMode();
+}
+
+function setScoreModeState(value) {
+  appState.setScoreMode(value);
+}
+
+function getWalkMinutesState() {
+  return appState.getWalkMinutes();
+}
+
+function setWalkMinutesState(value) {
+  appState.setWalkMinutes(value);
+}
+
+function getSelectedAmenityTypesState() {
+  return appState.getSelectedAmenityTypes();
+}
+
+function setSelectedAmenityTypesState(value) {
+  appState.setSelectedAmenityTypes(value);
+}
+
+function getAllFilterTypesState() {
+  return appState.getAllFilterTypes();
+}
+
+function setAllFilterTypesState(value) {
+  appState.setAllFilterTypes(value);
+}
+
+function getAmenitiesInRadiusIdsState() {
+  return appState.getAmenitiesInRadiusIds();
+}
+
+function setAmenitiesInRadiusIdsState(value) {
+  appState.setAmenitiesInRadiusIds(value);
+}
+
+function clearRadiusIdsState() {
+  appState.clearRadiusIds();
+}
+
+function getLatestRadiusCountsState() {
+  return appState.getLatestRadiusCounts();
+}
+
+function setLatestRadiusCountsState(value) {
+  appState.setLatestRadiusCounts(value);
+}
+
+function getLastFilterRadioSelectionState() {
+  return appState.getLastFilterRadioSelection();
+}
+
+function setLastFilterRadioSelectionState(value) {
+  appState.setLastFilterRadioSelection(value);
+}
+
+function hasPercentileSeriesState(key) {
+  return appState.hasPercentileSeries(key);
+}
+
+function getPercentileSeriesState(key) {
+  return appState.getPercentileSeries(key);
+}
+
+function setPercentileSeriesState(key, value) {
+  appState.setPercentileSeries(key, value);
+}
+
+function hasBuildingAmenityStatKeysState(key) {
+  return appState.hasBuildingAmenityStatKeys(key);
+}
+
+function getBuildingAmenityStatKeysState(key) {
+  return appState.getBuildingAmenityStatKeys(key);
+}
+
+function setBuildingAmenityStatKeysState(key, value) {
+  appState.setBuildingAmenityStatKeys(key, value);
+}
+
+function clearDerivedCachesState() {
+  appState.clearDerivedCaches();
+}
 const BUILDING_LAYER_CONTRACTS = resolveBuildingContracts({
   config: Urban95Config,
   artifacts: GENERATED_ARTIFACTS,
@@ -368,8 +425,8 @@ function getCurrentScoreModelContext(overrides) {
     {
       fixedMinutes: URBAN95_FIXED_MINUTES,
       currentMode: currentMode,
-      selectedAmenityTypes: Array.from(selectedAmenityTypes),
-      allFilterTypes: allFilterTypes,
+      selectedAmenityTypes: Array.from(getSelectedAmenityTypesState()),
+      allFilterTypes: getAllFilterTypesState(),
     },
     overrides || {}
   );
@@ -379,8 +436,8 @@ function getCurrentBuildingCleanFilteredScore(props, minutes) {
   return Urban95ScoreModel.getBuildingCleanFilteredScore(
     props,
     minutes,
-    Array.from(selectedAmenityTypes),
-    allFilterTypes,
+    Array.from(getSelectedAmenityTypesState()),
+    getAllFilterTypesState(),
     currentMode
   );
 }
@@ -389,17 +446,17 @@ function getCurrentBuildingOverallScore(props, minutes) {
   return Urban95ScoreModel.getBuildingOverallScore(
     props,
     minutes,
-    scoreMode,
+    getScoreModeState(),
     getCurrentScoreModelContext()
   );
 }
 
 function collectCurrentBuildingScores() {
   if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return [];
-  if (selectedAmenityTypes.size === 0 || allFilterTypes.length === 0) return [];
+  if (getSelectedAmenityTypesState().size === 0 || getAllFilterTypesState().length === 0) return [];
   return Urban95ScoreModel.collectBuildingScores(
     buildingsData,
-    walkMinutes,
+    getWalkMinutesState(),
     function (props, minutes) {
       return getCurrentBuildingOverallScore(props, minutes);
     }
@@ -431,16 +488,18 @@ function getCitywideWeightedAverageScoreForCurrentSelection(stats, sfx) {
 
 function getCurrentPercentileSeriesCacheKey(minutes) {
   return Urban95ScoreModel.getPercentileSeriesCacheKey(minutes, getCurrentScoreModelContext({
-    scoreMode: scoreMode,
+    scoreMode: getScoreModeState(),
   }));
 }
 
 function getCurrentBuildingAmenityStatKeysForMinutes(minutes) {
-  return Urban95ScoreModel.getBuildingAmenityStatKeysForMinutes(
-    minutes,
-    buildingsData,
-    buildingAmenityStatKeyCache
-  );
+  const cacheKey = String(minutes);
+  if (hasBuildingAmenityStatKeysState(cacheKey)) {
+    return getBuildingAmenityStatKeysState(cacheKey);
+  }
+  const keys = Urban95ScoreModel.getBuildingAmenityStatKeysForMinutes(minutes, buildingsData, null);
+  setBuildingAmenityStatKeysState(cacheKey, keys);
+  return keys;
 }
 
 function loadPointsLookup() {
@@ -460,14 +519,6 @@ function loadAmenitiesGeojsonFallback() {
       streetLightsFc: null,
     };
   });
-}
-
-function hasValidPointsLookupSources(lookup) {
-  const sources = lookup && lookup.sources;
-  return Boolean(
-    sources &&
-    Array.isArray(sources.amenities_clean)
-  );
 }
 
 /** Dev profiling: add ?perf=1 or localStorage urban95_perf=1 — records phase timings (see floating panel). */
@@ -570,13 +621,13 @@ const SCORE_EXPLAIN_ICON_NEUTRAL = "#0f172a";
 
 function getScoreExplainRowIconColor(row, barColor) {
   if (!row) return SCORE_EXPLAIN_ICON_NEUTRAL;
-  if (scoreMode === "weighted" && !row.amenityType && !row.cleanKey) return barColor || "#64748b";
+  if (getScoreModeState() === "weighted" && !row.amenityType && !row.cleanKey) return barColor || "#64748b";
   return SCORE_EXPLAIN_ICON_NEUTRAL;
 }
 
 function getScoreExplainPartialFilterSet() {
-  if (selectedAmenityTypes.size === 0 || selectedAmenityTypes.size === allFilterTypes.length) return null;
-  return selectedAmenityTypes;
+  if (getSelectedAmenityTypesState().size === 0 || getSelectedAmenityTypesState().size === getAllFilterTypesState().length) return null;
+  return getSelectedAmenityTypesState();
 }
 
 function isScoreExplainRowFilterHighlighted(row) {
@@ -685,9 +736,9 @@ function renderHorizonSubLabelCell(label, iconName, color) {
 }
 
 function getSelectedWeightedCategoryStem() {
-  if (scoreMode !== "weighted") return null;
-  if (selectedAmenityTypes.size !== 1) return null;
-  const stem = Array.from(selectedAmenityTypes)[0];
+  if (getScoreModeState() !== "weighted") return null;
+  if (getSelectedAmenityTypesState().size !== 1) return null;
+  const stem = Array.from(getSelectedAmenityTypesState())[0];
   return WEIGHTED_CATEGORY_BY_STEM[stem] ? stem : null;
 }
 
@@ -716,8 +767,8 @@ function fillExplainSeries(series, feats, minutes) {
   const explain = {};
   const explainAmenity = {};
   const sfx = "_" + minutes + "min";
-  const useAll = currentMode !== "house" || selectedAmenityTypes.size === allFilterTypes.length;
-  const activeTypes = useAll ? allFilterTypes : Array.from(selectedAmenityTypes);
+  const useAll = currentMode !== "house" || getSelectedAmenityTypesState().size === getAllFilterTypesState().length;
+  const activeTypes = useAll ? getAllFilterTypesState() : Array.from(getSelectedAmenityTypesState());
 
   const pushMetric = function (id, fn) {
     const arr = [];
@@ -727,13 +778,13 @@ function fillExplainSeries(series, feats, minutes) {
     explain[id] = arr;
   };
 
-  if (scoreMode === "weighted") {
+  if (getScoreModeState() === "weighted") {
     series.explain = explain;
     series.explainAmenity = explainAmenity;
     return;
   }
 
-  if (scoreMode === "clean") {
+  if (getScoreModeState() === "clean") {
     if (useAll) {
       const sample = feats.length > 0 ? feats[0].properties || {} : {};
       if (hasCleanPtsBreakdown(sample, minutes)) {
@@ -773,7 +824,7 @@ function fillExplainSeries(series, feats, minutes) {
       pushMetric("exp_sl_w", function (p) {
         return (Number(p["num_street_lights" + sfx]) || 0) * 0.25;
       });
-      const amenTypes = allFilterTypes.filter(function (t) {
+      const amenTypes = getAllFilterTypesState().filter(function (t) {
         return t !== "trees" && t !== "street-lights";
       });
       amenTypes.forEach(function (t) {
@@ -1034,7 +1085,7 @@ Urban95ScoreSidebar.configure({
   buildExplainScoreBreakdown: buildExplainScoreBreakdown,
   buildPercentileMetrics: buildPercentileMetrics,
   getScoreMode: function () {
-    return scoreMode;
+    return getScoreModeState();
   },
   getScoreModeLabel: getScoreModeLabel,
   getScoreMinutes: getScoreMinutes,
@@ -1042,10 +1093,10 @@ Urban95ScoreSidebar.configure({
     return selectedBuildingCentroid;
   },
   getSelectedAmenityTypes: function () {
-    return selectedAmenityTypes;
+    return getSelectedAmenityTypesState();
   },
   getAllFilterTypes: function () {
-    return allFilterTypes;
+    return getAllFilterTypesState();
   },
   formatMetricNumber: formatMetricNumber,
   formatScoreInteger: formatScoreInteger,
@@ -1079,7 +1130,6 @@ const URBAN95_DETAIL_POINTS_MIN_ZOOM = Urban95Config.detailPointsMinZoom || 15;
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
                       window.matchMedia("(max-width: 480px)").matches;
 
-let walkMinutes = 5;
 let allAmenityTypes = [];
 let typesWithData = new Set();
 let allAmenitiesData = null;
@@ -1089,41 +1139,62 @@ let allAmenityTypesClean = [];
 let allAmenityTypesLegacy = [];
 let typesWithDataClean = new Set();
 let typesWithDataLegacy = new Set();
-let allTreesData = null;
-let allStreetLightsData = null;
-let treesDataSource = "none";
-let streetLightsDataSource = "none";
 let buildingsData = null;
 let buildingCentroids = [];
-let selectedAmenityTypes = new Set();
-let lastFilterRadioSelection = "all";
-let allFilterTypes = [];
 let selectedBuildingCentroid = null;
 let selectedBuildingVectorId = null;
-let amenitiesInRadiusIds = new Set();
 let treesInRadiusIds = new Set();
 let streetLightsInRadiusIds = new Set();
 let iconsLoaded = false;
-let treesLoadStarted = false;
-let streetLightsLoadStarted = false;
-let treesGeojsonLoadInFlight = false;
-let streetLightsGeojsonLoadInFlight = false;
-let treesGeojsonLoadPromise = null;
-let streetLightsGeojsonLoadPromise = null;
 let isochroneLoadPromise = null;
 let isochronesLoaded = false;
 let isochroneIndex = {};
 let isochronesLookupMode = "legacy";
 let visibleAmenityFeatures = [];
 let deckAmenityOverlay = null;
-let scoreMode = "weighted";
 let _deckUpdateTimer = null;
 let _deckHovering = false;
 let _lastDeckClickTime = 0;
-let latestRadiusCounts = {};
-const percentileSeriesCache = new Map();
-const buildingAmenityStatKeyCache = new Map();
 let buildingCentroidGridIndex = new Map();
+
+const pointDataLoader = createPointDataLoader({
+  urls: {
+    trees: TREES_URL,
+    streetLights: STREET_LIGHTS_URL,
+  },
+  fetchJsonWithGzipFallback: fetchJsonWithGzipFallback,
+  hasGeneratedArtifact: hasGeneratedArtifact,
+  getScoreMode: function () {
+    return getScoreModeState();
+  },
+  onSkippedTreesGeojson: function () {
+    console.log("[Load] trees: skipped full GeoJSON fetch for weighted PMTiles display");
+    Urban95MapRenderers.updateTreesSource();
+  },
+  onSkippedStreetLightsGeojson: function () {
+    console.log("[Load] street-lights: skipped full GeoJSON fetch for weighted PMTiles display");
+    Urban95MapRenderers.updateStreetLightsSource();
+  },
+  onPointDataLoaded: function (kind, data) {
+    const startedAt = performance.now();
+    console.log("[Load] " + kind + ": features", (data.features || []).length);
+    buildFilterItems(allAmenityTypes);
+    Urban95MapRenderers.updateAmenitiesSource();
+    Urban95MapRenderers.updateTreesSource();
+    Urban95MapRenderers.updateStreetLightsSource();
+    Urban95MapRenderers.updateBuildingColors();
+    console.log(
+      "[Load] " + kind + ": processing complete",
+      Math.round(performance.now() - startedAt) + "ms"
+    );
+    if (selectedBuildingCentroid && pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad()) {
+      Urban95Selection.selectBuilding(selectedBuildingCentroid, false);
+    }
+  },
+  onPointDataError: function (kind, err) {
+    console.error("Failed to load " + kind + ":", err);
+  },
+});
 
 Urban95MapRenderers.configure({
   map: map,
@@ -1137,14 +1208,14 @@ Urban95MapRenderers.configure({
     return currentMode;
   },
   getScoreMode: function () {
-    return scoreMode;
+    return getScoreModeState();
   },
   getScoreMinutes: getScoreMinutes,
   getSelectedAmenityTypes: function () {
-    return selectedAmenityTypes;
+    return getSelectedAmenityTypesState();
   },
   getAllFilterTypes: function () {
-    return allFilterTypes;
+    return getAllFilterTypesState();
   },
   getVisibleAmenityFeatures: function () {
     return visibleAmenityFeatures;
@@ -1153,7 +1224,7 @@ Urban95MapRenderers.configure({
     visibleAmenityFeatures = value;
   },
   getAmenitiesInRadiusIds: function () {
-    return amenitiesInRadiusIds;
+    return getAmenitiesInRadiusIdsState();
   },
   getTreesInRadiusIds: function () {
     return treesInRadiusIds;
@@ -1165,10 +1236,10 @@ Urban95MapRenderers.configure({
     return allAmenitiesData;
   },
   getAllTreesData: function () {
-    return allTreesData;
+    return pointDataLoader.getAllTreesData();
   },
   getAllStreetLightsData: function () {
-    return allStreetLightsData;
+    return pointDataLoader.getAllStreetLightsData();
   },
   getDeckAmenityOverlay: function () {
     return deckAmenityOverlay;
@@ -1249,25 +1320,25 @@ Urban95Selection.configure({
   hideIsochroneLoadingScreen: hideIsochroneLoadingScreen,
   isochronesUrl: ISOCHRONES_URL,
   getSelectedAmenityTypes: function () {
-    return selectedAmenityTypes;
+    return getSelectedAmenityTypesState();
   },
   getAllFilterTypes: function () {
-    return allFilterTypes;
+    return getAllFilterTypesState();
   },
   getAllAmenitiesData: function () {
     return allAmenitiesData;
   },
   getAllTreesData: function () {
-    return allTreesData;
+    return pointDataLoader.getAllTreesData();
   },
   getAllStreetLightsData: function () {
-    return allStreetLightsData;
+    return pointDataLoader.getAllStreetLightsData();
   },
   getWalkMinutes: function () {
-    return walkMinutes;
+    return getWalkMinutesState();
   },
   getScoreMode: function () {
-    return scoreMode;
+    return getScoreModeState();
   },
   getCurrentMode: function () {
     return currentMode;
@@ -1288,10 +1359,10 @@ Urban95Selection.configure({
     return (
       !!selectedBuildingCentroid ||
       selectedBuildingVectorId != null ||
-      amenitiesInRadiusIds.size > 0 ||
+      getAmenitiesInRadiusIdsState().size > 0 ||
       treesInRadiusIds.size > 0 ||
       streetLightsInRadiusIds.size > 0 ||
-      Object.keys(latestRadiusCounts || {}).length > 0 ||
+      Object.keys(getLatestRadiusCountsState() || {}).length > 0 ||
       (Urban95ScoreSidebar.isOpen && Urban95ScoreSidebar.isOpen()) ||
       !!(
         document.getElementById("radius-info") &&
@@ -1309,7 +1380,7 @@ Urban95Selection.configure({
     buildingCentroidGridIndex = value;
   },
   setAmenitiesInRadiusIds: function (value) {
-    amenitiesInRadiusIds = value;
+    setAmenitiesInRadiusIdsState(value);
   },
   setTreesInRadiusIds: function (value) {
     treesInRadiusIds = value;
@@ -1318,7 +1389,7 @@ Urban95Selection.configure({
     streetLightsInRadiusIds = value;
   },
   setLatestRadiusCounts: function (value) {
-    latestRadiusCounts = value;
+    setLatestRadiusCountsState(value);
   },
   getIsochroneLoadPromise: function () {
     return isochroneLoadPromise;
@@ -1384,7 +1455,7 @@ function syncFilterUiForScoreMode() {
 }
 
 function getNeighborhoodAverageKey(sfx) {
-  if (scoreMode === "weighted") {
+  if (getScoreModeState() === "weighted") {
     const selectedStem = getSelectedWeightedCategoryStem();
     if (selectedStem) return "avg_score_weighted_" + selectedStem + sfx;
     return "avg_score_weighted_" + URBAN95_FIXED_MINUTES + "min";
@@ -1393,13 +1464,13 @@ function getNeighborhoodAverageKey(sfx) {
 }
 
 function getNeighborhoodPercentileKey(sfx) {
-  if (scoreMode === "weighted") return "pct_weighted_overall_" + URBAN95_FIXED_MINUTES + "min";
+  if (getScoreModeState() === "weighted") return "pct_weighted_overall_" + URBAN95_FIXED_MINUTES + "min";
   return "pct_overall" + sfx;
 }
 
 function getScoreMinutes() {
-  if (scoreMode === "weighted") return URBAN95_FIXED_MINUTES;
-  return walkMinutes;
+  if (getScoreModeState() === "weighted") return URBAN95_FIXED_MINUTES;
+  return getWalkMinutesState();
 }
 
 function normalizeSurfaceFilterKey(value) {
@@ -1412,21 +1483,21 @@ function normalizeSurfaceFilterKey(value) {
 }
 
 function getNeighborhoodSurfaceScorePropertyKey() {
-  if (scoreMode === "weighted") {
+  if (getScoreModeState() === "weighted") {
     const selectedStem = getSelectedWeightedCategoryStem();
     if (selectedStem) return "score_weighted_" + selectedStem;
     return "score_weighted";
   }
   const sfx = "_" + getScoreMinutes() + "min";
-  if (scoreMode === "expanded") {
+  if (getScoreModeState() === "expanded") {
     if (currentMode !== "house") {
       return "score_expanded" + sfx;
     }
-    if (selectedAmenityTypes.size === allFilterTypes.length) {
+    if (getSelectedAmenityTypesState().size === getAllFilterTypesState().length) {
       return "score_expanded" + sfx;
     }
-    if (selectedAmenityTypes.size === 1) {
-      const selectedType = Array.from(selectedAmenityTypes)[0] || "";
+    if (getSelectedAmenityTypesState().size === 1) {
+      const selectedType = Array.from(getSelectedAmenityTypesState())[0] || "";
       const scenarioType = selectedType === "health" ? "healthcare" : selectedType;
       return "score_filter_" + normalizeSurfaceFilterKey(scenarioType) + sfx;
     }
@@ -1488,7 +1559,7 @@ Urban95Dashboards.configure({
   },
   scoreModel: Urban95ScoreModel,
   getScoreMode: function () {
-    return scoreMode;
+    return getScoreModeState();
   },
   getScoreMinutes: getScoreMinutes,
   escapeHtml: escapeHtml,
@@ -1703,188 +1774,10 @@ async function loadAmenityIcons() {
   iconsLoaded = true;
 }
 
-// Lazy load trees when zoomed in (trees only visible at zoom 14+)
-function loadTreesIfNeeded() {
-  const needsAuthoritativeGeojson = scoreMode === "expanded" && treesDataSource !== "geojson";
-  if (treesGeojsonLoadInFlight) return treesGeojsonLoadPromise || Promise.resolve(null);
-  if (
-    (treesLoadStarted && treesDataSource !== "lookup") ||
-    (allTreesData && !needsAuthoritativeGeojson)
-  ) return Promise.resolve(null);
-  if (hasGeneratedArtifact("trees") && scoreMode === "weighted") {
-    console.log("[Load] trees: skipped full GeoJSON fetch for weighted PMTiles display");
-    Urban95MapRenderers.updateTreesSource();
-    return Promise.resolve(null);
-  }
-  treesLoadStarted = true;
-  treesGeojsonLoadInFlight = true;
-  const treesLoadStartedAt = performance.now();
-  console.log("[Load] trees: start");
-  
-  treesGeojsonLoadPromise = fetchJsonWithGzipFallback(TREES_URL)
-    .then(function (treesData) {
-      if (!treesData) throw new Error("Empty tree data");
-      allTreesData = treesData;
-      treesDataSource = "geojson";
-      console.log("[Load] trees: features", (treesData.features || []).length);
-      
-      const treesProcessStartedAt = performance.now();
-      const types = allAmenityTypes.slice();
-      buildFilterItems(types);
-      Urban95MapRenderers.updateAmenitiesSource();
-      Urban95MapRenderers.updateTreesSource();
-      Urban95MapRenderers.updateStreetLightsSource();
-      Urban95MapRenderers.updateBuildingColors();
-      console.log(
-        "[Load] trees: processing complete",
-        Math.round(performance.now() - treesProcessStartedAt) + "ms"
-      );
-
-      if (selectedBuildingCentroid && canRefreshPointAnalysisAfterPointDataLoad()) {
-        Urban95Selection.selectBuilding(selectedBuildingCentroid, false);
-      }
-      console.log(
-        "[Load] trees: complete total",
-        Math.round(performance.now() - treesLoadStartedAt) + "ms"
-      );
-      return loadStreetLightsIfNeeded();
-    })
-    .catch(function (err) {
-      console.error("Failed to load trees:", err);
-      treesLoadStarted = false;
-    })
-    .finally(function () {
-      treesGeojsonLoadInFlight = false;
-      treesGeojsonLoadPromise = null;
-    });
-
-  return treesGeojsonLoadPromise;
-}
-
-function loadStreetLightsIfNeeded() {
-  const needsAuthoritativeGeojson =
-    scoreMode === "expanded" && streetLightsDataSource !== "geojson";
-  if (streetLightsGeojsonLoadInFlight) {
-    return streetLightsGeojsonLoadPromise || Promise.resolve(null);
-  }
-  if (
-    (streetLightsLoadStarted && streetLightsDataSource !== "lookup") ||
-    (allStreetLightsData && !needsAuthoritativeGeojson)
-  ) return Promise.resolve(null);
-  if (hasGeneratedArtifact("street_lights") && scoreMode === "weighted") {
-    console.log("[Load] street-lights: skipped full GeoJSON fetch for weighted PMTiles display");
-    Urban95MapRenderers.updateStreetLightsSource();
-    return Promise.resolve(null);
-  }
-  streetLightsLoadStarted = true;
-  streetLightsGeojsonLoadInFlight = true;
-  const streetLightsLoadStartedAt = performance.now();
-  console.log("[Load] street-lights: start");
-
-  streetLightsGeojsonLoadPromise = fetchJsonWithGzipFallback(STREET_LIGHTS_URL)
-    .then(function (data) {
-      if (!data) throw new Error("Empty street light data");
-      allStreetLightsData = data;
-      streetLightsDataSource = "geojson";
-      console.log("[Load] street-lights: features", (data.features || []).length);
-
-      const streetLightsProcessStartedAt = performance.now();
-      const types = allAmenityTypes.slice();
-      buildFilterItems(types);
-      Urban95MapRenderers.updateAmenitiesSource();
-      Urban95MapRenderers.updateTreesSource();
-      Urban95MapRenderers.updateStreetLightsSource();
-      Urban95MapRenderers.updateBuildingColors();
-      console.log(
-        "[Load] street-lights: processing complete",
-        Math.round(performance.now() - streetLightsProcessStartedAt) + "ms"
-      );
-
-      if (selectedBuildingCentroid && canRefreshPointAnalysisAfterPointDataLoad()) {
-        Urban95Selection.selectBuilding(selectedBuildingCentroid, false);
-      }
-      console.log(
-        "[Load] street-lights: complete total",
-        Math.round(performance.now() - streetLightsLoadStartedAt) + "ms"
-      );
-    })
-    .catch(function (err) {
-      console.error("Failed to load street lights:", err);
-      streetLightsLoadStarted = false;
-    })
-    .finally(function () {
-      streetLightsGeojsonLoadInFlight = false;
-      streetLightsGeojsonLoadPromise = null;
-    });
-
-  return streetLightsGeojsonLoadPromise;
-}
-
-function ensureExpandedPointDataLoaded() {
-  if (scoreMode !== "expanded") return Promise.resolve(null);
-  const pointDataLoads = [];
-  if (treesDataSource !== "geojson") pointDataLoads.push(loadTreesIfNeeded());
-  if (streetLightsDataSource !== "geojson") pointDataLoads.push(loadStreetLightsIfNeeded());
-  if (pointDataLoads.length === 0) return Promise.resolve(null);
-  return Promise.all(pointDataLoads).then(function () {
-    return null;
-  });
-}
-
-function canRefreshPointAnalysisAfterPointDataLoad() {
-  return (
-    scoreMode !== "expanded" ||
-    (treesDataSource === "geojson" && streetLightsDataSource === "geojson")
-  );
-}
-
-function warnIfBuildingScoresIncomplete(fc) {
-  if (!fc || !fc.features || fc.features.length === 0) return;
-  const p = fc.features[0].properties || {};
-  const keys = Object.keys(p);
-  const hasStreet = keys.some(k => k.indexOf("num_street_lights_") === 0);
-  const hasExpanded = keys.some(k => k.indexOf("score_expanded_") === 0);
-  const hasWeighted = keys.some(k => k.indexOf("score_weighted_") === 0);
-  const hasWeightedSubscores = keys.some(k => k.indexOf("score_weighted_sub_") === 0);
-  if (!hasStreet || !hasExpanded) {
-    console.warn(
-      "[urban95] buildings_accessibility.geojson is missing num_street_lights_* or score_expanded_*. Legacy expanded scores and street-light percentiles need a fresh preprocess run."
-    );
-  }
-  if (!hasWeighted) {
-    console.warn(
-      "[urban95] buildings_accessibility.geojson has no score_weighted_* properties. Urban95 mode needs a fresh preprocess run."
-    );
-  }
-  if (!hasWeightedSubscores) {
-    console.warn(
-      "[urban95] buildings_accessibility.geojson has no score_weighted_sub_* properties. Urban95 explain details will be partial until you regenerate outputs with src/preprocess_accessibility.py."
-    );
-  }
-}
-
-function scanAmenityTypesFromFeatures(fc) {
-  const typeCounts = {};
-  (fc.features || []).forEach(function (f) {
-    const t = (f.properties && f.properties.amenity_type) || "";
-    if (t) {
-      typeCounts[t] = (typeCounts[t] || 0) + 1;
-    }
-  });
-  const types = Object.keys(typeCounts).sort();
-  const tw = new Set();
-  types.forEach(function (t) {
-    if (typeCounts[t] > 0) {
-      tw.add(t);
-    }
-  });
-  return { types, tw };
-}
-
 function applyScoreModeAmenities() {
   return urban95Perf.phase("applyScoreModeAmenities", function () {
-    const useLegacy = scoreMode === "expanded" && allAmenitiesDataLegacy && (allAmenitiesDataLegacy.features || []).length > 0;
-    if (scoreMode === "expanded" && !useLegacy) {
+    const useLegacy = getScoreModeState() === "expanded" && allAmenitiesDataLegacy && (allAmenitiesDataLegacy.features || []).length > 0;
+    if (getScoreModeState() === "expanded" && !useLegacy) {
       console.warn("amenities_all.geojson missing or empty; Amenities Focus mode may be incomplete.");
     }
     if (useLegacy) {
@@ -1896,11 +1789,11 @@ function applyScoreModeAmenities() {
       allAmenityTypes = allAmenityTypesClean.slice();
       typesWithData = new Set(typesWithDataClean);
     }
-    amenitiesInRadiusIds.clear();
+    clearRadiusIdsState();
     buildFilterItems(allAmenityTypes);
     syncFilterUiForScoreMode();
     updateShowPointsToggleLabel();
-    return ensureExpandedPointDataLoaded().then(function () {
+    return pointDataLoader.ensureExpandedPointDataLoaded().then(function () {
       Urban95MapRenderers.applyShowPointsToggle();
       Urban95MapRenderers.updateAmenitiesSource();
       Urban95MapRenderers.updateTreesSource();
@@ -1912,7 +1805,7 @@ function applyScoreModeAmenities() {
         Urban95MapRenderers.updateBuildingColors();
         Urban95MapRenderers.updateNeighborhoodSurfaceData();
       }
-      if (selectedBuildingCentroid && canRefreshPointAnalysisAfterPointDataLoad()) {
+      if (selectedBuildingCentroid && pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad()) {
         Urban95Selection.selectBuilding(selectedBuildingCentroid, false);
       }
     });
@@ -1998,8 +1891,8 @@ function getPercentileSeriesCacheKey(minutes) {
 
 function getPercentileSeriesForMinutes(minutes) {
   const cacheKey = getPercentileSeriesCacheKey(minutes);
-  if (percentileSeriesCache.has(cacheKey)) {
-    return percentileSeriesCache.get(cacheKey);
+  if (hasPercentileSeriesState(cacheKey)) {
+    return getPercentileSeriesState(cacheKey);
   }
 
   if (!buildingsData || !Array.isArray(buildingsData.features)) {
@@ -2013,18 +1906,18 @@ function getPercentileSeriesForMinutes(minutes) {
 
   const series = { overall };
   fillExplainSeries(series, buildingsData.features, minutes);
-  percentileSeriesCache.set(cacheKey, series);
+  setPercentileSeriesState(cacheKey, series);
   return series;
 }
 
 function buildPercentileMetrics(buildingProps) {
   if (!buildingProps) return null;
-  if (selectedAmenityTypes.size === 0) return null;
-  const overallScore = getBuildingOverallScore(buildingProps, walkMinutes);
-  if (scoreMode === "weighted") {
+  if (getSelectedAmenityTypesState().size === 0) return null;
+  const overallScore = getBuildingOverallScore(buildingProps, getWalkMinutesState());
+  if (getScoreModeState() === "weighted") {
     return { overallPercentile: null, overallScore };
   }
-  const series = getPercentileSeriesForMinutes(walkMinutes);
+  const series = getPercentileSeriesForMinutes(getWalkMinutesState());
   if (!series || series.overall.length === 0) return null;
   const overallPercentile = computePercentileRank(series.overall, overallScore);
   return { overallPercentile, overallScore };
@@ -2063,11 +1956,11 @@ function buildExplainScoreBreakdown(buildingProps) {
   const p = buildingProps || {};
   const m = getScoreMinutes();
   const sfx = "_" + m + "min";
-  const useAll = selectedAmenityTypes.size === allFilterTypes.length;
+  const useAll = getSelectedAmenityTypesState().size === getAllFilterTypesState().length;
   const overallScore = getBuildingOverallScore(p, m);
   const rows = [];
-  const isWeighted = scoreMode === "weighted";
-  const isClean = scoreMode === "clean";
+  const isWeighted = getScoreModeState() === "weighted";
+  const isClean = getScoreModeState() === "clean";
 
   if (isWeighted) {
     const weightedCategories = [];
@@ -2110,7 +2003,7 @@ function buildExplainScoreBreakdown(buildingProps) {
     };
   }
 
-  const series = getPercentileSeriesForMinutes(walkMinutes);
+  const series = getPercentileSeriesForMinutes(getWalkMinutesState());
   if (!series || !series.explain || series.overall.length === 0) return null;
   const overallPct = percentileForSeries(series.overall, overallScore);
 
@@ -2177,7 +2070,7 @@ function buildExplainScoreBreakdown(buildingProps) {
         percentile: percentileForSeries(series.explain.exp_sl_w, sw),
       });
 
-      const amenTypes = allFilterTypes.filter(function (t) {
+      const amenTypes = getAllFilterTypesState().filter(function (t) {
         return t !== "trees" && t !== "street-lights";
       });
       const availableAmenityStatKeys = getBuildingAmenityStatKeysForMinutes(m);
@@ -2190,7 +2083,7 @@ function buildExplainScoreBreakdown(buildingProps) {
         const hasBuildingColumn = availableAmenityStatKeys.has(statKey);
         const cnt = hasBuildingColumn
           ? Number(p["amen_" + statKey + sfx]) || 0
-          : Number(latestRadiusCounts[t]) || 0;
+          : Number(getLatestRadiusCountsState()[t]) || 0;
         const cfg = getAmenityConfig(t);
         amenRows.push({
           label: cfg.label,
@@ -2249,8 +2142,7 @@ function closeFilterPopup() {
 }
 
 function clearControlDerivedCaches() {
-  percentileSeriesCache.clear();
-  buildingAmenityStatKeyCache.clear();
+  clearDerivedCachesState();
 }
 
 function handleControlsFilterSelectionChanged() {
@@ -2259,7 +2151,7 @@ function handleControlsFilterSelectionChanged() {
   Urban95MapRenderers.updateStreetLightsSource();
   Urban95MapRenderers.updateBuildingColors();
 
-  if (selectedBuildingCentroid && canRefreshPointAnalysisAfterPointDataLoad()) {
+  if (selectedBuildingCentroid && pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad()) {
     Urban95Selection.selectBuilding(selectedBuildingCentroid, false);
   }
 
@@ -2287,7 +2179,7 @@ function handleControlsScoreModeChanged(nextScoreMode) {
     "score-model -> " + (nextScoreMode === "expanded" ? "Amenities Focus" : "Urban95")
   );
   return urban95Perf.phase("scoreModelToggle:handler", function () {
-    if (scoreMode !== "weighted") {
+    if (getScoreModeState() !== "weighted") {
       const shouldBlockForSelectedBuilding = !!selectedBuildingCentroid && !isochronesLoaded;
       if (shouldBlockForSelectedBuilding) {
         showIsochroneLoadingScreen();
@@ -2395,37 +2287,37 @@ controlsBinding = Urban95Controls.bind({
   isTouchDevice: isTouchDevice,
   getState: function () {
     return {
-      scoreMode: scoreMode,
-      walkMinutes: walkMinutes,
-      selectedAmenityTypes: selectedAmenityTypes,
-      allFilterTypes: allFilterTypes,
-      lastFilterRadioSelection: lastFilterRadioSelection,
+      scoreMode: getScoreModeState(),
+      walkMinutes: getWalkMinutesState(),
+      selectedAmenityTypes: getSelectedAmenityTypesState(),
+      allFilterTypes: getAllFilterTypesState(),
+      lastFilterRadioSelection: getLastFilterRadioSelectionState(),
       currentMode: currentMode,
     };
   },
   setScoreMode: function (value) {
-    scoreMode = value;
+    setScoreModeState(value);
   },
   setWalkMinutes: function (value) {
-    walkMinutes = value;
+    setWalkMinutesState(value);
   },
   setSelectedAmenityTypes: function (value) {
-    selectedAmenityTypes = value;
+    setSelectedAmenityTypesState(value);
   },
   setAllFilterTypes: function (value) {
-    allFilterTypes = value;
+    setAllFilterTypesState(value);
   },
   setLastFilterRadioSelection: function (value) {
-    lastFilterRadioSelection = value;
+    setLastFilterRadioSelectionState(value);
   },
   getTypesWithData: function () {
     return typesWithData;
   },
   getAllTreesData: function () {
-    return allTreesData;
+    return pointDataLoader.getAllTreesData();
   },
   getAllStreetLightsData: function () {
-    return allStreetLightsData;
+    return pointDataLoader.getAllStreetLightsData();
   },
   callbacks: {
     applyScoreModeAmenities: applyScoreModeAmenities,
@@ -2496,8 +2388,7 @@ map.on("load", async function () {
         if (buildingsSource) buildingsSource.setData(fc);
       }
       warnIfBuildingScoresIncomplete(fc);
-      percentileSeriesCache.clear();
-      buildingAmenityStatKeyCache.clear();
+      clearDerivedCachesState();
       
       const centroidsStartedAt = performance.now();
       buildingCentroids = [];
@@ -2612,15 +2503,11 @@ map.on("load", async function () {
       }
 
       if (payload.source === "points_lookup" && treesFc) {
-        allTreesData = treesFc;
-        treesLoadStarted = true;
-        treesDataSource = "lookup";
+        pointDataLoader.setPointLookupData({ trees: treesFc });
       }
 
       if (payload.source === "points_lookup" && streetLightsFc) {
-        allStreetLightsData = streetLightsFc;
-        streetLightsLoadStarted = true;
-        streetLightsDataSource = "lookup";
+        pointDataLoader.setPointLookupData({ streetLights: streetLightsFc });
       }
 
       applyScoreModeAmenities();
@@ -2647,7 +2534,7 @@ map.on("load", async function () {
       );
 
       if (map.getZoom() >= 13) {
-        loadTreesIfNeeded();
+        pointDataLoader.loadTreesIfNeeded();
       }
     })
     .catch(function (err) {
@@ -2717,10 +2604,10 @@ Urban95InfoModal.bind({ infoModal, infoBtn, modalClose, modalStart, modalTabs, t
 // Lazy load trees and street lights when zoomed in far enough
 map.on("zoomend", function() {
   if (map.getZoom() >= 13) {
-    loadTreesIfNeeded();
-    loadStreetLightsIfNeeded();
+    pointDataLoader.loadTreesIfNeeded();
+    pointDataLoader.loadStreetLightsIfNeeded();
   }
-  if (scoreMode === "weighted") {
+  if (getScoreModeState() === "weighted") {
     Urban95MapRenderers.updateTreesSource();
     Urban95MapRenderers.updateStreetLightsSource();
   }
@@ -2746,7 +2633,12 @@ function addNeighborhoodLayers() {
       },
       layout: { visibility: "none" },
     }, hasGeneratedArtifact("neighborhood_surface")
-      ? { "source-layer": sourceLayer("neighborhood_surface", "neighborhood_surface") }
+      ? {
+          "source-layer": sourceLayer(
+            "neighborhood_surface",
+            NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK
+          ),
+        }
       : {}),
     surfaceBeforeId
   );
@@ -3022,3 +2914,4 @@ map.on("mousemove", "neighborhoods-surface", function(e) {
   if (currentMode !== "neighborhood" || !e.features || e.features.length === 0) return;
   Urban95Dashboards.showNeighborhoodAreaTooltip(e.point, e.features[0]);
 });
+

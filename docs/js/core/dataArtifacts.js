@@ -1,6 +1,18 @@
 (function () {
-  var BASE = "./data";
+  if (!window.Urban95Config || typeof window.Urban95Config !== "object") {
+    throw new Error("window.Urban95Config is required before dataArtifacts.js");
+  }
+  var config = window.Urban95Config;
+  var generatedFallbacks = config.generatedFallbacks || {};
+  var BASE = config.BASE || "./data";
   var generated = window.URBAN95_GENERATED_ARTIFACTS || {};
+
+  function requireGeneratedFallback(name) {
+    if (!generatedFallbacks[name]) {
+      throw new Error("Urban95Config.generatedFallbacks." + name + " is required before dataArtifacts.js");
+    }
+    return generatedFallbacks[name];
+  }
 
   function getGeneratedOutput(name, fallbackPath) {
     var entry = generated[name];
@@ -46,13 +58,16 @@
   }
 
   var urls = {
-    buildingsLookup: getGeneratedOutput("buildings_lookup", BASE + "/buildings_lookup.json"),
-    isochronesLookup: getGeneratedOutput("isochrones_lookup", BASE + "/isochrones_lookup.json"),
-    pointsLookup: getGeneratedOutput("points_lookup", BASE + "/points_lookup.json"),
-    buildingsPmtiles: getGeneratedOutput("buildings", BASE + "/buildings_accessibility.pmtiles"),
-    neighborhoodSurfacePmtiles: getGeneratedOutput("neighborhood_surface", BASE + "/neighborhood_surface.pmtiles"),
-    treesPmtiles: getGeneratedOutput("trees", BASE + "/trees.pmtiles"),
-    streetLightsPmtiles: getGeneratedOutput("street_lights", BASE + "/street_lights.pmtiles"),
+    buildingsLookup: getGeneratedOutput("buildings_lookup", requireGeneratedFallback("buildingsLookup")),
+    isochronesLookup: getGeneratedOutput("isochrones_lookup", requireGeneratedFallback("isochronesLookup")),
+    pointsLookup: getGeneratedOutput("points_lookup", requireGeneratedFallback("pointsLookup")),
+    buildingsPmtiles: getGeneratedOutput("buildings", requireGeneratedFallback("buildingsPmtiles")),
+    neighborhoodSurfacePmtiles: getGeneratedOutput(
+      "neighborhood_surface",
+      requireGeneratedFallback("neighborhoodSurfacePmtiles")
+    ),
+    treesPmtiles: getGeneratedOutput("trees", requireGeneratedFallback("treesPmtiles")),
+    streetLightsPmtiles: getGeneratedOutput("street_lights", requireGeneratedFallback("streetLightsPmtiles")),
   };
 
   window.Urban95DataArtifacts = {

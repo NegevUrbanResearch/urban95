@@ -16,6 +16,21 @@
     citywideStats: BASE + "/citywide_stats.json",
   };
 
+  var generatedFallbacks = {
+    buildingsLookup: BASE + "/buildings_lookup.json",
+    isochronesLookup: BASE + "/isochrones_lookup.json",
+    pointsLookup: BASE + "/points_lookup.json",
+    buildingsPmtiles: BASE + "/buildings_accessibility.pmtiles",
+    neighborhoodSurfacePmtiles: BASE + "/neighborhood_surface.pmtiles",
+    treesPmtiles: BASE + "/trees.pmtiles",
+    streetLightsPmtiles: BASE + "/street_lights.pmtiles",
+  };
+
+  var mapContracts = {
+    buildingSourceLayerFallback: "buildings",
+    neighborhoodSurfaceSourceLayerFallback: "neighborhood_surface",
+  };
+
   var cdn = {
     deckGl: "https://unpkg.com/deck.gl@9.0.31/dist.min.js",
     chartJs: "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js",
@@ -57,6 +72,8 @@
     BASE: BASE,
     ICONS_BASE: ICONS_BASE,
     urls: urls,
+    generatedFallbacks: generatedFallbacks,
+    mapContracts: mapContracts,
     cdn: cdn,
     sources: sources,
     layers: layers,
