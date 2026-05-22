@@ -374,9 +374,17 @@ const pointDataLoader = createPointDataLoader({
     Urban95Logger.perf("[Load] street-lights: skipped full GeoJSON fetch for weighted PMTiles display");
     Urban95MapRenderers.updateStreetLightsSource();
   },
-  onPointDataLoaded: function (kind, data) {
+  onPointDataLoaded: function (kind, data, context) {
+    var refreshPolicy = context && context.refreshPolicy ? context.refreshPolicy : "immediate";
     const startedAt = performance.now();
     Urban95Logger.perf("[Load] " + kind + ": features", (data.features || []).length);
+    if (refreshPolicy === "defer") {
+      Urban95Logger.perf(
+        "[Load] " + kind + ": processing complete",
+        Math.round(performance.now() - startedAt) + "ms"
+      );
+      return;
+    }
     buildFilterItems(allAmenityTypes);
     Urban95MapRenderers.updateAmenitiesSource();
     Urban95MapRenderers.updateTreesSource();

@@ -132,10 +132,6 @@
     });
 
     map.on("zoomend", function () {
-      if (map.getZoom() >= 13) {
-        pointDataLoader.loadTreesIfNeeded();
-        pointDataLoader.loadStreetLightsIfNeeded();
-      }
       if (getScoreMode() === "weighted") {
         mapRenderers.updateTreesSource();
         mapRenderers.updateStreetLightsSource();

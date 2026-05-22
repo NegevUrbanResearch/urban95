@@ -79,9 +79,6 @@
     }
 
     function onFilterSelectionChanged() {
-      renderers.updateAmenitiesSource();
-      renderers.updateTreesSource();
-      renderers.updateStreetLightsSource();
       renderers.updateBuildingColors();
 
       if (
@@ -89,6 +86,10 @@
         pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad()
       ) {
         selection.selectBuilding(state.getSelectedBuilding(), false);
+      } else {
+        renderers.updateAmenitiesSource();
+        renderers.updateTreesSource();
+        renderers.updateStreetLightsSource();
       }
 
       if (state.getCurrentMode() === "neighborhood") {
@@ -174,7 +175,7 @@
         renderers.updateBuildingColors();
         renderers.updateNeighborhoodSurfaceData();
         if (state.getSelectedBuilding()) {
-          selection.selectBuilding(state.getSelectedBuilding(), true);
+          selection.selectBuilding(state.getSelectedBuilding(), false);
         }
       }
 

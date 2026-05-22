@@ -40,6 +40,18 @@ function runCoreStartup(browserOverrides) {
   return browser.window.Urban95Startup;
 }
 
+function runAmenityModeModule() {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/amenityMode.js", browser);
+  return browser.window.Urban95AmenityMode;
+}
+
+function runControlActionsModule() {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/controlActions.js", browser);
+  return browser.window.Urban95ControlActions;
+}
+
 function loadAppCoordinatorNamespaces(browser) {
   runBrowserScript("docs/js/core/logger.js", browser);
   runBrowserScript("docs/js/core/startup.js", browser);
@@ -375,6 +387,8 @@ test("core modules expose stable Urban95 namespaces", () => {
     "setLayerVisibilityIfPresent",
     "setLayerVisibility",
     "resetPointHoverState",
+    "getSpecialPointRenderPlan",
+    "applySpecialPointRenderPlan",
     "setTreesVisibility",
     "setStreetLightsVisibility",
     "setTreesAndLightsVisibility",
@@ -498,6 +512,7 @@ test("amenity mode owns clean-vs-legacy selection and refresh order", async () =
       canRefreshPointAnalysisAfterPointDataLoad: function () { return true; },
     },
     renderers: {
+      syncPointLayerVisibility: function () { calls.push("syncPointLayerVisibility"); },
       applyShowPointsToggle: function () { calls.push("applyShowPoints"); },
       updateAmenitiesSource: function () { calls.push("amenitiesSource"); },
       updateTreesSource: function () { calls.push("treesSource"); },
@@ -525,10 +540,7 @@ test("amenity mode owns clean-vs-legacy selection and refresh order", async () =
     "syncFilter",
     "toggleLabel",
     "ensureExpanded",
-    "applyShowPoints",
-    "amenitiesSource",
-    "treesSource",
-    "lightsSource",
+    "syncPointLayerVisibility",
     "buildingColors",
     "surfaceData",
     "selectBuilding",
@@ -579,6 +591,7 @@ test("amenity mode falls back to clean data and warns when expanded legacy ameni
       canRefreshPointAnalysisAfterPointDataLoad: function () { return true; },
     },
     renderers: {
+      syncPointLayerVisibility: function () { calls.push("syncPointLayerVisibility"); },
       applyShowPointsToggle: function () { calls.push("applyShowPoints"); },
       updateAmenitiesSource: function () { calls.push("amenitiesSource"); },
       updateTreesSource: function () { calls.push("treesSource"); },
@@ -607,14 +620,68 @@ test("amenity mode falls back to clean data and warns when expanded legacy ameni
     "syncFilter",
     "toggleLabel",
     "ensureExpanded",
-    "applyShowPoints",
-    "amenitiesSource",
-    "treesSource",
-    "lightsSource",
+    "syncPointLayerVisibility",
     "buildingColors",
     "surfaceData",
     "selectBuilding",
   ]);
+});
+
+test("amenity mode selected-building apply lets selection own radius-derived point refresh", async () => {
+  const AmenityMode = runAmenityModeModule();
+  const calls = [];
+  const selectedBuilding = { properties: { building_id: 101 }, lng: 34.8, lat: 31.25 };
+  const state = {
+    getScoreMode: () => "expanded",
+    getCleanData: () => ({ type: "FeatureCollection", features: [{ properties: { amenity_type: "school" } }] }),
+    getCleanTypes: () => ["school"],
+    getCleanTypesWithData: () => new Set(["school"]),
+    getLegacyData: () => ({ type: "FeatureCollection", features: [{ properties: { amenity_type: "school" } }] }),
+    getLegacyTypes: () => ["school"],
+    getLegacyTypesWithData: () => new Set(["school"]),
+    setAllAmenitiesData: () => calls.push("setAllAmenitiesData"),
+    setAllAmenityTypes: () => calls.push("setAllAmenityTypes"),
+    setTypesWithData: () => calls.push("setTypesWithData"),
+    clearRadiusIds: () => calls.push("clearRadiusIds"),
+    getCurrentMode: () => "house",
+    getSelectedBuilding: () => selectedBuilding,
+  };
+  const amenityMode = AmenityMode.create({
+    perf: { phase: (_name, callback) => callback() },
+    logger: { warn: () => {} },
+    state,
+    ui: {
+      buildFilterItems: () => calls.push("buildFilterItems"),
+      syncFilterUiForScoreMode: () => calls.push("syncFilterUiForScoreMode"),
+      updateShowPointsToggleLabel: () => calls.push("updateShowPointsToggleLabel"),
+    },
+    pointDataLoader: {
+      ensureExpandedPointDataLoaded: () => Promise.resolve({ upgradedKinds: ["trees", "street-lights"] }),
+      canRefreshPointAnalysisAfterPointDataLoad: () => true,
+    },
+    renderers: {
+      syncPointLayerVisibility: () => calls.push("syncPointLayerVisibility"),
+      applyShowPointsToggle: () => calls.push("applyShowPointsToggle"),
+      updateAmenitiesSource: () => calls.push("updateAmenitiesSource"),
+      updateTreesSource: () => calls.push("updateTreesSource"),
+      updateStreetLightsSource: () => calls.push("updateStreetLightsSource"),
+      updateBuildingColors: () => calls.push("updateBuildingColors"),
+      updateNeighborhoodSurfaceData: () => calls.push("updateNeighborhoodSurfaceData"),
+    },
+    selection: {
+      selectBuilding: (building, doFly) => calls.push(["selectBuilding", building, doFly]),
+    },
+  });
+
+  await amenityMode.apply();
+
+  assert.deepEqual(
+    calls.filter((item) => item === "updateAmenitiesSource" || item === "updateTreesSource" || item === "updateStreetLightsSource"),
+    [],
+    "selected-building score-mode apply must not refresh point sources before selectBuilding"
+  );
+  assert.equal(calls.filter((item) => Array.isArray(item) && item[0] === "selectBuilding").length, 1);
+  assert.ok(calls.includes("updateBuildingColors"));
 });
 
 test("control actions own score-mode, filter, walk-minute, escape, and heatmap reactions", async () => {
@@ -803,9 +870,6 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
   }
 
   assertSubsequence([
-    "amenities",
-    "trees",
-    "lights",
     "buildings",
     "selectBuilding:false",
     "surface",
@@ -827,7 +891,7 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
     "radiusInfo",
     "buildings",
     "surface",
-    "selectBuilding:true",
+    "selectBuilding:false",
   ]);
   assertSubsequence([
     "session:analysis mode -> citywide",
@@ -840,7 +904,9 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
     "switch:house",
   ]);
 
-  assert.ok(calls.includes("amenities"));
+  assert.ok(!calls.includes("amenities"));
+  assert.ok(!calls.includes("trees"));
+  assert.ok(!calls.includes("lights"));
   assert.ok(calls.includes("showIso"));
   assert.ok(calls.includes("amenityApply"));
   assert.ok(calls.includes("radiusInfo"));
@@ -848,6 +914,126 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
   assert.ok(calls.includes("heatmap none"));
   assert.ok(calls.includes("isoDeferred"));
   assert.ok(!calls.includes("mark:isochrones"));
+});
+
+test("filter changes with selected building recompute selection before point-source refresh", () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const selectedBuilding = { properties: { building_id: 202 } };
+  const actions = ControlActions.create({
+    perf: { session: () => {}, phase: (_name, callback) => callback() },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => selectedBuilding,
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => true,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => true },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => {},
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: { apply: () => Promise.resolve() },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => calls.push("updateAmenitiesSource"),
+      updateTreesSource: () => calls.push("updateTreesSource"),
+      updateStreetLightsSource: () => calls.push("updateStreetLightsSource"),
+      updateBuildingColors: () => calls.push("updateBuildingColors"),
+      updateNeighborhoodSurfaceData: () => calls.push("updateNeighborhoodSurfaceData"),
+      updateNeighborhoodColors: () => calls.push("updateNeighborhoodColors"),
+    },
+    selection: {
+      loadIsochrones: () => Promise.resolve(),
+      selectBuilding: () => calls.push("selectBuilding"),
+      updateRadiusInfo: () => {},
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: { isOpen: () => false, hide: () => {} },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+  });
+
+  actions.onFilterSelectionChanged();
+
+  assert.deepEqual(calls, [
+    "updateBuildingColors",
+    "selectBuilding",
+    "updateNeighborhoodSurfaceData",
+  ]);
+});
+
+test("filter changes refresh point sources when selected-building recompute is unavailable", () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const selectedBuilding = { properties: { building_id: 303 } };
+  const actions = ControlActions.create({
+    perf: { session: () => {}, phase: (_name, callback) => callback() },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => selectedBuilding,
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => true,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => false },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => {},
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: { apply: () => Promise.resolve() },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => calls.push("updateAmenitiesSource"),
+      updateTreesSource: () => calls.push("updateTreesSource"),
+      updateStreetLightsSource: () => calls.push("updateStreetLightsSource"),
+      updateBuildingColors: () => calls.push("updateBuildingColors"),
+      updateNeighborhoodSurfaceData: () => calls.push("updateNeighborhoodSurfaceData"),
+      updateNeighborhoodColors: () => calls.push("updateNeighborhoodColors"),
+    },
+    selection: {
+      loadIsochrones: () => Promise.resolve(),
+      selectBuilding: () => calls.push("selectBuilding"),
+      updateRadiusInfo: () => {},
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: { isOpen: () => false, hide: () => {} },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+  });
+
+  actions.onFilterSelectionChanged();
+
+  assert.deepEqual(calls, [
+    "updateBuildingColors",
+    "updateAmenitiesSource",
+    "updateTreesSource",
+    "updateStreetLightsSource",
+    "updateNeighborhoodSurfaceData",
+  ]);
 });
 
 test("app dependency validation is exposed through one namespace without leaking helper globals", () => {
@@ -1342,6 +1528,165 @@ test("map event binding lives in Urban95MapEvents instead of inline app handlers
   assert.match(eventsSource, /showNeighborhoodAreaTooltip/);
 });
 
+test("special point render plan prefers generated vectors in weighted mode", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  browser.window.Urban95MapRenderers.configure({
+    map: {
+      getZoom: function () {
+        return 14;
+      },
+    },
+    hasGeneratedArtifact: function (artifactKey) {
+      return artifactKey === "trees";
+    },
+    getCurrentMode: function () {
+      return "house";
+    },
+    getScoreMode: function () {
+      return "weighted";
+    },
+    urban95DetailPointsMinZoom: 13,
+  });
+
+  const plan = browser.window.Urban95MapRenderers.getSpecialPointRenderPlan({
+    artifactKey: "trees",
+    filterType: "trees",
+    getWeightedToggle: function () {
+      return true;
+    },
+    getData: function () {
+      return {
+        type: "FeatureCollection",
+        features: [{ id: 1 }],
+      };
+    },
+    getInRadiusIds: function () {
+      return new Set([0]);
+    },
+    isOnlyFilter: function () {
+      return false;
+    },
+  });
+
+  assert.equal(plan.geojsonVisible, false);
+  assert.equal(plan.vectorVisible, true);
+  assert.equal(plan.features, null);
+});
+
+test("special point render plan clears weighted GeoJSON source when hidden without vector artifact", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const data = {
+    type: "FeatureCollection",
+    features: [{ type: "Feature", properties: { id: 1 } }],
+  };
+
+  browser.window.Urban95MapRenderers.configure({
+    map: {
+      getZoom: function () {
+        return 12;
+      },
+    },
+    hasGeneratedArtifact: function () {
+      return false;
+    },
+    getCurrentMode: function () {
+      return "house";
+    },
+    getScoreMode: function () {
+      return "weighted";
+    },
+    urban95DetailPointsMinZoom: 13,
+  });
+
+  const plan = browser.window.Urban95MapRenderers.getSpecialPointRenderPlan({
+    artifactKey: "trees",
+    filterType: "trees",
+    getWeightedToggle: function () {
+      return true;
+    },
+    getData: function () {
+      return data;
+    },
+    getInRadiusIds: function () {
+      return new Set([0]);
+    },
+    isOnlyFilter: function () {
+      return false;
+    },
+  });
+
+  assert.equal(plan.geojsonVisible, false);
+  assert.equal(plan.vectorVisible, false);
+  assert.equal(plan.features.type, "FeatureCollection");
+  assert.equal(plan.features.features.length, 0);
+});
+
+test("special point render plan returns in-radius GeoJSON subset in expanded mode", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const data = {
+    type: "FeatureCollection",
+    features: [
+      { type: "Feature", properties: { id: 1 } },
+      { type: "Feature", properties: { id: 2 } },
+      { type: "Feature", properties: { id: 3 } },
+    ],
+  };
+
+  browser.window.Urban95MapRenderers.configure({
+    map: {
+      getZoom: function () {
+        return 12;
+      },
+    },
+    hasGeneratedArtifact: function () {
+      return false;
+    },
+    getCurrentMode: function () {
+      return "house";
+    },
+    getScoreMode: function () {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    getSelectedAmenityTypes: function () {
+      return new Set(["parks", "trees"]);
+    },
+    getAllFilterTypes: function () {
+      return ["parks", "trees", "street-lights"];
+    },
+  });
+
+  const plan = browser.window.Urban95MapRenderers.getSpecialPointRenderPlan({
+    artifactKey: "trees",
+    filterType: "trees",
+    getWeightedToggle: function () {
+      return false;
+    },
+    getData: function () {
+      return data;
+    },
+    getInRadiusIds: function () {
+      return new Set([1, 2]);
+    },
+    isOnlyFilter: function () {
+      return false;
+    },
+  });
+
+  assert.equal(plan.geojsonVisible, true);
+  assert.equal(plan.vectorVisible, false);
+  assert.equal(plan.features.type, "FeatureCollection");
+  assert.equal(plan.features.features.length, 2);
+  assert.equal(plan.features.features[0], data.features[1]);
+  assert.equal(plan.features.features[1], data.features[2]);
+});
+
 test("map events register expected handlers and call injected dependencies", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/map/mapEvents.js", browser);
@@ -1442,8 +1787,6 @@ test("map events register expected handlers and call injected dependencies", () 
   );
 
   handlers.find((handler) => handler.eventName === "zoomend").handler();
-  assert.ok(calls.includes("loadTreesIfNeeded"));
-  assert.ok(calls.includes("loadStreetLightsIfNeeded"));
   assert.ok(calls.includes("updateTreesSource"));
   assert.ok(calls.includes("updateStreetLightsSource"));
 
@@ -1453,6 +1796,83 @@ test("map events register expected handlers and call injected dependencies", () 
     features: [{ properties: { name: "N" } }],
   });
   assert.ok(calls.includes("showNeighborhoodModal"));
+});
+
+test("map events zoomend skips authoritative tree and light loads", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapEvents.js", browser);
+
+  const handlers = [];
+  const calls = [];
+  const map = {
+    on: function (eventName, layerOrHandler, maybeHandler) {
+      handlers.push({
+        eventName: eventName,
+        layer: typeof layerOrHandler === "string" ? layerOrHandler : null,
+        handler: typeof layerOrHandler === "function" ? layerOrHandler : maybeHandler,
+      });
+    },
+    getCanvas: function () {
+      return { style: {} };
+    },
+    getZoom: function () {
+      return 14;
+    },
+    queryRenderedFeatures: function () {
+      return [];
+    },
+  };
+
+  browser.window.Urban95MapEvents.bind({
+    map: map,
+    selection: {
+      findClosestBuilding: function () {},
+      selectBuilding: function () {},
+    },
+    dashboards: {
+      showNeighborhoodModal: function () {},
+      getNeighborhoodFeatureAtPoint: function () {
+        return null;
+      },
+      showNeighborhoodAreaTooltip: function () {},
+    },
+    mapRenderers: {
+      updateTreesSource: function () {
+        calls.push("updateTreesSource");
+      },
+      updateStreetLightsSource: function () {
+        calls.push("updateStreetLightsSource");
+      },
+    },
+    pointDataLoader: {
+      loadTreesIfNeeded: function () {
+        calls.push("loadTreesIfNeeded");
+      },
+      loadStreetLightsIfNeeded: function () {
+        calls.push("loadStreetLightsIfNeeded");
+      },
+    },
+    tooltip: { style: {} },
+    buildingsFillLayerId: "buildings-fill",
+    getCurrentMode: function () {
+      return "house";
+    },
+    getDeckHovering: function () {
+      return false;
+    },
+    getLastDeckClickTime: function () {
+      return 0;
+    },
+    getScoreMode: function () {
+      return "weighted";
+    },
+    formatArea: function (area) {
+      return String(area);
+    },
+  });
+
+  handlers.find((handler) => handler.eventName === "zoomend").handler();
+  assert.deepEqual(calls, ["updateTreesSource", "updateStreetLightsSource"]);
 });
 
 test("map events ignore malformed house click and park hover payloads", () => {
@@ -1923,6 +2343,131 @@ test("runtime point-data loader upgrades lookup point state to authoritative geo
     "./data/street_lights.geojson"
   );
   assert.equal(loader.canRefreshPointAnalysisAfterPointDataLoad(), true);
+});
+
+test("runtime point-data loader does not chain tree geojson loads into street-light loads", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const fetched = [];
+  const loadedKinds = [];
+  const loader = browser.window.Urban95RuntimeData.createPointDataLoader({
+    urls: {
+      trees: "./data/trees.geojson",
+      streetLights: "./data/street_lights.geojson",
+    },
+    getScoreMode: () => "expanded",
+    fetchJsonWithGzipFallback(url) {
+      fetched.push(url);
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { source: url } }],
+      });
+    },
+    hasGeneratedArtifact: () => false,
+    onSkippedTreesGeojson() {},
+    onSkippedStreetLightsGeojson() {},
+    onPointDataLoaded(kind) {
+      loadedKinds.push(kind);
+    },
+    onPointDataError(kind, err) {
+      throw err;
+    },
+  });
+
+  const result = await loader.loadTreesIfNeeded();
+
+  assert.equal(result.features[0].properties.source, "./data/trees.geojson");
+  assert.deepEqual(fetched, ["./data/trees.geojson"]);
+  assert.deepEqual(loadedKinds, ["trees"]);
+  assert.equal(loader.getTreesDataSource(), "geojson");
+  assert.equal(loader.getStreetLightsDataSource(), "none");
+});
+
+test("runtime point-data loader passes defer refresh policy to expanded point-data callbacks", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const calls = [];
+  const loader = browser.window.Urban95RuntimeData.createPointDataLoader({
+    urls: {
+      trees: "./data/trees.geojson",
+      streetLights: "./data/street_lights.geojson",
+    },
+    getScoreMode: () => "expanded",
+    fetchJsonWithGzipFallback(url) {
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { source: url } }],
+      });
+    },
+    hasGeneratedArtifact: () => false,
+    onSkippedTreesGeojson() {},
+    onSkippedStreetLightsGeojson() {},
+    onPointDataLoaded(kind, data, context) {
+      calls.push({
+        kind: kind,
+        source: data.features[0].properties.source,
+        context: context,
+      });
+    },
+    onPointDataError(kind, err) {
+      throw err;
+    },
+  });
+
+  const result = await loader.ensureExpandedPointDataLoaded({ refreshPolicy: "defer" });
+
+  assert.deepEqual(Array.from(result.upgradedKinds || []), ["trees", "street-lights"]);
+  assert.deepEqual(calls.map(function (call) {
+    return {
+      kind: call.kind,
+      source: call.source,
+      refreshPolicy: call.context && call.context.refreshPolicy,
+    };
+  }), [
+    {
+      kind: "trees",
+      source: "./data/trees.geojson",
+      refreshPolicy: "defer",
+    },
+    {
+      kind: "street-lights",
+      source: "./data/street_lights.geojson",
+      refreshPolicy: "defer",
+    },
+  ]);
+});
+
+test("runtime point-data loader reports no upgraded kinds once expanded point sources are authoritative", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const loader = browser.window.Urban95RuntimeData.createPointDataLoader({
+    urls: {
+      trees: "./data/trees.geojson",
+      streetLights: "./data/street_lights.geojson",
+    },
+    getScoreMode: () => "expanded",
+    fetchJsonWithGzipFallback(url) {
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { source: url } }],
+      });
+    },
+    hasGeneratedArtifact: () => false,
+    onSkippedTreesGeojson() {},
+    onSkippedStreetLightsGeojson() {},
+    onPointDataLoaded() {},
+    onPointDataError(kind, err) {
+      throw err;
+    },
+  });
+
+  await loader.ensureExpandedPointDataLoaded({ refreshPolicy: "defer" });
+  const result = await loader.ensureExpandedPointDataLoaded({ refreshPolicy: "defer" });
+
+  assert.deepEqual(Array.from(result.upgradedKinds || []), []);
 });
 
 test("runtime orchestration helpers live in runtimeData instead of app coordinator", () => {
@@ -2640,6 +3185,54 @@ test("mode controller logs async failures without unhandled rejections", async (
   );
 });
 
+test("mode controller ignores stale neighborhood async commits after switching back to house mode", async () => {
+  let resolveNeighborhoods;
+  const neighborhoodsPromise = new Promise(function (resolve) {
+    resolveNeighborhoods = resolve;
+  });
+  const harness = createModeControllerHarness(function (deps, calls) {
+    deps.integrations.dashboards.loadNeighborhoods = function () {
+      calls.push(["dashboards:loadNeighborhoods:deferred"]);
+      return neighborhoodsPromise;
+    };
+  });
+
+  const pendingNeighborhoodSwitch = harness.controller.switchMode("neighborhood");
+  await Promise.resolve();
+  await harness.controller.switchMode("house");
+
+  const callCountBeforeResolve = harness.calls.length;
+  resolveNeighborhoods({ type: "FeatureCollection", features: [{ type: "Feature", properties: {} }] });
+  await pendingNeighborhoodSwitch;
+
+  const postResolveCalls = harness.calls.slice(callCountBeforeResolve);
+  assert.equal(
+    postResolveCalls.some(function (call) {
+      return call[0] === "source:setData" && call[1] === "neighborhoods";
+    }),
+    false
+  );
+  assert.equal(
+    postResolveCalls.some(function (call) {
+      return (
+        call[0] === "map:setLayoutProperty" &&
+        (call[1] === "neighborhoods-fill" ||
+          call[1] === "neighborhoods-line" ||
+          call[1] === "neighborhoods-label") &&
+        call[2] === "visibility" &&
+        call[3] === "visible"
+      );
+    }),
+    false
+  );
+  assert.equal(
+    postResolveCalls.some(function (call) {
+      return call[0] === "map:fitBounds";
+    }),
+    false
+  );
+});
+
 test("mode controller public API only exposes app-consumed methods", () => {
   const harness = createModeControllerHarness();
 
@@ -2715,6 +3308,10 @@ test("amenities focus waits for authoritative tree and street-light GeoJSON befo
     appSource,
     /function loadStreetLightsIfNeeded\s*\(/
   );
+  assert.match(
+    appSource,
+    /onPointDataLoaded:\s*function\s*\(kind,\s*data,\s*context\)\s*\{[\s\S]*var refreshPolicy = context && context\.refreshPolicy \? context\.refreshPolicy : "immediate";[\s\S]*if \(refreshPolicy === "defer"\) \{[\s\S]*return;\s*\}/
+  );
 });
 
 test("mode controller keeps house cleanup centralized in switchMode", () => {
@@ -2724,9 +3321,9 @@ test("mode controller keeps house cleanup centralized in switchMode", () => {
     "utf8"
   );
 
-  const neighborhoodStart = modeSource.indexOf("function enterNeighborhoodMode()");
+  const neighborhoodStart = modeSource.indexOf("function enterNeighborhoodMode(token)");
   const neighborhoodEnd = modeSource.indexOf("function exitNeighborhoodMode()");
-  const citywideStart = modeSource.indexOf("function enterCitywideMode()");
+  const citywideStart = modeSource.indexOf("function enterCitywideMode(token)");
   const citywideEnd = modeSource.indexOf("function switchMode(mode)");
 
   assert.notEqual(neighborhoodStart, -1);

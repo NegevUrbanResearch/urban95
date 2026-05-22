@@ -197,9 +197,10 @@
     var treesGeojsonLoadPromise = null;
     var streetLightsGeojsonLoadPromise = null;
 
-    function loadTreesIfNeeded() {
+    function loadTreesIfNeeded(refreshPolicy) {
       var scoreMode = deps.getScoreMode();
       var needsAuthoritativeGeojson = scoreMode === "expanded" && treesDataSource !== "geojson";
+      var policy = refreshPolicy || "immediate";
       if (treesGeojsonLoadInFlight) return treesGeojsonLoadPromise || Promise.resolve(null);
       if (
         (treesLoadStarted && treesDataSource !== "lookup") ||
@@ -219,8 +220,8 @@
           if (!treesData) throw new Error("Empty tree data");
           allTreesData = treesData;
           treesDataSource = "geojson";
-          deps.onPointDataLoaded("trees", treesData);
-          return loadStreetLightsIfNeeded();
+          deps.onPointDataLoaded("trees", treesData, { refreshPolicy: policy });
+          return treesData;
         })
         .catch(function (err) {
           deps.onPointDataError("trees", err);
@@ -233,10 +234,11 @@
       return treesGeojsonLoadPromise;
     }
 
-    function loadStreetLightsIfNeeded() {
+    function loadStreetLightsIfNeeded(refreshPolicy) {
       var scoreMode = deps.getScoreMode();
       var needsAuthoritativeGeojson =
         scoreMode === "expanded" && streetLightsDataSource !== "geojson";
+      var policy = refreshPolicy || "immediate";
       if (streetLightsGeojsonLoadInFlight) {
         return streetLightsGeojsonLoadPromise || Promise.resolve(null);
       }
@@ -258,7 +260,8 @@
           if (!data) throw new Error("Empty street light data");
           allStreetLightsData = data;
           streetLightsDataSource = "geojson";
-          deps.onPointDataLoaded("street-lights", data);
+          deps.onPointDataLoaded("street-lights", data, { refreshPolicy: policy });
+          return data;
         })
         .catch(function (err) {
           deps.onPointDataError("street-lights", err);
@@ -271,14 +274,23 @@
       return streetLightsGeojsonLoadPromise;
     }
 
-    function ensureExpandedPointDataLoaded() {
+    function ensureExpandedPointDataLoaded(options) {
+      var opts = options || {};
       var loads = [];
-      if (deps.getScoreMode() !== "expanded") return Promise.resolve(null);
-      if (treesDataSource !== "geojson") loads.push(loadTreesIfNeeded());
-      if (streetLightsDataSource !== "geojson") loads.push(loadStreetLightsIfNeeded());
-      if (loads.length === 0) return Promise.resolve(null);
+      var upgradedKinds = [];
+      var currentRefreshPolicy = opts.refreshPolicy || "immediate";
+      if (deps.getScoreMode() !== "expanded") return Promise.resolve({ upgradedKinds: [] });
+      if (treesDataSource !== "geojson") {
+        upgradedKinds.push("trees");
+        loads.push(loadTreesIfNeeded(currentRefreshPolicy));
+      }
+      if (streetLightsDataSource !== "geojson") {
+        upgradedKinds.push("street-lights");
+        loads.push(loadStreetLightsIfNeeded(currentRefreshPolicy));
+      }
+      if (loads.length === 0) return Promise.resolve({ upgradedKinds: [] });
       return Promise.all(loads).then(function () {
-        return null;
+        return { upgradedKinds: upgradedKinds };
       });
     }
 

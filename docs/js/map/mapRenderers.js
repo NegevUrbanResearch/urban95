@@ -120,6 +120,159 @@
     updateDeckAmenityLayers();
   }
 
+  function getSpecialPointRenderPlan(config) {
+    var d = requireDeps();
+    var useGeneratedVector = d.hasGeneratedArtifact(config.artifactKey);
+    var showWeighted =
+      d.getCurrentMode() === "house" &&
+      d.getScoreMode() === "weighted" &&
+      d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
+      config.getWeightedToggle();
+
+    if (d.getScoreMode() === "weighted") {
+      var weightedData = config.getData();
+      return {
+        geojsonVisible: showWeighted && !useGeneratedVector,
+        vectorVisible: showWeighted && useGeneratedVector,
+        features:
+          useGeneratedVector || !weightedData
+            ? null
+            : showWeighted
+              ? weightedData
+              : { type: "FeatureCollection", features: [] },
+      };
+    }
+
+    var data = config.getData();
+    if (!data) {
+      return {
+        geojsonVisible: d.getCurrentMode() === "house",
+        vectorVisible: false,
+        features: null,
+      };
+    }
+
+    var selectedAmenityTypes = d.getSelectedAmenityTypes();
+    if (selectedAmenityTypes.size === 0) {
+      return {
+        geojsonVisible: d.getCurrentMode() === "house",
+        vectorVisible: false,
+        features: { type: "FeatureCollection", features: [] },
+      };
+    }
+
+    var allFilterTypes = d.getAllFilterTypes();
+    var useAll = selectedAmenityTypes.size === allFilterTypes.length;
+    var showKind = useAll || selectedAmenityTypes.has(config.filterType);
+    if (!showKind) {
+      return {
+        geojsonVisible: d.getCurrentMode() === "house",
+        vectorVisible: false,
+        features: { type: "FeatureCollection", features: [] },
+      };
+    }
+
+    if (config.isOnlyFilter()) {
+      return {
+        geojsonVisible: d.getCurrentMode() === "house",
+        vectorVisible: false,
+        features: data,
+      };
+    }
+
+    var ids = config.getInRadiusIds();
+    if (ids.size === 0) {
+      return {
+        geojsonVisible: d.getCurrentMode() === "house",
+        vectorVisible: false,
+        features: { type: "FeatureCollection", features: [] },
+      };
+    }
+
+    return {
+      geojsonVisible: d.getCurrentMode() === "house",
+      vectorVisible: false,
+      features: {
+        type: "FeatureCollection",
+        features: data.features.filter(function (_feature, index) {
+          return ids.has(index);
+        }),
+      },
+    };
+  }
+
+  function applySpecialPointRenderPlan(config, plan) {
+    var d = requireDeps();
+    setLayerVisibilityIfPresent(config.geojsonLayerId, plan.geojsonVisible);
+    setLayerVisibilityIfPresent(config.vectorLayerId, plan.vectorVisible);
+    var source = d.map.getSource(config.sourceId);
+    if (source && plan.features) source.setData(plan.features);
+  }
+
+  function getTreeRenderConfig() {
+    var d = requireDeps();
+    return {
+      artifactKey: "trees",
+      sourceId: "trees",
+      geojsonLayerId: "tree-icons",
+      vectorLayerId: "tree-icons-vector",
+      filterType: "trees",
+      getWeightedToggle: d.getShowTreesChecked,
+      getData: d.getAllTreesData,
+      getInRadiusIds: d.getTreesInRadiusIds,
+      isOnlyFilter: isFilterOnlyTrees,
+    };
+  }
+
+  function getStreetLightRenderConfig() {
+    var d = requireDeps();
+    return {
+      artifactKey: "street_lights",
+      sourceId: "street-lights",
+      geojsonLayerId: "street-light-icons",
+      vectorLayerId: "street-light-icons-vector",
+      filterType: "street-lights",
+      getWeightedToggle: d.getShowLightsChecked,
+      getData: d.getAllStreetLightsData,
+      getInRadiusIds: d.getStreetLightsInRadiusIds,
+      isOnlyFilter: isFilterOnlyStreetLights,
+    };
+  }
+
+  function syncPointLayerVisibility() {
+    var d = requireDeps();
+    resetPointHoverState();
+    var showWeightedTrees =
+      d.getCurrentMode() === "house" &&
+      d.getScoreMode() === "weighted" &&
+      d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
+      d.getShowTreesChecked();
+    var showWeightedLights =
+      d.getCurrentMode() === "house" &&
+      d.getScoreMode() === "weighted" &&
+      d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
+      d.getShowLightsChecked();
+    setLayerVisibilityIfPresent(
+      "tree-icons-vector",
+      showWeightedTrees && d.hasGeneratedArtifact("trees")
+    );
+    setLayerVisibilityIfPresent(
+      "tree-icons",
+      showWeightedTrees && !d.hasGeneratedArtifact("trees")
+    );
+    setLayerVisibilityIfPresent(
+      "street-light-icons-vector",
+      showWeightedLights && d.hasGeneratedArtifact("street_lights")
+    );
+    setLayerVisibilityIfPresent(
+      "street-light-icons",
+      showWeightedLights && !d.hasGeneratedArtifact("street_lights")
+    );
+    if (d.getScoreMode() !== "expanded" && d.getDeckAmenityOverlay()) {
+      d.getDeckAmenityOverlay().setProps({ layers: [] });
+    }
+  }
+
   function updateAmenitiesSource() {
     var d = requireDeps();
     return d.urban95Perf.phase("updateAmenitiesSource", function () {
@@ -179,120 +332,18 @@
   function updateTreesSource() {
     var d = requireDeps();
     return d.urban95Perf.phase("updateTreesSource", function () {
-      var source = d.map.getSource("trees");
-      var useGeneratedVector = d.hasGeneratedArtifact("trees");
-      var showWeightedTrees =
-        d.getCurrentMode() === "house" &&
-        d.getScoreMode() === "weighted" &&
-        d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
-        d.getShowTreesChecked();
-
-      if (d.getScoreMode() === "weighted") {
-        setLayerVisibilityIfPresent("tree-icons", showWeightedTrees && !useGeneratedVector);
-        setLayerVisibilityIfPresent("tree-icons-vector", showWeightedTrees && useGeneratedVector);
-        if (useGeneratedVector || !source || !d.getAllTreesData()) return;
-        if (showWeightedTrees) {
-          source.setData(d.getAllTreesData());
-        } else {
-          source.setData({ type: "FeatureCollection", features: [] });
-        }
-        return;
-      }
-
-      setLayerVisibilityIfPresent("tree-icons", d.getCurrentMode() === "house");
-      setLayerVisibilityIfPresent("tree-icons-vector", false);
-      if (!d.getAllTreesData() || !source) return;
-
-      var selectedAmenityTypes = d.getSelectedAmenityTypes();
-      if (selectedAmenityTypes.size === 0) {
-        source.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      var allFilterTypes = d.getAllFilterTypes();
-      var useAll = selectedAmenityTypes.size === allFilterTypes.length;
-      var showTrees = useAll || selectedAmenityTypes.has("trees");
-
-      if (!showTrees) {
-        source.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      if (isFilterOnlyTrees()) {
-        source.setData(d.getAllTreesData());
-        return;
-      }
-
-      var treesInRadiusIds = d.getTreesInRadiusIds();
-      if (treesInRadiusIds.size === 0) {
-        source.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      var inRadiusFeatures = d.getAllTreesData().features.filter(function (_feature, index) {
-        return treesInRadiusIds.has(index);
-      });
-      source.setData({ type: "FeatureCollection", features: inRadiusFeatures });
+      var config = getTreeRenderConfig();
+      var plan = getSpecialPointRenderPlan(config);
+      applySpecialPointRenderPlan(config, plan);
     });
   }
 
   function updateStreetLightsSource() {
     var d = requireDeps();
     return d.urban95Perf.phase("updateStreetLightsSource", function () {
-      var source = d.map.getSource("street-lights");
-      var useGeneratedVector = d.hasGeneratedArtifact("street_lights");
-      var showWeightedStreetLights =
-        d.getCurrentMode() === "house" &&
-        d.getScoreMode() === "weighted" &&
-        d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
-        d.getShowLightsChecked();
-
-      if (d.getScoreMode() === "weighted") {
-        setLayerVisibilityIfPresent("street-light-icons", showWeightedStreetLights && !useGeneratedVector);
-        setLayerVisibilityIfPresent("street-light-icons-vector", showWeightedStreetLights && useGeneratedVector);
-        if (useGeneratedVector || !source || !d.getAllStreetLightsData()) return;
-        if (showWeightedStreetLights) {
-          source.setData(d.getAllStreetLightsData());
-        } else {
-          source.setData({ type: "FeatureCollection", features: [] });
-        }
-        return;
-      }
-
-      setLayerVisibilityIfPresent("street-light-icons", d.getCurrentMode() === "house");
-      setLayerVisibilityIfPresent("street-light-icons-vector", false);
-      if (!d.getAllStreetLightsData() || !source) return;
-
-      var selectedAmenityTypes = d.getSelectedAmenityTypes();
-      if (selectedAmenityTypes.size === 0) {
-        source.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      var allFilterTypes = d.getAllFilterTypes();
-      var useAll = selectedAmenityTypes.size === allFilterTypes.length;
-      var showLights = useAll || selectedAmenityTypes.has("street-lights");
-
-      if (!showLights) {
-        source.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      if (isFilterOnlyStreetLights()) {
-        source.setData(d.getAllStreetLightsData());
-        return;
-      }
-
-      var streetLightsInRadiusIds = d.getStreetLightsInRadiusIds();
-      if (streetLightsInRadiusIds.size === 0) {
-        source.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      var inRadiusFeatures = d.getAllStreetLightsData().features.filter(function (_feature, index) {
-        return streetLightsInRadiusIds.has(index);
-      });
-      source.setData({ type: "FeatureCollection", features: inRadiusFeatures });
+      var config = getStreetLightRenderConfig();
+      var plan = getSpecialPointRenderPlan(config);
+      applySpecialPointRenderPlan(config, plan);
     });
   }
 
@@ -1026,11 +1077,14 @@
     setLayerVisibilityIfPresent: setLayerVisibilityIfPresent,
     setLayerVisibility: setLayerVisibility,
     resetPointHoverState: resetPointHoverState,
+    getSpecialPointRenderPlan: getSpecialPointRenderPlan,
+    applySpecialPointRenderPlan: applySpecialPointRenderPlan,
     setTreesVisibility: setTreesVisibility,
     setStreetLightsVisibility: setStreetLightsVisibility,
     setTreesAndLightsVisibility: setTreesAndLightsVisibility,
     bindPointHoverLayer: bindPointHoverLayer,
     applyShowPointsToggle: applyShowPointsToggle,
+    syncPointLayerVisibility: syncPointLayerVisibility,
     updateAmenitiesSource: updateAmenitiesSource,
     updateTreesSource: updateTreesSource,
     updateStreetLightsSource: updateStreetLightsSource,

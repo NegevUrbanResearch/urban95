@@ -157,6 +157,16 @@
 
     var turf = requireObject(geo.turf, "deps.geo.turf");
     requireMethod(turf, "deps.geo.turf", "bbox");
+    var modeTransitionGeneration = 0;
+
+    function nextModeToken() {
+      modeTransitionGeneration += 1;
+      return modeTransitionGeneration;
+    }
+
+    function isCurrentModeToken(token) {
+      return token === modeTransitionGeneration;
+    }
 
     function addNeighborhoodLayers() {
       if (map.getLayer("neighborhoods-fill")) return;
@@ -256,10 +266,17 @@
       updateFilterLabel();
     }
 
-    function enterHouseMode() {
-      return perf.phase("enterHouseMode", function () {
-        setControlsForMode("house");
+    function beginModeVisualState(mode) {
+      setControlsForMode(mode);
+      if (mode !== "house") {
+        radiusInfo.style.display = "none";
+        mapRenderers.setTreesAndLightsVisibility(false);
+        mapRenderers.updateDeckAmenityLayers();
+      }
+    }
 
+    function enterHouseMode(token) {
+      return perf.phase("enterHouseMode", function () {
         if (map.getLayer(buildingsFillLayerId)) {
           map.setLayoutProperty(buildingsFillLayerId, "visibility", "visible");
           map.setPaintProperty(buildingsFillLayerId, "fill-opacity", 1);
@@ -271,17 +288,15 @@
         mapRenderers.applyShowPointsToggle();
         mapRenderers.updateDeckAmenityLayers();
         mapRenderers.updateBuildingColors();
-        applyHouseModeHexBackground();
+        applyHouseModeHexBackground(token);
       });
     }
 
-    function enterNeighborhoodMode() {
+    function enterNeighborhoodMode(token) {
       perf.phase("enterNeighborhoodMode:syncSetup", function () {
         logger.debug(function () {
           return ["[Neighborhood] Entering neighborhood mode"];
         });
-        setControlsForMode("neighborhood");
-        radiusInfo.style.display = "none";
 
         if (map.getLayer(buildingsFillLayerId)) {
           map.setLayoutProperty(buildingsFillLayerId, "visibility", "none");
@@ -297,40 +312,41 @@
           );
           map.setFilter("neighborhoods-surface", null);
         }
-        mapRenderers.setTreesAndLightsVisibility(false);
-        mapRenderers.updateDeckAmenityLayers();
       });
+
+      var neighborhoodsPromise = dashboards.loadNeighborhoods();
+      var chartsPromise = dashboards.loadNeighborhoodChartsPayload();
+      var surfacePromise = hasGeneratedArtifact("neighborhood_surface")
+        ? Promise.resolve(null)
+        : dashboards.loadNeighborhoodSurfaceData();
 
       return perf.phaseAsync(
         "enterNeighborhoodMode:loadsThenApply",
-        Promise.resolve().then(function () {
-          return dashboards.loadNeighborhoods();
-        }).then(function (data) {
-          var surfaceLoad = hasGeneratedArtifact("neighborhood_surface")
-            ? Promise.resolve(null)
-            : Promise.resolve().then(function () {
-                return dashboards.loadNeighborhoodSurfaceData();
-              });
-          return Promise.all([dashboards.loadNeighborhoodChartsPayload(), surfaceLoad]).then(function () {
-            perf.phase("enterNeighborhoodMode:applyLayersFitBounds", function () {
-              var src = map.getSource("neighborhoods");
-              if (src) src.setData(data);
-              addNeighborhoodLayers();
-              mapRenderers.updateNeighborhoodColors();
+        Promise.all([neighborhoodsPromise, chartsPromise, surfacePromise]).then(function (results) {
+          var data = results[0];
+          if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
+          return perf.phase("enterNeighborhoodMode:applyLayersFitBounds", function () {
+            if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
+            var src = map.getSource("neighborhoods");
+            if (src) src.setData(data);
+            if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
+            addNeighborhoodLayers();
+            mapRenderers.updateNeighborhoodColors();
 
-              if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "visible");
-              if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
-              if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
-              if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
-              logger.debug(function () {
-                return ["[Neighborhood] Layers visible, source updated with", data.features.length, "features"];
-              });
-
-              if (data.features.length > 0) {
-                var bbox = turf.bbox(data);
-                map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 600 });
-              }
+            if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
+            if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "visible");
+            if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
+            if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
+            if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
+            logger.debug(function () {
+              return ["[Neighborhood] Layers visible, source updated with", data.features.length, "features"];
             });
+
+            if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
+            if (data.features.length > 0) {
+              var bbox = turf.bbox(data);
+              map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 600 });
+            }
           });
         })
       ).catch(function (error) {
@@ -353,18 +369,19 @@
       });
     }
 
-    function enterCitywideMode() {
-      setControlsForMode("citywide");
-
+    function enterCitywideMode(token) {
       var neighborhoodLoad = Promise.resolve().then(function () {
           return dashboards.loadNeighborhoods();
         })
         .then(function (data) {
           return dashboards.loadNeighborhoodChartsPayload().then(function () {
+            if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
             var src = map.getSource("neighborhoods");
             if (src) src.setData(data);
+            if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
             addNeighborhoodLayers();
             mapRenderers.updateNeighborhoodColors();
+            if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
             if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
             if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
             if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
@@ -379,22 +396,23 @@
         map.setPaintProperty(buildingsFillLayerId, "fill-opacity", 0.15);
         map.setPaintProperty(buildingsFillLayerId, "fill-color", "#9ca3af");
       }
-      mapRenderers.setTreesAndLightsVisibility(false);
-      mapRenderers.updateDeckAmenityLayers();
 
       var statsLoad = Promise.resolve().then(function () {
           return dashboards.loadCitywideStats();
         })
         .then(function (data) {
+          if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
           if (!data) {
             citywideBody.innerHTML =
               '<div class="cw-section" style="text-align:center;padding:2em">Failed to load citywide data. Please reload the page.</div>';
           }
+          if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
           dashboards.renderCitywideModal();
           dashboards.showCitywideModal();
         })
         .catch(function (error) {
           logAsyncError(logger, "Urban95ModeController citywide stats update failed", error);
+          if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
           citywideBody.innerHTML =
             '<div class="cw-section" style="text-align:center;padding:2em">Failed to load citywide data. Please reload the page.</div>';
         });
@@ -405,6 +423,7 @@
     function switchMode(mode) {
       return perf.phase("switchMode", function () {
         if (mode === getCurrentMode()) return;
+        var token = nextModeToken();
         var prevMode = getCurrentMode();
 
         if (prevMode === "house") {
@@ -420,17 +439,18 @@
         }
 
         setCurrentMode(mode);
+        beginModeVisualState(mode);
 
         modeToggle.querySelectorAll(".mode-opt").forEach(function (btn) {
           btn.classList.toggle("active", btn.dataset.mode === mode);
         });
 
         if (mode === "house") {
-          return enterHouseMode();
+          return enterHouseMode(token);
         } else if (mode === "neighborhood") {
-          return enterNeighborhoodMode();
+          return enterNeighborhoodMode(token);
         } else if (mode === "citywide") {
-          return enterCitywideMode();
+          return enterCitywideMode(token);
         }
       });
     }

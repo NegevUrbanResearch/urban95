@@ -17,6 +17,10 @@
     var renderers = deps.renderers || {};
     var selection = deps.selection || {};
     var pointDataLoader = deps.pointDataLoader || {};
+    var pointLayerVisibilitySync =
+      typeof renderers.syncPointLayerVisibility === "function"
+        ? renderers.syncPointLayerVisibility
+        : renderers.applyShowPointsToggle;
 
     [
       ["state.getScoreMode", state.getScoreMode],
@@ -37,7 +41,7 @@
       ["ui.updateShowPointsToggleLabel", ui.updateShowPointsToggleLabel],
       ["pointDataLoader.ensureExpandedPointDataLoaded", pointDataLoader.ensureExpandedPointDataLoaded],
       ["pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad", pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad],
-      ["renderers.applyShowPointsToggle", renderers.applyShowPointsToggle],
+      ["renderers.syncPointLayerVisibility or renderers.applyShowPointsToggle", pointLayerVisibilitySync],
       ["renderers.updateAmenitiesSource", renderers.updateAmenitiesSource],
       ["renderers.updateTreesSource", renderers.updateTreesSource],
       ["renderers.updateStreetLightsSource", renderers.updateStreetLightsSource],
@@ -47,6 +51,9 @@
     ].forEach(function (entry) {
       requireFunction(entry[1], entry[0]);
     });
+
+    var syncPointLayerVisibility =
+      pointLayerVisibilitySync;
 
     function apply() {
       return perf.phase("applyScoreModeAmenities", function () {
@@ -69,19 +76,29 @@
         ui.buildFilterItems();
         ui.syncFilterUiForScoreMode();
         ui.updateShowPointsToggleLabel();
-        return pointDataLoader.ensureExpandedPointDataLoaded().then(function () {
-          renderers.applyShowPointsToggle();
-          renderers.updateAmenitiesSource();
-          renderers.updateTreesSource();
-          renderers.updateStreetLightsSource();
-          if (state.getCurrentMode() === "house") {
-            renderers.updateBuildingColors();
-            renderers.updateNeighborhoodSurfaceData();
-          }
-          if (state.getSelectedBuilding() && pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad()) {
-            selection.selectBuilding(state.getSelectedBuilding(), false);
-          }
-        });
+        return pointDataLoader
+          .ensureExpandedPointDataLoaded({ refreshPolicy: "defer" })
+          .then(function () {
+            var selectedBuilding = state.getSelectedBuilding();
+            var canRefreshSelectedBuilding =
+              selectedBuilding && pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad();
+
+            syncPointLayerVisibility();
+
+            if (state.getCurrentMode() === "house") {
+              renderers.updateBuildingColors();
+              renderers.updateNeighborhoodSurfaceData();
+            }
+
+            if (canRefreshSelectedBuilding) {
+              selection.selectBuilding(selectedBuilding, false);
+              return;
+            }
+
+            renderers.updateAmenitiesSource();
+            renderers.updateTreesSource();
+            renderers.updateStreetLightsSource();
+          });
       });
     }
 
