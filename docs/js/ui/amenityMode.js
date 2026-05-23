@@ -147,7 +147,9 @@
               perfSpan("amenityMode.apply:reselectBuilding", function () {
                 return { scoreMode: scoreMode };
               }, function () {
-                selection.selectBuilding(selectedBuilding, false);
+                selection.selectBuilding(selectedBuilding, false, {
+                  suppressIsochroneLoadingOverlay: true,
+                });
               });
               return { refreshedSelectedBuilding: true };
             }

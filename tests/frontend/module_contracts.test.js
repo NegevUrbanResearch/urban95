@@ -770,7 +770,8 @@ test("amenity mode selected-building apply lets selection own radius-derived poi
       updateNeighborhoodSurfaceData: () => calls.push("updateNeighborhoodSurfaceData"),
     },
     selection: {
-      selectBuilding: (building, doFly) => calls.push(["selectBuilding", building, doFly]),
+      selectBuilding: (building, doFly, options) =>
+        calls.push(["selectBuilding", building, doFly, options]),
     },
   });
 
@@ -783,6 +784,11 @@ test("amenity mode selected-building apply lets selection own radius-derived poi
     "selected-building score-mode apply must not refresh point sources before selectBuilding"
   );
   assert.equal(calls.filter((item) => Array.isArray(item) && item[0] === "selectBuilding").length, 1);
+  const selectBuildingCall = calls.find((item) => Array.isArray(item) && item[0] === "selectBuilding");
+  assert.equal(selectBuildingCall[0], "selectBuilding");
+  assert.equal(selectBuildingCall[1], selectedBuilding);
+  assert.equal(selectBuildingCall[2], false);
+  assert.equal(selectBuildingCall[3].suppressIsochroneLoadingOverlay, true);
   assert.ok(calls.includes("updateBuildingColors"));
 });
 
@@ -1037,8 +1043,7 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
   assertSubsequence([
     "session:score-model -> Amenities Focus",
     "phase:scoreModelToggle:handler",
-    "showIso",
-    "loadIso:false",
+    "loadIso:true",
     "span:scoreModelToggle:applyScoreModeAmenities",
     "amenityApply",
     "span:scoreModelToggle:updateRadiusInfo",
@@ -1071,7 +1076,7 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
   assert.ok(!calls.includes("amenities"));
   assert.ok(!calls.includes("trees"));
   assert.ok(!calls.includes("lights"));
-  assert.ok(calls.includes("showIso"));
+  assert.equal(calls.includes("showIso"), false);
   assert.ok(calls.includes("amenityApply"));
   assert.ok(calls.includes("radiusInfo"));
   assert.ok(calls.includes("switch:citywide"));
@@ -1141,6 +1146,74 @@ test("control actions skip direct radius sync when amenity mode reselected the b
 
   assert.equal(calls.includes("span:scoreModelToggle:updateRadiusInfo"), false);
   assert.equal(calls.includes("updateRadiusInfo"), false);
+});
+
+test("control actions selected-building cold expanded switch keeps isochrones backgrounded without global overlay", async () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const actions = ControlActions.create({
+    perf: {
+      session: () => {},
+      mark: () => {},
+      phase: (_name, callback) => callback(),
+      span: (_name, _meta, callback) => callback(),
+    },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => ({ lng: 1, lat: 2, properties: { building_id: 55 } }),
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => false,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => true },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => calls.push("showIso"),
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: { apply: () => Promise.resolve({ refreshedSelectedBuilding: false }) },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => {},
+      updateTreesSource: () => {},
+      updateStreetLightsSource: () => {},
+      updateBuildingColors: () => {},
+      updateNeighborhoodSurfaceData: () => {},
+      updateNeighborhoodColors: () => {},
+    },
+    selection: {
+      loadIsochrones: (options) => {
+        calls.push(["loadIsochrones", options]);
+        return Promise.resolve();
+      },
+      selectBuilding: () => {},
+      updateRadiusInfo: () => {},
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: { isOpen: () => false, hide: () => {} },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+  });
+
+  await actions.onScoreModeChanged("expanded");
+
+  assert.equal(calls.includes("showIso"), false);
+  const loadIsochronesCalls = calls.filter(
+    (entry) => Array.isArray(entry) && entry[0] === "loadIsochrones"
+  );
+  assert.equal(loadIsochronesCalls.length, 1);
+  assert.equal(loadIsochronesCalls[0][0], "loadIsochrones");
+  assert.equal(loadIsochronesCalls[0][1].background, true);
 });
 
 test("control actions keep direct radius sync when amenity mode did not refresh the building", async () => {
@@ -1775,6 +1848,7 @@ test("loading UI owns progress, status, isochrone overlay, and timeout state", (
   const loadingStatus = { textContent: "" };
   const loadingProgressBar = { style: { width: "" } };
   const warnings = [];
+  const perfRecords = [];
 
   const loading = browser.window.Urban95LoadingUi.create({
     elements: { loadingScreen, loadingStatus, loadingProgressBar },
@@ -1782,6 +1856,11 @@ test("loading UI owns progress, status, isochrone overlay, and timeout state", (
     setTimeout: function (callback) {
       browser.timeoutCallback = callback;
       return 1;
+    },
+    perf: {
+      mark: function (name, metaFactory) {
+        perfRecords.push([name, metaFactory ? metaFactory() : null]);
+      },
     },
     timeoutMs: 10,
   });
@@ -1794,15 +1873,22 @@ test("loading UI owns progress, status, isochrone overlay, and timeout state", (
   assert.equal(loading.state.icons, true);
   assert.equal(loading.getLoadingState(), loading.state);
   assert.equal(loadingProgressBar.style.width, "29%");
-  loading.showIsochroneLoadingScreen();
+  loading.showIsochroneLoadingScreen({ reason: "scoreModeToggle" });
   assert.equal(loading.getWaitingForIsochroneLoad(), true);
   assert.equal(loadingProgressBar.style.width, "100%");
   assert.equal(loadingStatus.textContent, "Loading walking areas for Amenities Focus...");
   browser.timeoutCallback();
   assert.equal(loadingScreen.classList.contains("hidden"), false);
   assert.deepEqual(warnings, []);
-  loading.hideIsochroneLoadingScreen();
+  loading.hideIsochroneLoadingScreen({ reason: "isochronesLoaded" });
   assert.equal(loading.getWaitingForIsochroneLoad(), false);
+  assert.deepEqual(perfRecords.map(function (entry) { return entry[0]; }), [
+    "loadingOverlay:show",
+    "loadingOverlay:hideRequested",
+  ]);
+  assert.equal(perfRecords[0][1].reason, "scoreModeToggle");
+  assert.equal(perfRecords[1][1].reason, "isochronesLoaded");
+  assert.equal(perfRecords[1][1].allKeysLoaded, false);
   ["parks", "trees", "amenities", "isochrones", "mapReady"].forEach(function (key) { loading.mark(key); });
   assert.equal(loadingProgressBar.style.width, "100%");
 });
@@ -4108,26 +4194,6 @@ test("app constants are initialized before configure calls that read them", () =
   assert.ok(centroidGridIndex < selectionConfigureIndex);
 });
 
-test("amenities focus first switch loads isochrones in background until a building is selected", () => {
-  const controlActionsSource = fs.readFileSync(
-    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "controlActions.js"),
-    "utf8"
-  );
-  assert.match(controlActionsSource, /if \(nextScoreMode !== "weighted"\) \{/);
-  assert.match(
-    controlActionsSource,
-    /var shouldBlockForSelectedBuilding =\s*!!state\.getSelectedBuilding\(\) && !state\.getIsochronesLoaded\(\);/
-  );
-  assert.match(
-    controlActionsSource,
-    /if \(shouldBlockForSelectedBuilding\) \{\s*loadingUi\.showIsochroneLoadingScreen\(\);/
-  );
-  assert.match(
-    controlActionsSource,
-    /selection\.loadIsochrones\(\{\s*background:\s*!shouldBlockForSelectedBuilding\s*\}\);/
-  );
-});
-
 test("amenities focus waits for authoritative tree and street-light GeoJSON before reselecting", () => {
   const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
   const runtimeSource = fs.readFileSync(
@@ -4549,6 +4615,601 @@ test("selection clear invalidates deferred selected-building work", () => {
   assert.deepEqual(
     context.calls.filter((call) => call[0] === "setLatestRadiusCounts").map((call) => call[1]),
     [0]
+  );
+});
+
+test("selection pending-isochrone path tags the loading overlay reason", () => {
+  const browser = createBrowserContext({
+    performance: {
+      now() {
+        return 1;
+      },
+    },
+  });
+  runBrowserScript("docs/js/map/selection.js", browser);
+
+  const showOverlayCalls = [];
+  const calls = [];
+  let isochroneLoadPromise = null;
+  const deps = {
+    map: {
+      getSource() {
+        return {
+          setData(data) {
+            const count = data && Array.isArray(data.features) ? data.features.length : 0;
+            calls.push(["radius:setData", count]);
+          },
+        };
+      },
+      getLayer() {
+        return false;
+      },
+      easeTo() {},
+      getZoom() {
+        return 15;
+      },
+      setFeatureState() {},
+      removeFeatureState() {},
+    },
+    turf: {
+      distance() {
+        return 0;
+      },
+      circle() {
+        return { type: "Feature", geometry: { type: "Polygon", coordinates: [] }, properties: {} };
+      },
+    },
+    urban95Perf: {
+      phase(_name, fn) {
+        return fn();
+      },
+      span(_name, _meta, fn) {
+        return fn();
+      },
+      mark() {},
+    },
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getWalkMinutes() {
+      return 10;
+    },
+    getIsochronesLoaded() {
+      return false;
+    },
+    getIsochroneLoadPromise() {
+      return isochroneLoadPromise;
+    },
+    setIsochroneLoadPromise(value) {
+      isochroneLoadPromise = value;
+      calls.push(["setIsochroneLoadPromise", value ? "set" : "clear"]);
+    },
+    setLoadingStatus(message) {
+      calls.push(["setLoadingStatus", message]);
+    },
+    loadIsochronesLookup() {
+      calls.push(["loadIsochronesLookup"]);
+      return new Promise(function () {});
+    },
+    fetchJsonWithGzipFallback() {
+      throw new Error("fetchJsonWithGzipFallback should not run in this test");
+    },
+    isochronesUrl: "./data/isochrones.geojson",
+    getSelectedBuilding() {
+      return null;
+    },
+    radiusSourceId: "radius-source",
+    selectedBuildingSourceId: "selected-building-source",
+    getSelectedBuildingVectorId() {
+      return null;
+    },
+    setSelectedBuildingVectorId() {},
+    setSelectedBuilding() {},
+    setAmenitiesInRadiusIds() {},
+    setTreesInRadiusIds() {},
+    setStreetLightsInRadiusIds() {},
+    setLatestRadiusCounts() {},
+    updateAmenitiesSource() {
+      calls.push(["updateAmenitiesSource"]);
+    },
+    updateTreesSource() {
+      calls.push(["updateTreesSource"]);
+    },
+    updateStreetLightsSource() {
+      calls.push(["updateStreetLightsSource"]);
+    },
+    showScoreExplainSidebarShell() {
+      calls.push(["showScoreExplainSidebarShell"]);
+    },
+    syncScoreSidebar() {},
+    hideScoreSidebar() {},
+    requestAnimationFrame(callback) {
+      calls.push(["requestAnimationFrame"]);
+      return callback();
+    },
+    getZoomForPolygon() {
+      return 16;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    radiusInfoEl: { style: { display: "block" } },
+    hasRadiusSelectionState() {
+      return false;
+    },
+    showIsochroneLoadingScreen(meta) {
+      showOverlayCalls.push(meta);
+    },
+    getWaitingForIsochroneLoad() {
+      return false;
+    },
+    hideIsochroneLoadingScreen() {},
+    markIsochronesLoaded() {},
+    setIsochroneIndex() {},
+    setIsochronesLookupMode() {},
+    setIsochronesLoaded() {},
+    compactIsochroneFeature() {
+      throw new Error("compactIsochroneFeature should not run in this test");
+    },
+  };
+
+  browser.window.Urban95Selection.configure(deps);
+  browser.window.Urban95Selection.selectBuilding(
+    { lng: 34.8, lat: 31.2, properties: { building_id: 7 }, feature: { type: "Feature" } },
+    false
+  );
+
+  assert.equal(showOverlayCalls.length, 1);
+  assert.equal(showOverlayCalls[0].reason, "selectedBuildingPendingIsochrones");
+  assert.ok(calls.some((call) => call[0] === "loadIsochronesLookup"));
+});
+
+test("selection pending-isochrone path can suppress the global overlay while preserving pending radius and source refresh work", () => {
+  const browser = createBrowserContext({
+    performance: {
+      now() {
+        return 1;
+      },
+    },
+  });
+  runBrowserScript("docs/js/map/selection.js", browser);
+
+  const calls = [];
+  const showOverlayCalls = [];
+  let isochroneLoadPromise = null;
+  const deps = {
+    map: {
+      getSource() {
+        return {
+          setData(data) {
+            const count = Array.isArray(data && data.features) ? data.features.length : 0;
+            calls.push(["setData", count]);
+          },
+        };
+      },
+      getLayer() {
+        return false;
+      },
+      easeTo() {
+        calls.push(["easeTo"]);
+      },
+      getZoom() {
+        return 15;
+      },
+      setFeatureState() {},
+      removeFeatureState() {},
+    },
+    turf: {
+      distance() {
+        return 0;
+      },
+      circle() {
+        return { type: "Feature", geometry: { type: "Polygon", coordinates: [] }, properties: {} };
+      },
+    },
+    urban95Perf: {
+      phase(_name, fn) {
+        return fn();
+      },
+      span(_name, _meta, fn) {
+        return fn();
+      },
+      mark() {},
+    },
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getWalkMinutes() {
+      return 10;
+    },
+    getIsochronesLoaded() {
+      return false;
+    },
+    getIsochroneLoadPromise() {
+      return isochroneLoadPromise;
+    },
+    setIsochroneLoadPromise(value) {
+      isochroneLoadPromise = value;
+      calls.push(["setIsochroneLoadPromise", value ? "set" : "clear"]);
+    },
+    setLoadingStatus(message) {
+      calls.push(["setLoadingStatus", message]);
+    },
+    loadIsochronesLookup() {
+      calls.push(["loadIsochronesLookup"]);
+      return new Promise(function () {});
+    },
+    fetchJsonWithGzipFallback() {
+      throw new Error("fetchJsonWithGzipFallback should not run in this test");
+    },
+    isochronesUrl: "./data/isochrones.geojson",
+    getSelectedBuilding() {
+      return null;
+    },
+    radiusSourceId: "radius-source",
+    selectedBuildingSourceId: "selected-building-source",
+    getSelectedBuildingVectorId() {
+      return null;
+    },
+    setSelectedBuildingVectorId() {},
+    setSelectedBuilding(building) {
+      calls.push(["setSelectedBuilding", building && building.properties ? building.properties.building_id : null]);
+    },
+    setAmenitiesInRadiusIds(value) {
+      calls.push(["setAmenitiesInRadiusIds", value.size]);
+    },
+    setTreesInRadiusIds(value) {
+      calls.push(["setTreesInRadiusIds", value.size]);
+    },
+    setStreetLightsInRadiusIds(value) {
+      calls.push(["setStreetLightsInRadiusIds", value.size]);
+    },
+    setLatestRadiusCounts(value) {
+      calls.push(["setLatestRadiusCounts", Object.keys(value).length]);
+    },
+    updateAmenitiesSource() {
+      calls.push(["updateAmenitiesSource"]);
+    },
+    updateTreesSource() {
+      calls.push(["updateTreesSource"]);
+    },
+    updateStreetLightsSource() {
+      calls.push(["updateStreetLightsSource"]);
+    },
+    showScoreExplainSidebarShell() {
+      calls.push(["showScoreExplainSidebarShell"]);
+    },
+    syncScoreSidebar() {},
+    hideScoreSidebar() {},
+    requestAnimationFrame(callback) {
+      calls.push(["requestAnimationFrame"]);
+      return callback();
+    },
+    getZoomForPolygon() {
+      return 16;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    radiusInfoEl: { style: { display: "block" } },
+    hasRadiusSelectionState() {
+      return false;
+    },
+    showIsochroneLoadingScreen(meta) {
+      showOverlayCalls.push(meta);
+    },
+    getWaitingForIsochroneLoad() {
+      return false;
+    },
+    hideIsochroneLoadingScreen() {},
+    markIsochronesLoaded() {},
+    setIsochroneIndex() {},
+    setIsochronesLookupMode() {},
+    setIsochronesLoaded() {},
+    compactIsochroneFeature() {
+      throw new Error("compactIsochroneFeature should not run in this test");
+    },
+  };
+
+  browser.window.Urban95Selection.configure(deps);
+  browser.window.Urban95Selection.selectBuilding(
+    { lng: 34.8, lat: 31.2, properties: { building_id: 7 }, feature: { type: "Feature" } },
+    false,
+    { suppressIsochroneLoadingOverlay: true }
+  );
+
+  assert.deepEqual(showOverlayCalls, []);
+  assert.ok(calls.some((call) => call[0] === "setData" && call[1] === 0));
+  assert.ok(calls.some((call) => call[0] === "showScoreExplainSidebarShell"));
+  assert.ok(calls.some((call) => call[0] === "loadIsochronesLookup"));
+  assert.ok(calls.some((call) => call[0] === "setLoadingStatus" && call[1] === "Loading walking areas..."));
+});
+
+test("background isochrone failure does not poison a later direct selected-building retry", async () => {
+  const consoleErrors = [];
+  const browser = createBrowserContext({
+    performance: {
+      now() {
+        return 1;
+      },
+    },
+    setTimeout(callback) {
+      callback();
+      return 1;
+    },
+    console: {
+      log() {},
+      error() {
+        consoleErrors.push(Array.from(arguments));
+      },
+    },
+  });
+  runBrowserScript("docs/js/map/selection.js", browser);
+  runBrowserScript("docs/js/ui/controlActions.js", browser);
+
+  const calls = [];
+  const overlayCalls = [];
+  const selectedBuilding = {
+    lng: 34.8,
+    lat: 31.2,
+    properties: { building_id: 7 },
+    feature: { type: "Feature", properties: { building_id: 7 } },
+  };
+  let isochroneLoadPromise = null;
+  let isochronesLoaded = false;
+  let selectedBuildingState = selectedBuilding;
+  let shouldFailLookup = true;
+
+  browser.window.Urban95Selection.configure({
+    map: {
+      getSource() {
+        return {
+          setData(data) {
+            const count = Array.isArray(data && data.features) ? data.features.length : 0;
+            calls.push(["setData", count]);
+          },
+        };
+      },
+      getLayer() {
+        return false;
+      },
+      easeTo() {
+        calls.push(["easeTo"]);
+      },
+      getZoom() {
+        return 15;
+      },
+      setFeatureState() {},
+      removeFeatureState() {},
+    },
+    turf: {
+      distance() {
+        return 0;
+      },
+      circle() {
+        return { type: "Feature", geometry: { type: "Polygon", coordinates: [] }, properties: {} };
+      },
+    },
+    urban95Perf: {
+      phase(_name, fn) {
+        return fn();
+      },
+      span(_name, _meta, fn) {
+        return fn();
+      },
+      mark() {},
+    },
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getWalkMinutes() {
+      return 10;
+    },
+    getIsochronesLoaded() {
+      return isochronesLoaded;
+    },
+    getIsochroneLoadPromise() {
+      return isochroneLoadPromise;
+    },
+    setIsochroneLoadPromise(value) {
+      isochroneLoadPromise = value;
+      calls.push(["setIsochroneLoadPromise", value ? "set" : "clear"]);
+    },
+    setLoadingStatus(message) {
+      calls.push(["setLoadingStatus", message]);
+    },
+    loadIsochronesLookup() {
+      calls.push(["loadIsochronesLookup", shouldFailLookup ? "fail" : "retry"]);
+      if (shouldFailLookup) {
+        return Promise.reject(new Error("lookup failed"));
+      }
+      return new Promise(function () {});
+    },
+    fetchJsonWithGzipFallback() {
+      throw new Error("fetchJsonWithGzipFallback should not run in this test");
+    },
+    isochronesUrl: "./data/isochrones.geojson",
+    getSelectedBuilding() {
+      return selectedBuildingState;
+    },
+    radiusSourceId: "radius-source",
+    selectedBuildingSourceId: "selected-building-source",
+    getSelectedBuildingVectorId() {
+      return null;
+    },
+    setSelectedBuildingVectorId() {},
+    setSelectedBuilding(building) {
+      selectedBuildingState = building;
+      calls.push(["setSelectedBuilding", building && building.properties ? building.properties.building_id : null]);
+    },
+    setAmenitiesInRadiusIds() {},
+    setTreesInRadiusIds() {},
+    setStreetLightsInRadiusIds() {},
+    setLatestRadiusCounts() {},
+    updateAmenitiesSource() {
+      calls.push(["updateAmenitiesSource"]);
+    },
+    updateTreesSource() {
+      calls.push(["updateTreesSource"]);
+    },
+    updateStreetLightsSource() {
+      calls.push(["updateStreetLightsSource"]);
+    },
+    showScoreExplainSidebarShell() {
+      calls.push(["showScoreExplainSidebarShell"]);
+    },
+    syncScoreSidebar() {},
+    hideScoreSidebar() {},
+    requestAnimationFrame(callback) {
+      return callback();
+    },
+    getZoomForPolygon() {
+      return 16;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    radiusInfoEl: { style: { display: "block" } },
+    hasRadiusSelectionState() {
+      return false;
+    },
+    showIsochroneLoadingScreen(meta) {
+      overlayCalls.push(meta);
+    },
+    getWaitingForIsochroneLoad() {
+      return overlayCalls.length > 0;
+    },
+    hideIsochroneLoadingScreen() {
+      calls.push(["hideIsochroneLoadingScreen"]);
+    },
+    markIsochronesLoaded() {
+      calls.push(["markIsochronesLoaded"]);
+    },
+    setIsochroneIndex() {},
+    setIsochronesLookupMode() {},
+    setIsochronesLoaded(value) {
+      isochronesLoaded = value;
+      calls.push(["setIsochronesLoaded", value]);
+    },
+    compactIsochroneFeature() {
+      throw new Error("compactIsochroneFeature should not run in this test");
+    },
+  });
+
+  const actions = browser.window.Urban95ControlActions.create({
+    perf: {
+      session() {},
+      mark() {},
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => selectedBuildingState,
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => isochronesLoaded,
+      setIsochronesDeferred: () => calls.push(["setIsochronesDeferred"]),
+    },
+    pointDataLoader: {
+      canRefreshPointAnalysisAfterPointDataLoad: () => true,
+    },
+    loadingUi: {
+      showIsochroneLoadingScreen(meta) {
+        overlayCalls.push(meta);
+      },
+      getWaitingForIsochroneLoad() {
+        return overlayCalls.length > 0;
+      },
+      hideIsochroneLoadingScreen() {
+        calls.push(["loadingUi.hideIsochroneLoadingScreen"]);
+      },
+      mark() {},
+    },
+    amenityMode: {
+      apply: () => Promise.resolve({ refreshedSelectedBuilding: false }),
+    },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => {},
+      updateTreesSource: () => {},
+      updateStreetLightsSource: () => {},
+      updateBuildingColors: () => {},
+      updateNeighborhoodSurfaceData: () => {},
+      updateNeighborhoodColors: () => {},
+    },
+    selection: {
+      loadIsochrones: browser.window.Urban95Selection.loadIsochrones,
+      selectBuilding: browser.window.Urban95Selection.selectBuilding,
+      updateRadiusInfo: () => {},
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: {
+      isOpen: () => false,
+      hide: () => {},
+    },
+    modeController: {
+      switchMode: () => {},
+    },
+    map: {
+      getLayer: () => false,
+      setLayoutProperty: () => {},
+    },
+    ui: {
+      getNeighborhoodModal: () => null,
+      getCitywideModal: () => null,
+    },
+  });
+
+  await actions.onScoreModeChanged("expanded");
+  await new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+
+  assert.deepEqual(overlayCalls, []);
+  assert.ok(calls.some((call) => call[0] === "loadIsochronesLookup" && call[1] === "fail"));
+  assert.ok(consoleErrors.length >= 1);
+  assert.ok(
+    consoleErrors.some(function (entry) {
+      var text = entry
+        .map(function (value) {
+          if (value && typeof value.message === "string") return value.message;
+          return value == null ? "" : String(value);
+        })
+        .join(" ");
+      return text.trim().length > 0;
+    })
+  );
+
+  shouldFailLookup = false;
+  browser.window.Urban95Selection.selectBuilding(selectedBuilding, false);
+
+  assert.equal(overlayCalls.length, 1);
+  assert.equal(overlayCalls[0].reason, "selectedBuildingPendingIsochrones");
+  assert.ok(calls.some((call) => call[0] === "setLoadingStatus" && call[1] === "Loading walking areas..."));
+  assert.deepEqual(
+    calls.filter((call) => call[0] === "loadIsochronesLookup").map((call) => call[1]),
+    ["fail", "retry"]
   );
 });
 

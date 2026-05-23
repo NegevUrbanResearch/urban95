@@ -32,6 +32,8 @@
     var options = requireObject(deps, "deps");
     var elements = requireObject(options.elements, "deps.elements");
     var logger = requireObject(options.logger, "deps.logger");
+    var perf = options.perf || {};
+    var perfMark = typeof perf.mark === "function" ? perf.mark : function () {};
     var timeoutScheduler =
       typeof options.setTimeout === "function"
         ? options.setTimeout
@@ -98,8 +100,12 @@
       updateProgress();
     }
 
-    function showIsochroneLoadingScreen() {
+    function showIsochroneLoadingScreen(meta) {
+      var reason = meta && meta.reason ? String(meta.reason) : "";
       waitingForIsochroneLoad = true;
+      perfMark("loadingOverlay:show", function () {
+        return { reason: reason };
+      });
       if (loadingScreen && loadingScreen.classList && typeof loadingScreen.classList.remove === "function") {
         loadingScreen.classList.remove("hidden");
       }
@@ -109,8 +115,12 @@
       setStatus("Loading walking areas for Amenities Focus...");
     }
 
-    function hideIsochroneLoadingScreen() {
+    function hideIsochroneLoadingScreen(meta) {
+      var reason = meta && meta.reason ? String(meta.reason) : "";
       waitingForIsochroneLoad = false;
+      perfMark("loadingOverlay:hideRequested", function () {
+        return { reason: reason, allKeysLoaded: areAllKeysLoaded(loadingState) };
+      });
       if (areAllKeysLoaded(loadingState)) {
         hideLoadingScreen();
       }

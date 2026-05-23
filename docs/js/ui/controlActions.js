@@ -166,15 +166,10 @@
       });
       return perf.phase("scoreModelToggle:handler", function () {
         if (nextScoreMode !== "weighted") {
-          var shouldBlockForSelectedBuilding =
-            !!state.getSelectedBuilding() && !state.getIsochronesLoaded();
-          if (shouldBlockForSelectedBuilding) {
-            loadingUi.showIsochroneLoadingScreen();
-          }
-          selection.loadIsochrones({ background: !shouldBlockForSelectedBuilding });
+          selection.loadIsochrones({ background: true });
         } else {
           if (loadingUi.getWaitingForIsochroneLoad()) {
-            loadingUi.hideIsochroneLoadingScreen();
+            loadingUi.hideIsochroneLoadingScreen({ reason: "scoreModeToggleWeighted" });
           }
           if (setIsochronesDeferred) {
             setIsochronesDeferred();

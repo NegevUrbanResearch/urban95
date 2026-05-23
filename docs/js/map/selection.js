@@ -406,8 +406,10 @@
     });
   }
 
-  function selectBuilding(building, doFly) {
+  function selectBuilding(building, doFly, options) {
     var d = requireDeps();
+    var opts = options || {};
+    var suppressIsochroneLoadingOverlay = opts.suppressIsochroneLoadingOverlay === true;
     var refreshToken = nextSelectedBuildingRefreshToken();
     var shouldFly = doFly !== false;
     perfMark(d, "selection:selectBuilding:start", function () {
@@ -496,7 +498,9 @@
           d.updateStreetLightsSource();
         });
         showSelectedBuildingSidebarShell(d, building);
-        d.showIsochroneLoadingScreen();
+        if (!suppressIsochroneLoadingOverlay) {
+          d.showIsochroneLoadingScreen({ reason: "selectedBuildingPendingIsochrones" });
+        }
         perfSpan(d, "selection:loadIsochronesTrigger", null, function () {
           loadIsochrones();
         });

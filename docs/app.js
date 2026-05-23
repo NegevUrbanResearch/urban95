@@ -518,6 +518,7 @@ const loadingUi = Urban95LoadingUi.create({
     loadingProgressBar: document.querySelector(".loading-progress-bar"),
   },
   logger: Urban95Logger,
+  perf: urban95Perf,
 });
 Urban95Selection.configure({
   map: map,
@@ -660,6 +661,7 @@ Urban95Selection.configure({
   buildingCentroidMaxGridRing: BUILDING_CENTROID_MAX_GRID_RING,
   buildingCentroidMinCandidates: BUILDING_CENTROID_MIN_CANDIDATES,
 });
+
 function getScoreModeLabel(mode) {
   return requireControlsBindingMember("getScoreModeLabel")(mode);
 }
