@@ -24,6 +24,7 @@
       hasGeneratedArtifact("buildings") && opts.buildingsSelectedLayer ? [opts.buildingsSelectedLayer] : [];
     var map = new maplibreglRef.Map({
       container: opts.container || "map",
+      collectResourceTiming: !!(window.urban95Perf && window.urban95Perf.enabled),
       style: {
         version: 8,
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",

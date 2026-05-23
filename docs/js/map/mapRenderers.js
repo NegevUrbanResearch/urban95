@@ -13,6 +13,23 @@
     return deps;
   }
 
+  function perfCounter(d, name, meta) {
+    if (d.urban95Perf && typeof d.urban95Perf.counter === "function") {
+      d.urban95Perf.counter(name, meta);
+    }
+  }
+
+  function perfSpan(d, name, meta, callback) {
+    if (d.urban95Perf && typeof d.urban95Perf.span === "function") {
+      return d.urban95Perf.span(name, meta, callback);
+    }
+    return callback();
+  }
+
+  function featureCount(data) {
+    return data && Array.isArray(data.features) ? data.features.length : 0;
+  }
+
   function getSelectedAmenityTypes() {
     return requireDeps().getSelectedAmenityTypes();
   }
@@ -203,10 +220,24 @@
 
   function applySpecialPointRenderPlan(config, plan) {
     var d = requireDeps();
+    perfCounter(d, "renderer:specialPointPlan", function () {
+      return {
+        artifact: config.artifactKey,
+        geojsonVisible: plan.geojsonVisible,
+        vectorVisible: plan.vectorVisible,
+        features: featureCount(plan.features),
+      };
+    });
     setLayerVisibilityIfPresent(config.geojsonLayerId, plan.geojsonVisible);
     setLayerVisibilityIfPresent(config.vectorLayerId, plan.vectorVisible);
     var source = d.map.getSource(config.sourceId);
-    if (source && plan.features) source.setData(plan.features);
+    if (source && plan.features) {
+      perfSpan(d, "renderer:specialPointSetData", function () {
+        return { artifact: config.artifactKey, features: featureCount(plan.features) };
+      }, function () {
+        source.setData(plan.features);
+      });
+    }
   }
 
   function getTreeRenderConfig() {
@@ -275,6 +306,14 @@
 
   function updateAmenitiesSource() {
     var d = requireDeps();
+    perfCounter(d, "renderer:updateAmenitiesSource:start", function () {
+      return {
+        scoreMode: d.getScoreMode(),
+        mode: d.getCurrentMode(),
+        allFeatures: featureCount(d.getAllAmenitiesData()),
+        selectedAmenityTypes: d.getSelectedAmenityTypes().size,
+      };
+    });
     return d.urban95Perf.phase("updateAmenitiesSource", function () {
       var allAmenitiesData = d.getAllAmenitiesData();
       if (!allAmenitiesData) return;
@@ -283,7 +322,9 @@
       if (!source) return;
 
       if (d.getScoreMode() === "weighted") {
-        source.setData({ type: "FeatureCollection", features: [] });
+        perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "weighted", features: 0 }, function () {
+          source.setData({ type: "FeatureCollection", features: [] });
+        });
         d.setVisibleAmenityFeatures([]);
         updateDeckAmenityLayers();
         return;
@@ -291,7 +332,9 @@
 
       var selectedAmenityTypes = d.getSelectedAmenityTypes();
       if (selectedAmenityTypes.size === 0) {
-        source.setData({ type: "FeatureCollection", features: [] });
+        perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "noSelection", features: 0 }, function () {
+          source.setData({ type: "FeatureCollection", features: [] });
+        });
         d.setVisibleAmenityFeatures([]);
         updateDeckAmenityLayers();
         return;
@@ -306,7 +349,9 @@
         });
 
       if (!showAmenities) {
-        source.setData({ type: "FeatureCollection", features: [] });
+        perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "hidden", features: 0 }, function () {
+          source.setData({ type: "FeatureCollection", features: [] });
+        });
         d.setVisibleAmenityFeatures([]);
         updateDeckAmenityLayers();
         return;
@@ -323,7 +368,11 @@
         updatedFeatures.push(Object.assign({}, feature, { properties: newProps }));
       });
 
-      source.setData({ type: "FeatureCollection", features: updatedFeatures });
+      perfSpan(d, "renderer:updateAmenitiesSource:setData", function () {
+        return { branch: "visible", features: updatedFeatures.length };
+      }, function () {
+        source.setData({ type: "FeatureCollection", features: updatedFeatures });
+      });
       d.setVisibleAmenityFeatures(updatedFeatures);
       updateDeckAmenityLayers();
     });
@@ -691,6 +740,9 @@
         d.map.getZoom() >= d.amenityClusterMinZoom;
 
       if (!shouldRender) {
+        perfCounter(d, "renderer:deckAmenityLayers", function () {
+          return { branch: "hidden", visibleFeatures: d.getVisibleAmenityFeatures().length };
+        });
         if (d.getDeckAmenityOverlay()) {
           d.getDeckAmenityOverlay().setProps({ layers: [] });
         }
@@ -700,6 +752,7 @@
       }
 
       if (!d.getDeckAmenityOverlay()) {
+        perfCounter(d, "renderer:deckAmenityLayers", { branch: "initPending" });
         d.ensureDeckGlLoaded()
           .then(function () {
             initDeckAmenityOverlay();
@@ -711,10 +764,27 @@
         return;
       }
 
-      var clusteredAmenities = clusterVisibleAmenities(d.getVisibleAmenityFeatures());
-      var iconAtlas = buildAmenityIconAtlas(clusteredAmenities);
+      var visibleFeatures = d.getVisibleAmenityFeatures();
+      var clusteredAmenities = perfSpan(d, "renderer:clusterVisibleAmenities", function () {
+        return { features: visibleFeatures.length };
+      }, function () {
+        return clusterVisibleAmenities(visibleFeatures);
+      });
+      var iconAtlas = perfSpan(d, "renderer:buildAmenityIconAtlas", function () {
+        return { clusters: clusteredAmenities.length };
+      }, function () {
+        return buildAmenityIconAtlas(clusteredAmenities);
+      });
       var atlas = iconAtlas.atlas;
       var mapping = iconAtlas.mapping;
+      perfCounter(d, "renderer:deckAmenityLayers", function () {
+        return {
+          branch: "render",
+          visibleFeatures: visibleFeatures.length,
+          clusters: clusteredAmenities.length,
+          iconAtlasCount: Object.keys(mapping).length,
+        };
+      });
 
       if (!atlas || Object.keys(mapping).length === 0) {
         d.getDeckAmenityOverlay().setProps({ layers: [] });
@@ -858,7 +928,11 @@
         fontWeight: 700,
       });
 
-      d.getDeckAmenityOverlay().setProps({ layers: [iconLayer, textLayer] });
+      perfSpan(d, "renderer:deckSetProps", function () {
+        return { clusters: clusteredAmenities.length, layers: 2 };
+      }, function () {
+        d.getDeckAmenityOverlay().setProps({ layers: [iconLayer, textLayer] });
+      });
     });
   }
 
@@ -882,6 +956,14 @@
 
   function updateBuildingColors() {
     var d = requireDeps();
+    perfCounter(d, "renderer:updateBuildingColors:start", function () {
+      return {
+        buildings: featureCount(d.getBuildingsData()),
+        generatedBuildings: d.hasGeneratedArtifact("buildings"),
+        scoreMode: d.getScoreMode(),
+        mode: d.getCurrentMode(),
+      };
+    });
     return d.urban95Perf.phase("updateBuildingColors", function () {
       var buildingsData = d.getBuildingsData();
       if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return;
@@ -911,23 +993,27 @@
       }
 
       if (d.hasGeneratedArtifact("buildings")) {
-        feats.forEach(function (feature) {
-          var props = feature.properties || {};
-          var bid = Number(props.building_id);
-          var val = Number(props[symPctKey]) || 0;
-          if (!Number.isFinite(bid)) {
-            if (!missingBuildingIdLogged) {
-              console.warn(
-                "[urban95] Some building features lack numeric building_id; map feature-state choropleth skipped for those."
-              );
-              missingBuildingIdLogged = true;
+        perfSpan(d, "renderer:updateBuildingColors:setFeatureState", function () {
+          return { buildings: feats.length };
+        }, function () {
+          feats.forEach(function (feature) {
+            var props = feature.properties || {};
+            var bid = Number(props.building_id);
+            var val = Number(props[symPctKey]) || 0;
+            if (!Number.isFinite(bid)) {
+              if (!missingBuildingIdLogged) {
+                console.warn(
+                  "[urban95] Some building features lack numeric building_id; map feature-state choropleth skipped for those."
+                );
+                missingBuildingIdLogged = true;
+              }
+              return;
             }
-            return;
-          }
-          d.map.setFeatureState(
-            { source: d.buildingsMapSourceId, sourceLayer: d.buildingsVectorLayerId, id: bid },
-            Object.fromEntries([[d.buildingsSymPctStateKey, val]])
-          );
+            d.map.setFeatureState(
+              { source: d.buildingsMapSourceId, sourceLayer: d.buildingsVectorLayerId, id: bid },
+              Object.fromEntries([[d.buildingsSymPctStateKey, val]])
+            );
+          });
         });
       }
 
@@ -955,6 +1041,13 @@
 
   function updateNeighborhoodSurfaceData() {
     var d = requireDeps();
+    perfCounter(d, "renderer:updateNeighborhoodSurfaceData:start", function () {
+      return {
+        generatedSurface: d.hasGeneratedArtifact("neighborhood_surface"),
+        surfaceFeatures: featureCount(d.getNeighborhoodSurfaceData()),
+        mode: d.getCurrentMode(),
+      };
+    });
     return d.urban95Perf.phase("updateNeighborhoodSurfaceData", function () {
       var surfaceSrc = d.map.getSource("neighborhood-score-surface");
       if (!surfaceSrc) return;
@@ -992,7 +1085,11 @@
         Array.isArray(neighborhoodSurfaceData.features) &&
         neighborhoodSurfaceData.features.length > 0
       ) {
-        surfaceSrc.setData(neighborhoodSurfaceData);
+        perfSpan(d, "renderer:updateNeighborhoodSurfaceData:setData", function () {
+          return { branch: "geojson", features: neighborhoodSurfaceData.features.length };
+        }, function () {
+          surfaceSrc.setData(neighborhoodSurfaceData);
+        });
         if (d.map.getLayer("neighborhoods-surface")) {
           var dataColorExpr = d.getNeighborhoodSurfaceColorExpression(precomputedScoreKey);
           var dataOutlineExpr = d.getCurrentMode() === "house" ? "rgba(0,0,0,0)" : dataColorExpr;
@@ -1002,7 +1099,9 @@
         return;
       }
 
-      surfaceSrc.setData({ type: "FeatureCollection", features: [] });
+      perfSpan(d, "renderer:updateNeighborhoodSurfaceData:setData", { branch: "empty", features: 0 }, function () {
+        surfaceSrc.setData({ type: "FeatureCollection", features: [] });
+      });
       if (d.map.getLayer("neighborhoods-surface")) {
         var emptyColorExpr = d.getNeighborhoodSurfaceColorExpression(precomputedScoreKey || "score");
         var emptyOutlineExpr = d.getCurrentMode() === "house" ? "rgba(0,0,0,0)" : emptyColorExpr;
@@ -1014,6 +1113,9 @@
 
   function updateNeighborhoodColors() {
     var d = requireDeps();
+    perfCounter(d, "renderer:updateNeighborhoodColors:start", function () {
+      return { neighborhoods: featureCount(d.getNeighborhoodsData()), mode: d.getCurrentMode() };
+    });
     return d.urban95Perf.phase("updateNeighborhoodColors", function () {
       var neighborhoodsData = d.getNeighborhoodsData();
       if (!neighborhoodsData || !d.map.getLayer("neighborhoods-fill")) return;
@@ -1042,7 +1144,13 @@
       });
 
       var nhSrc = d.map.getSource("neighborhoods");
-      if (nhSrc) nhSrc.setData(neighborhoodsData);
+      if (nhSrc) {
+        perfSpan(d, "renderer:updateNeighborhoodColors:setData", function () {
+          return { features: neighborhoodsData.features.length };
+        }, function () {
+          nhSrc.setData(neighborhoodsData);
+        });
+      }
 
       var colorExpr = [
         "interpolate",

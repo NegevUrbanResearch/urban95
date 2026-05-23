@@ -99,6 +99,12 @@
     return deps;
   }
 
+  function perfSpan(name, meta, callback) {
+    var perf = window.urban95Perf;
+    if (perf && typeof perf.span === "function") return perf.span(name, meta, callback);
+    return callback();
+  }
+
   function getSelectedAmenityTypes(d) {
     if (!d) d = requireDeps();
     return typeof d.getSelectedAmenityTypes === "function" ? d.getSelectedAmenityTypes() : null;
@@ -432,6 +438,7 @@
 
   function fitScoreExplainSidebarToViewport() {
     var d = requireDeps();
+    return perfSpan("scoreSidebar:fitToViewport", null, function () {
     var sidebar = d.sidebarEl;
     var inner = sidebar ? sidebar.querySelector(".score-explain-sidebar-inner") : null;
     var header = sidebar ? sidebar.querySelector(".score-explain-sidebar-header") : null;
@@ -471,6 +478,7 @@
     }
 
     body.classList.toggle("is-chart-roomy", contentHeight() < available * 0.92);
+    });
   }
 
   function scheduleFitScoreExplainSidebar() {
@@ -546,6 +554,7 @@
 
   function showScoreExplainSidebar() {
     var d = requireDeps();
+    return perfSpan("scoreSidebar:show", null, function () {
     var el = d.sidebarEl;
     if (!el) return;
     var wasOpen = el.classList.contains("is-open");
@@ -561,6 +570,7 @@
     if (!wasOpen && d.closeButtonEl) {
       d.closeButtonEl.focus({ preventScroll: true });
     }
+    });
   }
 
   function hideScoreExplainSidebar(options) {
@@ -585,6 +595,13 @@
 
   function syncScoreExplainSidebar() {
     var d = requireDeps();
+    return perfSpan("scoreSidebar:sync", function () {
+      return {
+        scoreMode: d.getScoreMode(),
+        hasSelectedBuilding: !!d.getSelectedBuilding(),
+        selectedAmenityTypes: getSelectedAmenityTypes(d) ? getSelectedAmenityTypes(d).size : "",
+      };
+    }, function () {
     var selectedBuilding = d.getSelectedBuilding();
     var selectedAmenityTypes = getSelectedAmenityTypes(d);
     var root = d.bodyEl;
@@ -608,8 +625,12 @@
     if (emptyEl) emptyEl.hidden = true;
 
     var props = selectedBuilding.feature.properties || {};
-    var breakdown = d.buildExplainScoreBreakdown(props);
-    var metrics = d.buildPercentileMetrics(props);
+    var breakdown = perfSpan("scoreSidebar:buildBreakdown", null, function () {
+      return d.buildExplainScoreBreakdown(props);
+    });
+    var metrics = perfSpan("scoreSidebar:buildMetrics", null, function () {
+      return d.buildPercentileMetrics(props);
+    });
 
     if (!breakdown && !metrics) {
       if (emptyEl) {
@@ -622,15 +643,24 @@
       return;
     }
 
-    populateScoreExplainSidebarHeader(breakdown, metrics);
-    root.innerHTML = renderScoreExplainSidebar(breakdown, metrics, {
-      building: selectedBuilding,
-      scoreKind: d.getScoreModeLabel(),
-      minutes: d.getScoreMinutes(),
+    perfSpan("scoreSidebar:renderHtml", function () {
+      return {
+        scoreMode: d.getScoreMode(),
+        hasBreakdown: !!breakdown,
+        hasMetrics: !!metrics,
+      };
+    }, function () {
+      populateScoreExplainSidebarHeader(breakdown, metrics);
+      root.innerHTML = renderScoreExplainSidebar(breakdown, metrics, {
+        building: selectedBuilding,
+        scoreKind: d.getScoreModeLabel(),
+        minutes: d.getScoreMinutes(),
+      });
     });
     bindScoreExplainSidebarInteractions(root);
     showScoreExplainSidebar();
     scheduleFitScoreExplainSidebar();
+    });
   }
 
   function bindGlobalSidebarChrome() {

@@ -10,7 +10,11 @@
     deps = deps || {};
     var perf = deps.perf || {
       session: function () {},
+      mark: function () {},
       phase: function (_name, callback) {
+        return callback();
+      },
+      span: function (_name, _meta, callback) {
         return callback();
       },
     };
@@ -74,6 +78,30 @@
       requireFunction(entry[1], entry[0]);
     });
 
+    var perfMark = typeof perf.mark === "function" ? perf.mark : function () {};
+    var perfSpan =
+      typeof perf.span === "function"
+        ? perf.span
+        : function (name, meta, callback) {
+            void name;
+            void meta;
+            return callback();
+          };
+
+    function flowMeta(extra) {
+      var selectedBuilding = state.getSelectedBuilding();
+      return Object.assign(
+        {
+          mode: state.getCurrentMode(),
+          scoreMode: state.getScoreMode ? state.getScoreMode() : "",
+          hasSelectedBuilding: !!selectedBuilding,
+          walkMinutes: state.getWalkMinutes ? state.getWalkMinutes() : "",
+          isochronesLoaded: state.getIsochronesLoaded(),
+        },
+        extra || {}
+      );
+    }
+
     function clearDerivedCaches() {
       state.clearDerivedCaches();
     }
@@ -120,6 +148,9 @@
       perf.session(
         "score-model -> " + (nextScoreMode === "expanded" ? "Amenities Focus" : "Urban95")
       );
+      perfMark("scoreModelToggle:start", function () {
+        return flowMeta({ nextScoreMode: nextScoreMode });
+      });
       return perf.phase("scoreModelToggle:handler", function () {
         if (nextScoreMode !== "weighted") {
           var shouldBlockForSelectedBuilding =
@@ -141,7 +172,9 @@
 
         return amenityMode.apply().then(function () {
           if (state.getSelectedBuilding()) {
-            selection.updateRadiusInfo();
+            perfSpan("scoreModelToggle:updateRadiusInfo", flowMeta, function () {
+              selection.updateRadiusInfo();
+            });
           }
 
           var citywideModal = getCitywideModal();
@@ -155,7 +188,9 @@
           }
 
           if (state.getCurrentMode() === "neighborhood") {
-            renderers.updateNeighborhoodColors();
+            perfSpan("scoreModelToggle:updateNeighborhoodColors", flowMeta, function () {
+              renderers.updateNeighborhoodColors();
+            });
             var neighborhoodModal = getNeighborhoodModal();
             if (
               neighborhoodModal &&
@@ -171,16 +206,25 @@
     }
 
     function onWalkMinutesChanged() {
+      perfMark("walkMinutesToggle:start", flowMeta);
       if (state.getCurrentMode() === "house") {
-        renderers.updateBuildingColors();
-        renderers.updateNeighborhoodSurfaceData();
+        perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
+          renderers.updateBuildingColors();
+        });
+        perfSpan("walkMinutesToggle:updateNeighborhoodSurfaceData", flowMeta, function () {
+          renderers.updateNeighborhoodSurfaceData();
+        });
         if (state.getSelectedBuilding()) {
-          selection.selectBuilding(state.getSelectedBuilding(), false);
+          perfSpan("walkMinutesToggle:selectBuilding", flowMeta, function () {
+            selection.selectBuilding(state.getSelectedBuilding(), false);
+          });
         }
       }
 
       if (state.getCurrentMode() === "neighborhood") {
-        renderers.updateNeighborhoodColors();
+        perfSpan("walkMinutesToggle:updateNeighborhoodColors", flowMeta, function () {
+          renderers.updateNeighborhoodColors();
+        });
         var neighborhoodModal = getNeighborhoodModal();
         if (
           state.getSelectedNeighborhood() &&

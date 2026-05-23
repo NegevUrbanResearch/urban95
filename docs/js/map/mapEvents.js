@@ -41,6 +41,7 @@
     var dashboards = requireObject(deps.dashboards, "deps.dashboards");
     var mapRenderers = requireObject(deps.mapRenderers, "deps.mapRenderers");
     var pointDataLoader = requireObject(deps.pointDataLoader, "deps.pointDataLoader");
+    var perf = deps.perf || window.urban95Perf || {};
     var tooltip = requireTooltip(deps.tooltip, "deps.tooltip");
     var buildingsFillLayerId = requireString(
       deps.buildingsFillLayerId,
@@ -82,6 +83,40 @@
     var getLastDeckClickTime = requireFunction(deps.getLastDeckClickTime, "deps.getLastDeckClickTime");
     var getScoreMode = requireFunction(deps.getScoreMode, "deps.getScoreMode");
     var formatArea = requireFunction(deps.formatArea, "deps.formatArea");
+    var perfMark = typeof perf.mark === "function" ? perf.mark : function () {};
+    var perfSpan =
+      typeof perf.span === "function"
+        ? perf.span
+        : function (name, meta, callback) {
+            void name;
+            void meta;
+            return callback();
+          };
+
+    function mapEventMeta(eventName, e) {
+      return {
+        event: eventName,
+        mode: getCurrentMode(),
+        scoreMode: getScoreMode(),
+        sourceId: e && e.sourceId ? e.sourceId : "",
+        sourceDataType: e && e.sourceDataType ? e.sourceDataType : "",
+        isSourceLoaded: e && typeof e.isSourceLoaded === "boolean" ? e.isSourceLoaded : "",
+        zoom: typeof map.getZoom === "function" ? Math.round(map.getZoom() * 100) / 100 : "",
+      };
+    }
+
+    if (perf.enabled) {
+      ["sourcedataloading", "sourcedata", "data", "movestart", "moveend", "idle"].forEach(function (eventName) {
+        map.on(eventName, function (e) {
+          perfMark("map:" + eventName, function () {
+            return mapEventMeta(eventName, e);
+          });
+          if ((eventName === "moveend" || eventName === "idle") && typeof perf.recordResourceSummary === "function") {
+            perf.recordResourceSummary("map:" + eventName + ":resources");
+          }
+        });
+      });
+    }
 
     map.on("click", function (e) {
       if (getCurrentMode() !== "house") return;
@@ -89,9 +124,20 @@
       if (e.originalEvent.target !== map.getCanvas()) return;
       if (Date.now() - getLastDeckClickTime() < 300) return;
 
-      var closest = selection.findClosestBuilding(e.lngLat);
+      perfMark("map:buildingClick:start", function () {
+        return { mode: getCurrentMode(), scoreMode: getScoreMode(), zoom: Math.round(map.getZoom() * 100) / 100 };
+      });
+      var closest = perfSpan("map:buildingClick:closestBuildingLookup", null, function () {
+        return selection.findClosestBuilding(e.lngLat);
+      });
       if (closest) {
-        selection.selectBuilding(closest, true);
+        perfSpan("map:buildingClick:selectBuildingReturn", function () {
+          return {
+            buildingId: closest.feature && closest.feature.properties ? closest.feature.properties.building_id : "",
+          };
+        }, function () {
+          selection.selectBuilding(closest, true);
+        });
       }
     });
 
@@ -132,9 +178,16 @@
     });
 
     map.on("zoomend", function () {
+      perfMark("map:zoomend", function () {
+        return { mode: getCurrentMode(), scoreMode: getScoreMode(), zoom: Math.round(map.getZoom() * 100) / 100 };
+      });
       if (getScoreMode() === "weighted") {
-        mapRenderers.updateTreesSource();
-        mapRenderers.updateStreetLightsSource();
+        perfSpan("map:zoomend:updateTreesSource", null, function () {
+          mapRenderers.updateTreesSource();
+        });
+        perfSpan("map:zoomend:updateStreetLightsSource", null, function () {
+          mapRenderers.updateStreetLightsSource();
+        });
       }
     });
 

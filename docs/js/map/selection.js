@@ -22,6 +22,23 @@
     return deps;
   }
 
+  function perfSpan(d, name, meta, callback) {
+    if (d.urban95Perf && typeof d.urban95Perf.span === "function") {
+      return d.urban95Perf.span(name, meta, callback);
+    }
+    return callback();
+  }
+
+  function perfMark(d, name, meta) {
+    if (d.urban95Perf && typeof d.urban95Perf.mark === "function") {
+      d.urban95Perf.mark(name, meta);
+    }
+  }
+
+  function featureCount(data) {
+    return data && Array.isArray(data.features) ? data.features.length : 0;
+  }
+
   function setSelectedBuildingVectorState(buildingId) {
     var d = requireDeps();
     var previousId = d.getSelectedBuildingVectorId();
@@ -262,70 +279,79 @@
 
   function getItemsInPolygon(polygon) {
     var d = requireDeps();
-    var amenityIndices = new Set();
-    var treeIndices = new Set();
-    var streetLightIndices = new Set();
-    var counts = {};
+    return perfSpan(d, "selection:getItemsInPolygon", function () {
+      return {
+        scoreMode: d.getScoreMode(),
+        amenityFeatures: featureCount(d.getAllAmenitiesData()),
+        treeFeatures: featureCount(d.getAllTreesData()),
+        streetLightFeatures: featureCount(d.getAllStreetLightsData()),
+      };
+    }, function () {
+      var amenityIndices = new Set();
+      var treeIndices = new Set();
+      var streetLightIndices = new Set();
+      var counts = {};
 
-    var selectedAmenityTypes = d.getSelectedAmenityTypes();
-    if (selectedAmenityTypes.size === 0 || !polygon) {
+      var selectedAmenityTypes = d.getSelectedAmenityTypes();
+      if (selectedAmenityTypes.size === 0 || !polygon) {
+        return {
+          amenityIndices: amenityIndices,
+          treeIndices: treeIndices,
+          streetLightIndices: streetLightIndices,
+          counts: counts,
+        };
+      }
+
+      var allFilterTypes = d.getAllFilterTypes();
+      var useAll = selectedAmenityTypes.size === allFilterTypes.length;
+      var polygonBbox = d.turf.bbox(polygon);
+
+      var allAmenitiesData = d.getAllAmenitiesData();
+      if (allAmenitiesData && allAmenitiesData.features) {
+        allAmenitiesData.features.forEach(function (feature, index) {
+          var type = feature.properties.amenity_type;
+          if (!useAll && !selectedAmenityTypes.has(type)) return;
+          var coords = feature.geometry && feature.geometry.coordinates;
+          if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
+            amenityIndices.add(index);
+            counts[type] = (counts[type] || 0) + 1;
+          }
+        });
+      }
+
+      var allTreesData = d.getAllTreesData();
+      if (allTreesData && allTreesData.features && (useAll || selectedAmenityTypes.has("trees"))) {
+        allTreesData.features.forEach(function (feature, index) {
+          var coords = feature.geometry && feature.geometry.coordinates;
+          if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
+            treeIndices.add(index);
+            counts.trees = (counts.trees || 0) + 1;
+          }
+        });
+      }
+
+      var allStreetLightsData = d.getAllStreetLightsData();
+      if (
+        allStreetLightsData &&
+        allStreetLightsData.features &&
+        (useAll || selectedAmenityTypes.has("street-lights"))
+      ) {
+        allStreetLightsData.features.forEach(function (feature, index) {
+          var coords = feature.geometry && feature.geometry.coordinates;
+          if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
+            streetLightIndices.add(index);
+            counts["street-lights"] = (counts["street-lights"] || 0) + 1;
+          }
+        });
+      }
+
       return {
         amenityIndices: amenityIndices,
         treeIndices: treeIndices,
         streetLightIndices: streetLightIndices,
         counts: counts,
       };
-    }
-
-    var allFilterTypes = d.getAllFilterTypes();
-    var useAll = selectedAmenityTypes.size === allFilterTypes.length;
-    var polygonBbox = d.turf.bbox(polygon);
-
-    var allAmenitiesData = d.getAllAmenitiesData();
-    if (allAmenitiesData && allAmenitiesData.features) {
-      allAmenitiesData.features.forEach(function (feature, index) {
-        var type = feature.properties.amenity_type;
-        if (!useAll && !selectedAmenityTypes.has(type)) return;
-        var coords = feature.geometry && feature.geometry.coordinates;
-        if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
-          amenityIndices.add(index);
-          counts[type] = (counts[type] || 0) + 1;
-        }
-      });
-    }
-
-    var allTreesData = d.getAllTreesData();
-    if (allTreesData && allTreesData.features && (useAll || selectedAmenityTypes.has("trees"))) {
-      allTreesData.features.forEach(function (feature, index) {
-        var coords = feature.geometry && feature.geometry.coordinates;
-        if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
-          treeIndices.add(index);
-          counts.trees = (counts.trees || 0) + 1;
-        }
-      });
-    }
-
-    var allStreetLightsData = d.getAllStreetLightsData();
-    if (
-      allStreetLightsData &&
-      allStreetLightsData.features &&
-      (useAll || selectedAmenityTypes.has("street-lights"))
-    ) {
-      allStreetLightsData.features.forEach(function (feature, index) {
-        var coords = feature.geometry && feature.geometry.coordinates;
-        if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
-          streetLightIndices.add(index);
-          counts["street-lights"] = (counts["street-lights"] || 0) + 1;
-        }
-      });
-    }
-
-    return {
-      amenityIndices: amenityIndices,
-      treeIndices: treeIndices,
-      streetLightIndices: streetLightIndices,
-      counts: counts,
-    };
+    });
   }
 
   function easeInOutQuad(t) {
@@ -343,9 +369,21 @@
   function selectBuilding(building, doFly) {
     var d = requireDeps();
     var shouldFly = doFly !== false;
+    perfMark(d, "selection:selectBuilding:start", function () {
+      return {
+        scoreMode: d.getScoreMode(),
+        walkMinutes: d.getWalkMinutes(),
+        shouldFly: shouldFly,
+        isochronesLoaded: d.getIsochronesLoaded(),
+        buildingId: building && building.feature && building.feature.properties
+          ? building.feature.properties.building_id
+          : "",
+      };
+    });
     return d.urban95Perf.phase("selectBuilding", function () {
-      d.setSelectedBuilding(building);
-      setSelectedBuildingVectorState(building && building.properties && building.properties.building_id);
+      perfSpan(d, "selection:selectedStateAndSource", null, function () {
+        d.setSelectedBuilding(building);
+        setSelectedBuildingVectorState(building && building.properties && building.properties.building_id);
 
           var buildingSource = d.map.getSource(d.selectedBuildingSourceId);
           if (!d.hasGeneratedArtifact("buildings") && buildingSource && building.feature) {
@@ -359,6 +397,7 @@
               features: [],
             });
           }
+      });
 
       if (d.getScoreMode() === "weighted") {
         d.setAmenitiesInRadiusIds(new Set());
@@ -367,26 +406,32 @@
         d.setLatestRadiusCounts({});
 
         var weightedRadiusSource = d.map.getSource(d.radiusSourceId);
+        perfSpan(d, "selection:weightedRadiusSource", null, function () {
           if (weightedRadiusSource) {
             setRadiusSourceData(
               weightedRadiusSource,
               buildUrban95ReferenceRadius(building.lng, building.lat)
             );
           }
+        });
 
-        d.updateAmenitiesSource();
-        d.updateTreesSource();
-        d.updateStreetLightsSource();
-        updateRadiusInfo();
+        perfSpan(d, "selection:pointSourceRefresh", { branch: "weighted" }, function () {
+          d.updateAmenitiesSource();
+          d.updateTreesSource();
+          d.updateStreetLightsSource();
+        });
+        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "weighted" }, updateRadiusInfo);
 
         if (shouldFly) {
           var radiusPolygon = buildUrban95ReferenceRadius(building.lng, building.lat);
-          d.map.easeTo({
-            center: [building.lng, building.lat],
-            zoom: Math.max(d.map.getZoom(), d.getZoomForPolygon(radiusPolygon)),
-            duration: 1400,
-            easing: easeInOutQuad,
-            essential: true,
+          perfSpan(d, "selection:flySchedule", { branch: "weighted" }, function () {
+            d.map.easeTo({
+              center: [building.lng, building.lat],
+              zoom: Math.max(d.map.getZoom(), d.getZoomForPolygon(radiusPolygon)),
+              duration: 1400,
+              easing: easeInOutQuad,
+              essential: true,
+            });
           });
         }
         return;
@@ -398,56 +443,76 @@
         d.setStreetLightsInRadiusIds(new Set());
         d.setLatestRadiusCounts({});
             var pendingRadiusSource = d.map.getSource(d.radiusSourceId);
-            if (pendingRadiusSource) {
-              setRadiusSourceData(pendingRadiusSource, { type: "FeatureCollection", features: [] });
-            }
-        d.updateAmenitiesSource();
-        d.updateTreesSource();
-        d.updateStreetLightsSource();
+        perfSpan(d, "selection:radiusSource", { branch: "isochronesPending" }, function () {
+          if (pendingRadiusSource) {
+            setRadiusSourceData(pendingRadiusSource, { type: "FeatureCollection", features: [] });
+          }
+        });
+        perfSpan(d, "selection:pointSourceRefresh", { branch: "isochronesPending" }, function () {
+          d.updateAmenitiesSource();
+          d.updateTreesSource();
+          d.updateStreetLightsSource();
+        });
         d.showIsochroneLoadingScreen();
-        loadIsochrones();
+        perfSpan(d, "selection:loadIsochronesTrigger", null, function () {
+          loadIsochrones();
+        });
         if (shouldFly) {
-          d.map.easeTo({
-            center: [building.lng, building.lat],
-            zoom: Math.max(d.map.getZoom(), 16),
-            duration: 1400,
-            easing: easeInOutQuad,
-            essential: true,
+          perfSpan(d, "selection:flySchedule", { branch: "isochronesPending" }, function () {
+            d.map.easeTo({
+              center: [building.lng, building.lat],
+              zoom: Math.max(d.map.getZoom(), 16),
+              duration: 1400,
+              easing: easeInOutQuad,
+              essential: true,
+            });
           });
         }
-        updateRadiusInfo();
+        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "isochronesPending" }, updateRadiusInfo);
         return;
       }
 
       var buildingId = building.feature ? building.feature.properties.building_id : null;
       var polygon = null;
       if (buildingId != null) {
-        polygon = getIsochrone(buildingId, d.getWalkMinutes());
+        polygon = perfSpan(d, "selection:isochroneLookup", function () {
+          return { buildingId: buildingId, walkMinutes: d.getWalkMinutes() };
+        }, function () {
+          return getIsochrone(buildingId, d.getWalkMinutes());
+        });
       }
 
       if (polygon) {
+        perfSpan(d, "selection:radiusSource", { branch: "isochroneFound" }, function () {
             var source = d.map.getSource(d.radiusSourceId);
             setRadiusSourceData(source, polygon);
+        });
           } else {
+        perfSpan(d, "selection:radiusSource", { branch: "isochroneMissing" }, function () {
             var emptySource = d.map.getSource(d.radiusSourceId);
             setRadiusSourceData(emptySource, { type: "FeatureCollection", features: [] });
+        });
 
         d.setAmenitiesInRadiusIds(new Set());
         d.setTreesInRadiusIds(new Set());
         d.setStreetLightsInRadiusIds(new Set());
         d.setLatestRadiusCounts({});
-        d.updateAmenitiesSource();
-        d.updateTreesSource();
-        d.updateStreetLightsSource();
-        updateRadiusInfo();
+        perfSpan(d, "selection:pointSourceRefresh", { branch: "isochroneMissing" }, function () {
+          d.updateAmenitiesSource();
+          d.updateTreesSource();
+          d.updateStreetLightsSource();
+        });
+        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "isochroneMissing" }, updateRadiusInfo);
 
         if (shouldFly) {
-          d.map.easeTo({
-            center: [building.lng, building.lat],
-            zoom: Math.max(d.map.getZoom(), 16),
-            duration: 1400,
-            easing: easeInOutQuad,
-            essential: true,
+          perfSpan(d, "selection:flySchedule", { branch: "isochroneMissing" }, function () {
+            d.map.easeTo({
+              center: [building.lng, building.lat],
+              zoom: Math.max(d.map.getZoom(), 16),
+              duration: 1400,
+              easing: easeInOutQuad,
+              essential: true,
+            });
           });
         }
         return;
@@ -459,21 +524,25 @@
         d.setTreesInRadiusIds(result.treeIndices);
         d.setStreetLightsInRadiusIds(result.streetLightIndices);
         d.setLatestRadiusCounts(result.counts);
-        d.updateAmenitiesSource();
-        d.updateTreesSource();
-        d.updateStreetLightsSource();
-        updateRadiusInfo();
+        perfSpan(d, "selection:pointSourceRefresh", { branch: "isochroneFound" }, function () {
+          d.updateAmenitiesSource();
+          d.updateTreesSource();
+          d.updateStreetLightsSource();
+        });
+        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "isochroneFound" }, updateRadiusInfo);
       };
 
       if (shouldFly) {
-        var zoom = d.getZoomForPolygon(polygon);
-        d.requestAnimationFrame(applyRadius);
-        d.map.easeTo({
-          center: [building.lng, building.lat],
-          zoom: zoom,
-          duration: 1400,
-          easing: easeInOutQuad,
-          essential: true,
+        perfSpan(d, "selection:flySchedule", { branch: "isochroneFound" }, function () {
+          var zoom = d.getZoomForPolygon(polygon);
+          d.requestAnimationFrame(applyRadius);
+          d.map.easeTo({
+            center: [building.lng, building.lat],
+            zoom: zoom,
+            duration: 1400,
+            easing: easeInOutQuad,
+            essential: true,
+          });
         });
       } else {
         applyRadius();

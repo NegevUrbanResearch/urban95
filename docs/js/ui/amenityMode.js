@@ -10,7 +10,14 @@
 
   function create(deps) {
     deps = deps || {};
-    var perf = deps.perf || { phase: function (_name, callback) { return callback(); } };
+    var perf = deps.perf || {
+      phase: function (_name, callback) { return callback(); },
+      span: function (_name, _meta, callback) { return callback(); },
+      spanAsync: function (_name, _meta, promiseOrFactory) {
+        return typeof promiseOrFactory === "function" ? promiseOrFactory() : promiseOrFactory;
+      },
+      counter: function () {},
+    };
     var logger = deps.logger || { warn: function () {} };
     var state = deps.state || {};
     var ui = deps.ui || {};
@@ -54,50 +61,104 @@
 
     var syncPointLayerVisibility =
       pointLayerVisibilitySync;
+    var perfSpan =
+      typeof perf.span === "function"
+        ? perf.span
+        : function (name, meta, callback) {
+            void name;
+            void meta;
+            return callback();
+          };
+    var perfSpanAsync =
+      typeof perf.spanAsync === "function"
+        ? perf.spanAsync
+        : function (name, meta, promiseOrFactory) {
+            void name;
+            void meta;
+            return typeof promiseOrFactory === "function" ? promiseOrFactory() : promiseOrFactory;
+          };
+    var perfCounter = typeof perf.counter === "function" ? perf.counter : function () {};
 
     function apply() {
       return perf.phase("applyScoreModeAmenities", function () {
         var scoreMode = state.getScoreMode();
         var legacyData = state.getLegacyData();
         var useLegacy = scoreMode === "expanded" && hasFeatures(legacyData);
+        perfCounter("amenityMode.apply:start", function () {
+          return {
+            scoreMode: scoreMode,
+            useLegacy: useLegacy,
+            currentMode: state.getCurrentMode(),
+            hasSelectedBuilding: !!state.getSelectedBuilding(),
+          };
+        });
         if (scoreMode === "expanded" && !useLegacy && logger && typeof logger.warn === "function") {
           logger.warn("amenities_all.geojson missing or empty; Amenities Focus mode may be incomplete.");
         }
-        if (useLegacy) {
-          state.setAllAmenitiesData(legacyData);
-          state.setAllAmenityTypes(state.getLegacyTypes().slice());
-          state.setTypesWithData(new Set(state.getLegacyTypesWithData()));
-        } else {
-          state.setAllAmenitiesData(state.getCleanData());
-          state.setAllAmenityTypes(state.getCleanTypes().slice());
-          state.setTypesWithData(new Set(state.getCleanTypesWithData()));
-        }
-        state.clearRadiusIds();
-        ui.buildFilterItems();
-        ui.syncFilterUiForScoreMode();
-        ui.updateShowPointsToggleLabel();
-        return pointDataLoader
-          .ensureExpandedPointDataLoaded({ refreshPolicy: "defer" })
+        perfSpan("amenityMode.apply:dataSwap", function () {
+          return { scoreMode: scoreMode, useLegacy: useLegacy };
+        }, function () {
+          if (useLegacy) {
+            state.setAllAmenitiesData(legacyData);
+            state.setAllAmenityTypes(state.getLegacyTypes().slice());
+            state.setTypesWithData(new Set(state.getLegacyTypesWithData()));
+          } else {
+            state.setAllAmenitiesData(state.getCleanData());
+            state.setAllAmenityTypes(state.getCleanTypes().slice());
+            state.setTypesWithData(new Set(state.getCleanTypesWithData()));
+          }
+          state.clearRadiusIds();
+        });
+        perfSpan("amenityMode.apply:filterUi", function () {
+          return { scoreMode: scoreMode };
+        }, function () {
+          ui.buildFilterItems();
+          ui.syncFilterUiForScoreMode();
+          ui.updateShowPointsToggleLabel();
+        });
+        return perfSpanAsync(
+          "amenityMode.apply:ensureExpandedPointDataLoaded",
+          function () {
+            return { refreshPolicy: "defer", scoreMode: scoreMode };
+          },
+          function () {
+            return pointDataLoader.ensureExpandedPointDataLoaded({ refreshPolicy: "defer" });
+          }
+        )
           .then(function () {
             var selectedBuilding = state.getSelectedBuilding();
             var canRefreshSelectedBuilding =
               selectedBuilding && pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad();
 
-            syncPointLayerVisibility();
+            perfSpan("amenityMode.apply:syncPointVisibility", null, function () {
+              syncPointLayerVisibility();
+            });
 
             if (state.getCurrentMode() === "house") {
-              renderers.updateBuildingColors();
-              renderers.updateNeighborhoodSurfaceData();
+              perfSpan("amenityMode.apply:updateBuildingColors", null, function () {
+                renderers.updateBuildingColors();
+              });
+              perfSpan("amenityMode.apply:updateNeighborhoodSurfaceData", null, function () {
+                renderers.updateNeighborhoodSurfaceData();
+              });
             }
 
             if (canRefreshSelectedBuilding) {
-              selection.selectBuilding(selectedBuilding, false);
+              perfSpan("amenityMode.apply:reselectBuilding", function () {
+                return { scoreMode: scoreMode };
+              }, function () {
+                selection.selectBuilding(selectedBuilding, false);
+              });
               return;
             }
 
-            renderers.updateAmenitiesSource();
-            renderers.updateTreesSource();
-            renderers.updateStreetLightsSource();
+            perfSpan("amenityMode.apply:fallbackPointSourceRefresh", function () {
+              return { scoreMode: scoreMode };
+            }, function () {
+              renderers.updateAmenitiesSource();
+              renderers.updateTreesSource();
+              renderers.updateStreetLightsSource();
+            });
           });
       });
     }

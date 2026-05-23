@@ -158,6 +158,23 @@
     var turf = requireObject(geo.turf, "deps.geo.turf");
     requireMethod(turf, "deps.geo.turf", "bbox");
     var modeTransitionGeneration = 0;
+    var perfMark = typeof perf.mark === "function" ? perf.mark : function () {};
+    var perfSpan =
+      typeof perf.span === "function"
+        ? perf.span
+        : function (name, meta, callback) {
+            void name;
+            void meta;
+            return callback();
+          };
+    var perfSpanAsync =
+      typeof perf.spanAsync === "function"
+        ? perf.spanAsync
+        : function (name, meta, promiseOrFactory) {
+            void name;
+            void meta;
+            return typeof promiseOrFactory === "function" ? promiseOrFactory() : promiseOrFactory;
+          };
 
     function nextModeToken() {
       modeTransitionGeneration += 1;
@@ -175,49 +192,55 @@
       });
 
       var surfaceBeforeId = map.getLayer(buildingsFillLayerId) ? buildingsFillLayerId : undefined;
-      map.addLayer(
-        Object.assign(
-          {
-            id: "neighborhoods-surface",
-            type: "fill",
-            source: "neighborhood-score-surface",
-            paint: {
-              "fill-color": getNeighborhoodSurfaceColorExpression(
-                getNeighborhoodSurfaceScorePropertyKey()
-              ),
-              "fill-outline-color": getNeighborhoodSurfaceColorExpression(
-                getNeighborhoodSurfaceScorePropertyKey()
-              ),
-              "fill-opacity": dashboards.getNeighborhoodHexSurfaceOpacityExpression(),
-              "fill-antialias": true,
-            },
-            layout: { visibility: "none" },
-          },
-          hasGeneratedArtifact("neighborhood_surface")
-            ? {
-                "source-layer": sourceLayer(
-                  "neighborhood_surface",
-                  neighborhoodSurfaceSourceLayerFallback
+      perfSpan("mode:neighborhood:addSurfaceLayer", function () {
+        return { generatedSurface: hasGeneratedArtifact("neighborhood_surface") };
+      }, function () {
+        map.addLayer(
+          Object.assign(
+            {
+              id: "neighborhoods-surface",
+              type: "fill",
+              source: "neighborhood-score-surface",
+              paint: {
+                "fill-color": getNeighborhoodSurfaceColorExpression(
+                  getNeighborhoodSurfaceScorePropertyKey()
                 ),
-              }
-            : {}
-        ),
-        surfaceBeforeId
-      );
-
-      map.addLayer({
-        id: "neighborhoods-fill",
-        type: "fill",
-        source: "neighborhoods",
-        paint: { "fill-color": "#3b82f6", "fill-opacity": 0.6 },
-        layout: { visibility: "none" },
+                "fill-outline-color": getNeighborhoodSurfaceColorExpression(
+                  getNeighborhoodSurfaceScorePropertyKey()
+                ),
+                "fill-opacity": dashboards.getNeighborhoodHexSurfaceOpacityExpression(),
+                "fill-antialias": true,
+              },
+              layout: { visibility: "none" },
+            },
+            hasGeneratedArtifact("neighborhood_surface")
+              ? {
+                  "source-layer": sourceLayer(
+                    "neighborhood_surface",
+                    neighborhoodSurfaceSourceLayerFallback
+                  ),
+                }
+              : {}
+          ),
+          surfaceBeforeId
+        );
       });
-      map.addLayer({
-        id: "neighborhoods-line",
-        type: "line",
-        source: "neighborhoods",
-        paint: { "line-color": "#1e3a5f", "line-width": 2.5, "line-opacity": 0.9 },
-        layout: { visibility: "none" },
+
+      perfSpan("mode:neighborhood:addBoundaryLayers", null, function () {
+        map.addLayer({
+          id: "neighborhoods-fill",
+          type: "fill",
+          source: "neighborhoods",
+          paint: { "fill-color": "#3b82f6", "fill-opacity": 0.6 },
+          layout: { visibility: "none" },
+        });
+        map.addLayer({
+          id: "neighborhoods-line",
+          type: "line",
+          source: "neighborhoods",
+          paint: { "line-color": "#1e3a5f", "line-width": 2.5, "line-opacity": 0.9 },
+          layout: { visibility: "none" },
+        });
       });
     }
 
@@ -314,11 +337,17 @@
         }
       });
 
-      var neighborhoodsPromise = dashboards.loadNeighborhoods();
-      var chartsPromise = dashboards.loadNeighborhoodChartsPayload();
+      var neighborhoodsPromise = perfSpanAsync("enterNeighborhoodMode:loadNeighborhoods", null, function () {
+        return dashboards.loadNeighborhoods();
+      });
+      var chartsPromise = perfSpanAsync("enterNeighborhoodMode:loadNeighborhoodCharts", null, function () {
+        return dashboards.loadNeighborhoodChartsPayload();
+      });
       var surfacePromise = hasGeneratedArtifact("neighborhood_surface")
         ? Promise.resolve(null)
-        : dashboards.loadNeighborhoodSurfaceData();
+        : perfSpanAsync("enterNeighborhoodMode:loadNeighborhoodSurface", null, function () {
+            return dashboards.loadNeighborhoodSurfaceData();
+          });
 
       return perf.phaseAsync(
         "enterNeighborhoodMode:loadsThenApply",
@@ -328,16 +357,26 @@
           return perf.phase("enterNeighborhoodMode:applyLayersFitBounds", function () {
             if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
             var src = map.getSource("neighborhoods");
-            if (src) src.setData(data);
+            if (src) {
+              perfSpan("enterNeighborhoodMode:setNeighborhoodSource", function () {
+                return { features: data && data.features ? data.features.length : 0 };
+              }, function () {
+                src.setData(data);
+              });
+            }
             if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
             addNeighborhoodLayers();
-            mapRenderers.updateNeighborhoodColors();
+            perfSpan("enterNeighborhoodMode:updateNeighborhoodColors", null, function () {
+              mapRenderers.updateNeighborhoodColors();
+            });
 
             if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
-            if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "visible");
-            if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
-            if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
-            if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
+            perfSpan("enterNeighborhoodMode:showLayers", null, function () {
+              if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "visible");
+              if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
+              if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
+              if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
+            });
             logger.debug(function () {
               return ["[Neighborhood] Layers visible, source updated with", data.features.length, "features"];
             });
@@ -345,7 +384,18 @@
             if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
             if (data.features.length > 0) {
               var bbox = turf.bbox(data);
-              map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 600 });
+              perfMark("enterNeighborhoodMode:fitBounds:start", { features: data.features.length });
+              if (perf.enabled && typeof map.once === "function") {
+                map.once("moveend", function () {
+                  perfMark("enterNeighborhoodMode:fitBounds:moveend");
+                });
+                map.once("idle", function () {
+                  perfMark("enterNeighborhoodMode:settle:idle");
+                });
+              }
+              perfSpan("enterNeighborhoodMode:fitBoundsCall", null, function () {
+                map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 600 });
+              });
             }
           });
         })

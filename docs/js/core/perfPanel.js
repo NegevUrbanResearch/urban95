@@ -2,19 +2,116 @@
   var urban95Perf = (function () {
     var enabled = false;
     try {
-      var sp = new URLSearchParams(window.location.search);
-      enabled =
-        sp.has("perf") ||
-        sp.get("perf") === "1" ||
-        (typeof localStorage !== "undefined" && localStorage.getItem("urban95_perf") === "1");
+      var search =
+        window.location && typeof window.location.search === "string"
+          ? window.location.search
+          : "";
+      var urlPerfEnabled = false;
+      if (typeof URLSearchParams === "function") {
+        var sp = new URLSearchParams(search);
+        urlPerfEnabled = sp.has("perf") || sp.get("perf") === "1";
+      } else {
+        urlPerfEnabled = /(?:^|[?&])perf(?:=1)?(?:&|$)/.test(search);
+      }
+      var storagePerfEnabled = false;
+      try {
+        storagePerfEnabled =
+          !!(window.localStorage && window.localStorage.getItem("urban95_perf") === "1");
+      } catch (e1) {}
+      enabled = urlPerfEnabled || storagePerfEnabled;
     } catch (e0) {}
     var records = [];
-    var maxRecords = 800;
+    var maxRecords = 2500;
     var depth = 0;
 
     function push(entry) {
       if (records.length >= maxRecords) records.shift();
       records.push(entry);
+    }
+
+    function truncateString(value) {
+      if (value.length <= 120) return value;
+      return value.slice(0, 117) + "...";
+    }
+
+    function sanitizeMetaValue(value) {
+      if (value == null) return value;
+      var valueType = typeof value;
+      if (valueType === "string") return truncateString(value);
+      if (valueType === "number") return Number.isFinite(value) ? value : String(value);
+      if (valueType === "boolean") return value;
+      return String(value);
+    }
+
+    function sanitizeMeta(meta) {
+      if (!meta) return undefined;
+      if (typeof meta === "function") meta = meta();
+      if (!meta || typeof meta !== "object") return undefined;
+      var out = {};
+      Object.keys(meta).slice(0, 24).forEach(function (key) {
+        out[key] = sanitizeMetaValue(meta[key]);
+      });
+      return out;
+    }
+
+    function addMeta(entry, meta) {
+      var cleanMeta = sanitizeMeta(meta);
+      if (cleanMeta && Object.keys(cleanMeta).length > 0) entry.meta = cleanMeta;
+      return entry;
+    }
+
+    function summarizeResourceName(name) {
+      if (!name || typeof name !== "string") return "unknown";
+      try {
+        var url = new URL(name, window.location && window.location.href ? window.location.href : undefined);
+        var path = url.pathname || "";
+        if (path.indexOf(".pmtiles") !== -1) return "pmtiles:" + path.split("/").pop();
+        if (path.indexOf(".json") !== -1 || path.indexOf(".geojson") !== -1) return "json:" + path.split("/").pop();
+        if (path.indexOf(".pbf") !== -1) return "glyph-or-vector:" + path.split("/").pop();
+        if (/\.(?:png|jpg|jpeg|webp)$/i.test(path)) return "raster:" + path.split("/").pop();
+        return url.host || truncateString(name);
+      } catch (e1) {
+        return truncateString(name);
+      }
+    }
+
+    function classifyResource(name) {
+      if (!name || typeof name !== "string") return "other";
+      if (name.indexOf(".pmtiles") !== -1) return "pmtiles";
+      if (name.indexOf(".geojson") !== -1 || name.indexOf(".json") !== -1) return "json";
+      if (name.indexOf(".pbf") !== -1) return "glyph-or-vector";
+      if (/\.(?:png|jpg|jpeg|webp)(?:\?|$)/i.test(name)) return "raster";
+      return "other";
+    }
+
+    function recordResourceSummary(label) {
+      if (!enabled || !performance || typeof performance.getEntriesByType !== "function") return;
+      var entries = performance.getEntriesByType("resource") || [];
+      var buckets = {};
+      entries.forEach(function (entry) {
+        var kind = classifyResource(entry.name);
+        var bucket = buckets[kind] || { count: 0, ms: 0, bytes: 0, last: "" };
+        bucket.count += 1;
+        bucket.ms += Number(entry.duration) || 0;
+        bucket.bytes += Number(entry.transferSize) || 0;
+        bucket.last = summarizeResourceName(entry.name);
+        buckets[kind] = bucket;
+      });
+      Object.keys(buckets).forEach(function (kind) {
+        var bucket = buckets[kind];
+        push({
+          kind: "resourceSummary",
+          name: label || "resources",
+          t: performance.now(),
+          meta: {
+            bucket: kind,
+            count: bucket.count,
+            durationMs: Math.round(bucket.ms),
+            transferBytes: bucket.bytes,
+            last: bucket.last,
+          },
+        });
+      });
     }
 
     return {
@@ -23,6 +120,70 @@
       session: function (label) {
         if (!enabled) return;
         push({ kind: "session", name: label || "session", t: performance.now(), ts: Date.now() });
+      },
+      mark: function (name, meta) {
+        if (!enabled) return;
+        push(addMeta({ kind: "mark", name: name, t: performance.now() }, meta));
+      },
+      counter: function (name, meta) {
+        if (!enabled) return;
+        push(addMeta({ kind: "counter", name: name, t: performance.now() }, meta));
+      },
+      span: function (name, meta, fn) {
+        if (typeof meta === "function" && !fn) {
+          fn = meta;
+          meta = undefined;
+        }
+        if (!enabled) return fn();
+        depth++;
+        var d = depth - 1;
+        var t0 = performance.now();
+        try {
+          return fn();
+        } finally {
+          var ms = performance.now() - t0;
+          depth--;
+          push(addMeta({ kind: "span", name: name, ms: ms, depth: d, t: performance.now() }, meta));
+        }
+      },
+      spanAsync: function (name, meta, promiseOrFactory) {
+        if (arguments.length === 2) {
+          promiseOrFactory = meta;
+          meta = undefined;
+        }
+        if (!enabled) {
+          return typeof promiseOrFactory === "function" ? promiseOrFactory() : promiseOrFactory;
+        }
+        var t0 = performance.now();
+        var p;
+        try {
+          p = typeof promiseOrFactory === "function" ? promiseOrFactory() : promiseOrFactory;
+        } catch (err0) {
+          push(addMeta({
+            kind: "spanAsync",
+            name: name,
+            ms: performance.now() - t0,
+            t: performance.now(),
+            error: err0 && err0.message ? err0.message : String(err0),
+          }, meta));
+          throw err0;
+        }
+        return Promise.resolve(p).then(
+          function (v) {
+            push(addMeta({ kind: "spanAsync", name: name, ms: performance.now() - t0, t: performance.now() }, meta));
+            return v;
+          },
+          function (err) {
+            push(addMeta({
+              kind: "spanAsync",
+              name: name,
+              ms: performance.now() - t0,
+              t: performance.now(),
+              error: err && err.message ? err.message : String(err),
+            }, meta));
+            throw err;
+          }
+        );
       },
       phase: function (name, fn) {
         if (!enabled) return fn();
@@ -57,6 +218,8 @@
           }
         );
       },
+      recordResourceSummary: recordResourceSummary,
+      observeResourceTiming: recordResourceSummary,
       clear: function () {
         records.length = 0;
       },

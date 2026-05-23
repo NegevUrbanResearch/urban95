@@ -52,6 +52,12 @@ function runControlActionsModule() {
   return browser.window.Urban95ControlActions;
 }
 
+function runPerfPanel(browserOverrides) {
+  const browser = createBrowserContext(browserOverrides || {});
+  runBrowserScript("docs/js/core/perfPanel.js", browser);
+  return browser.window.urban95Perf;
+}
+
 function loadAppCoordinatorNamespaces(browser) {
   runBrowserScript("docs/js/core/logger.js", browser);
   runBrowserScript("docs/js/core/startup.js", browser);
@@ -329,6 +335,96 @@ test("logger stays disabled when localStorage access throws", () => {
   assert.deepEqual(calls, []);
 });
 
+test("perf panel exposes compact metadata helpers without eager disabled metadata", () => {
+  let metaEvaluations = 0;
+  const perf = runPerfPanel();
+
+  assert.equal(perf.enabled, false);
+  assert.equal(typeof perf.mark, "function");
+  assert.equal(typeof perf.span, "function");
+  assert.equal(typeof perf.spanAsync, "function");
+  assert.equal(typeof perf.counter, "function");
+  assert.equal(typeof perf.recordResourceSummary, "function");
+
+  perf.mark("disabled-mark", function () {
+    metaEvaluations += 1;
+    return { expensive: true };
+  });
+  perf.counter("disabled-counter", function () {
+    metaEvaluations += 1;
+    return { expensive: true };
+  });
+  const spanResult = perf.span("disabled-span", function () {
+    metaEvaluations += 1;
+    return { expensive: true };
+  }, function () {
+    return 42;
+  });
+
+  assert.equal(spanResult, 42);
+  assert.equal(metaEvaluations, 0);
+  assert.equal(perf.records.length, 0);
+});
+
+test("perf panel records scalar-only metadata and preserves phase behavior", async () => {
+  const perf = runPerfPanel({
+    location: {
+      href: "http://localhost:8080/docs/index.html?perf=1",
+      search: "?perf=1",
+    },
+    document: {
+      readyState: "loading",
+      addEventListener() {},
+      getElementById() {
+        return null;
+      },
+    },
+    performance: {
+      now() {
+        return 10;
+      },
+      getEntriesByType() {
+        return [];
+      },
+    },
+  });
+
+  assert.equal(perf.enabled, true);
+  assert.equal(perf.phase("legacy-phase", () => "ok"), "ok");
+  assert.equal(perf.span("span-with-meta", {
+    scalar: "value",
+    count: 2,
+    flag: true,
+    objectValue: { too: "big" },
+    long: "x".repeat(150),
+  }, () => "span-ok"), "span-ok");
+  assert.equal(await perf.phaseAsync("legacy-async", Promise.resolve("async-ok")), "async-ok");
+  assert.equal(
+    await perf.spanAsync("async-with-meta", () => ({ lazy: "yes" }), () => Promise.resolve("span-async-ok")),
+    "span-async-ok"
+  );
+
+  const spanRecord = perf.records.find((record) => record.name === "span-with-meta");
+  assert.equal(spanRecord.kind, "span");
+  assert.deepEqual(
+    {
+      scalar: spanRecord.meta.scalar,
+      count: spanRecord.meta.count,
+      flag: spanRecord.meta.flag,
+      objectValue: spanRecord.meta.objectValue,
+    },
+    {
+      scalar: "value",
+      count: 2,
+      flag: true,
+      objectValue: "[object Object]",
+    }
+  );
+  assert.equal(spanRecord.meta.long.length, 120);
+  assert.ok(perf.records.some((record) => record.kind === "phase" && record.name === "legacy-phase"));
+  assert.ok(perf.records.some((record) => record.kind === "phaseAsync" && record.name === "legacy-async"));
+});
+
 test("core modules expose stable Urban95 namespaces", () => {
   const browser = createBrowserContext({
     URBAN95_GENERATED_ARTIFACTS: {
@@ -374,6 +470,11 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95RuntimeData.createLoaders, "function");
   assert.equal(typeof browser.window.Urban95Startup.run, "function");
   assert.equal(typeof browser.window.urban95Perf.phase, "function");
+  assert.equal(typeof browser.window.urban95Perf.mark, "function");
+  assert.equal(typeof browser.window.urban95Perf.span, "function");
+  assert.equal(typeof browser.window.urban95Perf.spanAsync, "function");
+  assert.equal(typeof browser.window.urban95Perf.counter, "function");
+  assert.equal(typeof browser.window.urban95Perf.recordResourceSummary, "function");
   assert.equal(typeof browser.window.Urban95ScoreModel.getBuildingOverallScore, "function");
   assert.equal(typeof browser.window.Urban95MapLayers.resolveBuildingContracts, "function");
   assert.equal(typeof browser.window.Urban95MapLayers.createPmtilesProtocol, "function");
@@ -1785,6 +1886,13 @@ test("map events register expected handlers and call injected dependencies", () 
       (handler) => handler.eventName === "click" && handler.layer === "neighborhoods-surface"
     )
   );
+  ["sourcedataloading", "sourcedata", "data", "movestart", "moveend", "idle"].forEach(function (eventName) {
+    assert.equal(
+      handlers.some((handler) => handler.eventName === eventName),
+      false,
+      "disabled perf must not register diagnostic " + eventName + " listener"
+    );
+  });
 
   handlers.find((handler) => handler.eventName === "zoomend").handler();
   assert.ok(calls.includes("updateTreesSource"));
@@ -3228,6 +3336,36 @@ test("mode controller ignores stale neighborhood async commits after switching b
   assert.equal(
     postResolveCalls.some(function (call) {
       return call[0] === "map:fitBounds";
+    }),
+    false
+  );
+});
+
+test("mode controller does not register diagnostic settle listeners when perf is disabled", async () => {
+  const harness = createModeControllerHarness(function (deps, calls) {
+    deps.runtime.map.once = function (eventName) {
+      calls.push(["map:once", eventName]);
+    };
+    deps.runtime.perf.enabled = false;
+    deps.integrations.dashboards.loadNeighborhoods = function () {
+      calls.push(["dashboards:loadNeighborhoods"]);
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: {} }],
+      });
+    };
+  });
+
+  await harness.controller.switchMode("neighborhood");
+
+  assert.ok(
+    harness.calls.some(function (call) {
+      return call[0] === "map:fitBounds";
+    })
+  );
+  assert.equal(
+    harness.calls.some(function (call) {
+      return call[0] === "map:once";
     }),
     false
   );
