@@ -134,7 +134,7 @@
     resetPointHoverState();
     updateTreesSource();
     updateStreetLightsSource();
-    updateDeckAmenityLayers();
+    updateDeckAmenityLayers({ caller: "applyShowPointsToggle" });
   }
 
   function getSpecialPointRenderPlan(config) {
@@ -326,7 +326,7 @@
           source.setData({ type: "FeatureCollection", features: [] });
         });
         d.setVisibleAmenityFeatures([]);
-        updateDeckAmenityLayers();
+        updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "weighted" });
         return;
       }
 
@@ -336,7 +336,7 @@
           source.setData({ type: "FeatureCollection", features: [] });
         });
         d.setVisibleAmenityFeatures([]);
-        updateDeckAmenityLayers();
+        updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "noSelection" });
         return;
       }
 
@@ -353,7 +353,7 @@
           source.setData({ type: "FeatureCollection", features: [] });
         });
         d.setVisibleAmenityFeatures([]);
-        updateDeckAmenityLayers();
+        updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "hidden" });
         return;
       }
 
@@ -374,7 +374,7 @@
         source.setData({ type: "FeatureCollection", features: updatedFeatures });
       });
       d.setVisibleAmenityFeatures(updatedFeatures);
-      updateDeckAmenityLayers();
+      updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "visible" });
     });
   }
 
@@ -729,8 +729,18 @@
     });
   }
 
-  function updateDeckAmenityLayers() {
+  function updateDeckAmenityLayers(meta) {
     var d = requireDeps();
+    perfCounter(d, "renderer:updateDeckAmenityLayers:start", function () {
+      return Object.assign(
+        {
+          scoreMode: d.getScoreMode(),
+          mode: d.getCurrentMode(),
+          visibleFeatures: d.getVisibleAmenityFeatures().length,
+        },
+        meta || {}
+      );
+    });
     return d.urban95Perf.phase("updateDeckAmenityLayers", function () {
       var toggleAllows =
         d.getScoreMode() !== "expanded" || !d.getShowAmenityPointsTogglePresent() || d.getShowAmenityPointsChecked();
@@ -756,7 +766,7 @@
         d.ensureDeckGlLoaded()
           .then(function () {
             initDeckAmenityOverlay();
-            updateDeckAmenityLayers();
+            updateDeckAmenityLayers({ caller: "ensureDeckGlLoaded" });
           })
           .catch(function (err) {
             console.error("Failed to initialize deck.gl overlay:", err);
@@ -936,10 +946,14 @@
     });
   }
 
-  function scheduleDeckUpdate() {
+  function scheduleDeckUpdate(reason) {
     var d = requireDeps();
     clearTimeout(d.getDeckUpdateTimer());
-    d.setDeckUpdateTimer(setTimeout(updateDeckAmenityLayers, 80));
+    d.setDeckUpdateTimer(
+      setTimeout(function () {
+        updateDeckAmenityLayers({ caller: "scheduleDeckUpdate", reason: reason || "" });
+      }, 80)
+    );
   }
 
   function initDeckAmenityOverlay() {
@@ -949,9 +963,15 @@
     var overlay = new deckLib.MapboxOverlay({ interleaved: true, layers: [] });
     d.setDeckAmenityOverlay(overlay);
     d.map.addControl(overlay);
-    d.map.on("moveend", scheduleDeckUpdate);
-    d.map.on("zoomend", scheduleDeckUpdate);
-    d.map.on("resize", updateDeckAmenityLayers);
+    d.map.on("moveend", function () {
+      scheduleDeckUpdate("moveend");
+    });
+    d.map.on("zoomend", function () {
+      scheduleDeckUpdate("zoomend");
+    });
+    d.map.on("resize", function () {
+      updateDeckAmenityLayers({ caller: "resize" });
+    });
   }
 
   function updateBuildingColors() {

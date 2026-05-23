@@ -183,8 +183,12 @@
           }
         }
 
-        return amenityMode.apply().then(function () {
-          if (state.getSelectedBuilding()) {
+        return perfSpan("scoreModelToggle:applyScoreModeAmenities", flowMeta, function () {
+          return amenityMode.apply();
+        }).then(function (applyResult) {
+          var selectedBuildingWasRefreshed =
+            applyResult && applyResult.refreshedSelectedBuilding === true;
+          if (state.getSelectedBuilding() && !selectedBuildingWasRefreshed) {
             perfSpan("scoreModelToggle:updateRadiusInfo", flowMeta, function () {
               selection.updateRadiusInfo();
             });

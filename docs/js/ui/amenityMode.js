@@ -149,7 +149,7 @@
               }, function () {
                 selection.selectBuilding(selectedBuilding, false);
               });
-              return;
+              return { refreshedSelectedBuilding: true };
             }
 
             perfSpan("amenityMode.apply:fallbackPointSourceRefresh", function () {
@@ -159,6 +159,7 @@
               renderers.updateTreesSource();
               renderers.updateStreetLightsSource();
             });
+            return { refreshedSelectedBuilding: false };
           });
       });
     }

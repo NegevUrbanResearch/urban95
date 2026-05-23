@@ -896,6 +896,7 @@ const amenityMode = Urban95AmenityMode.create({
     canRefreshPointAnalysisAfterPointDataLoad: pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad,
   },
   renderers: {
+    syncPointLayerVisibility: Urban95MapRenderers.syncPointLayerVisibility,
     applyShowPointsToggle: Urban95MapRenderers.applyShowPointsToggle,
     updateAmenitiesSource: Urban95MapRenderers.updateAmenitiesSource,
     updateTreesSource: Urban95MapRenderers.updateTreesSource,

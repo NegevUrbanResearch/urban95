@@ -774,8 +774,9 @@ test("amenity mode selected-building apply lets selection own radius-derived poi
     },
   });
 
-  await amenityMode.apply();
+  const result = await amenityMode.apply();
 
+  assert.equal(result.refreshedSelectedBuilding, true);
   assert.deepEqual(
     calls.filter((item) => item === "updateAmenitiesSource" || item === "updateTreesSource" || item === "updateStreetLightsSource"),
     [],
@@ -783,6 +784,60 @@ test("amenity mode selected-building apply lets selection own radius-derived poi
   );
   assert.equal(calls.filter((item) => Array.isArray(item) && item[0] === "selectBuilding").length, 1);
   assert.ok(calls.includes("updateBuildingColors"));
+});
+
+test("amenity mode no-selection apply reports fallback refresh result", async () => {
+  const AmenityMode = runAmenityModeModule();
+  const calls = [];
+  const state = {
+    getScoreMode: () => "expanded",
+    getCleanData: () => ({ type: "FeatureCollection", features: [{ properties: { amenity_type: "school" } }] }),
+    getCleanTypes: () => ["school"],
+    getCleanTypesWithData: () => new Set(["school"]),
+    getLegacyData: () => ({ type: "FeatureCollection", features: [{ properties: { amenity_type: "school" } }] }),
+    getLegacyTypes: () => ["school"],
+    getLegacyTypesWithData: () => new Set(["school"]),
+    setAllAmenitiesData: () => calls.push("setAllAmenitiesData"),
+    setAllAmenityTypes: () => calls.push("setAllAmenityTypes"),
+    setTypesWithData: () => calls.push("setTypesWithData"),
+    clearRadiusIds: () => calls.push("clearRadiusIds"),
+    getCurrentMode: () => "house",
+    getSelectedBuilding: () => null,
+  };
+  const amenityMode = AmenityMode.create({
+    perf: { phase: (_name, callback) => callback() },
+    logger: { warn: () => {} },
+    state,
+    ui: {
+      buildFilterItems: () => calls.push("buildFilterItems"),
+      syncFilterUiForScoreMode: () => calls.push("syncFilterUiForScoreMode"),
+      updateShowPointsToggleLabel: () => calls.push("updateShowPointsToggleLabel"),
+    },
+    pointDataLoader: {
+      ensureExpandedPointDataLoaded: () => Promise.resolve({ upgradedKinds: [] }),
+      canRefreshPointAnalysisAfterPointDataLoad: () => true,
+    },
+    renderers: {
+      syncPointLayerVisibility: () => calls.push("syncPointLayerVisibility"),
+      applyShowPointsToggle: () => calls.push("applyShowPointsToggle"),
+      updateAmenitiesSource: () => calls.push("updateAmenitiesSource"),
+      updateTreesSource: () => calls.push("updateTreesSource"),
+      updateStreetLightsSource: () => calls.push("updateStreetLightsSource"),
+      updateBuildingColors: () => calls.push("updateBuildingColors"),
+      updateNeighborhoodSurfaceData: () => calls.push("updateNeighborhoodSurfaceData"),
+    },
+    selection: {
+      selectBuilding: (building, doFly) => calls.push(["selectBuilding", building, doFly]),
+    },
+  });
+
+  const result = await amenityMode.apply();
+
+  assert.equal(result.refreshedSelectedBuilding, false);
+  assert.ok(calls.includes("updateAmenitiesSource"));
+  assert.ok(calls.includes("updateTreesSource"));
+  assert.ok(calls.includes("updateStreetLightsSource"));
+  assert.equal(calls.filter((item) => Array.isArray(item) && item[0] === "selectBuilding").length, 0);
 });
 
 test("control actions own score-mode, filter, walk-minute, escape, and heatmap reactions", async () => {
@@ -812,6 +867,10 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
     perf: {
       session: function (name) {
         calls.push("session:" + name);
+      },
+      span: function (name, _meta, callback) {
+        calls.push("span:" + name);
+        return callback();
       },
       phase: function (name, callback) {
         calls.push("phase:" + name);
@@ -980,7 +1039,9 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
     "phase:scoreModelToggle:handler",
     "showIso",
     "loadIso:false",
+    "span:scoreModelToggle:applyScoreModeAmenities",
     "amenityApply",
+    "span:scoreModelToggle:updateRadiusInfo",
     "radiusInfo",
   ]);
   assertSubsequence([
@@ -988,7 +1049,9 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
     "phase:scoreModelToggle:handler",
     "waitingIso",
     "isoDeferred",
+    "span:scoreModelToggle:applyScoreModeAmenities",
     "amenityApply",
+    "span:scoreModelToggle:updateRadiusInfo",
     "radiusInfo",
     "surface",
     "selectBuilding:false",
@@ -1015,6 +1078,283 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
   assert.ok(calls.includes("heatmap none"));
   assert.ok(calls.includes("isoDeferred"));
   assert.ok(!calls.includes("mark:isochrones"));
+});
+
+test("control actions skip direct radius sync when amenity mode reselected the building", async () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const actions = ControlActions.create({
+    perf: {
+      session: () => {},
+      mark: () => {},
+      phase: (_name, callback) => callback(),
+      span: (name, _meta, callback) => {
+        calls.push("span:" + name);
+        return callback();
+      },
+    },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => ({ lng: 1, lat: 2 }),
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => true,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => true },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => {},
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: { apply: () => Promise.resolve({ refreshedSelectedBuilding: true }) },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => {},
+      updateTreesSource: () => {},
+      updateStreetLightsSource: () => {},
+      updateBuildingColors: () => {},
+      updateNeighborhoodSurfaceData: () => {},
+      updateNeighborhoodColors: () => {},
+    },
+    selection: {
+      loadIsochrones: () => Promise.resolve(),
+      selectBuilding: () => {},
+      updateRadiusInfo: () => calls.push("updateRadiusInfo"),
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: { isOpen: () => false, hide: () => {} },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+  });
+
+  await actions.onScoreModeChanged("expanded");
+
+  assert.equal(calls.includes("span:scoreModelToggle:updateRadiusInfo"), false);
+  assert.equal(calls.includes("updateRadiusInfo"), false);
+});
+
+test("control actions keep direct radius sync when amenity mode did not refresh the building", async () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const actions = ControlActions.create({
+    perf: {
+      session: () => {},
+      mark: () => {},
+      phase: (_name, callback) => callback(),
+      span: (name, _meta, callback) => {
+        calls.push("span:" + name);
+        return callback();
+      },
+    },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => ({ lng: 1, lat: 2 }),
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => true,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => true },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => {},
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: { apply: () => Promise.resolve({ refreshedSelectedBuilding: false }) },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => {},
+      updateTreesSource: () => {},
+      updateStreetLightsSource: () => {},
+      updateBuildingColors: () => {},
+      updateNeighborhoodSurfaceData: () => {},
+      updateNeighborhoodColors: () => {},
+    },
+    selection: {
+      loadIsochrones: () => Promise.resolve(),
+      selectBuilding: () => {},
+      updateRadiusInfo: () => calls.push("updateRadiusInfo"),
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: { isOpen: () => false, hide: () => {} },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+  });
+
+  await actions.onScoreModeChanged("expanded");
+
+  assert.ok(calls.includes("span:scoreModelToggle:updateRadiusInfo"));
+  assert.ok(calls.includes("updateRadiusInfo"));
+});
+
+test("control actions do not direct-sync stale rapid toggles when amenity mode reselected", async () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const pending = [];
+  const actions = ControlActions.create({
+    perf: {
+      session: () => {},
+      mark: () => {},
+      phase: (_name, callback) => callback(),
+      span: (name, _meta, callback) => {
+        calls.push("span:" + name);
+        return callback();
+      },
+    },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => ({ lng: 1, lat: 2 }),
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => true,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => true },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => {},
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: {
+      apply: () => new Promise((resolve) => pending.push(resolve)),
+    },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => {},
+      updateTreesSource: () => {},
+      updateStreetLightsSource: () => {},
+      updateBuildingColors: () => {},
+      updateNeighborhoodSurfaceData: () => {},
+      updateNeighborhoodColors: () => {},
+    },
+    selection: {
+      loadIsochrones: () => Promise.resolve(),
+      selectBuilding: () => {},
+      updateRadiusInfo: () => calls.push("updateRadiusInfo"),
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: { isOpen: () => false, hide: () => {} },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+  });
+
+  const first = actions.onScoreModeChanged("expanded");
+  const second = actions.onScoreModeChanged("weighted");
+
+  assert.equal(pending.length, 2);
+  pending[1]({ refreshedSelectedBuilding: true });
+  await second;
+  pending[0]({ refreshedSelectedBuilding: true });
+  await first;
+
+  assert.equal(calls.includes("span:scoreModelToggle:updateRadiusInfo"), false);
+  assert.equal(calls.includes("updateRadiusInfo"), false);
+});
+
+test("control actions no-selection score-mode path keeps sidebar closed and skips direct radius sync", async () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const actions = ControlActions.create({
+    perf: {
+      session: () => {},
+      mark: () => {},
+      phase: (_name, callback) => callback(),
+      span: (name, _meta, callback) => {
+        calls.push("span:" + name);
+        return callback();
+      },
+    },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => null,
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => true,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => true },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => {},
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: {
+      apply: () => {
+        calls.push("updateAmenitiesSource");
+        return Promise.resolve({ refreshedSelectedBuilding: false });
+      },
+    },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => {},
+      updateTreesSource: () => {},
+      updateStreetLightsSource: () => {},
+      updateBuildingColors: () => {},
+      updateNeighborhoodSurfaceData: () => {},
+      updateNeighborhoodColors: () => {},
+    },
+    selection: {
+      loadIsochrones: () => Promise.resolve(),
+      selectBuilding: () => calls.push("selectBuilding"),
+      updateRadiusInfo: () => calls.push("updateRadiusInfo"),
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: {
+      isOpen: () => {
+        calls.push("scoreSidebar:isOpen");
+        return false;
+      },
+      hide: () => calls.push("scoreSidebar:hide"),
+    },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+  });
+
+  await actions.onScoreModeChanged("expanded");
+
+  assert.ok(calls.includes("updateAmenitiesSource"));
+  assert.equal(calls.includes("span:scoreModelToggle:updateRadiusInfo"), false);
+  assert.equal(calls.includes("updateRadiusInfo"), false);
+  assert.equal(calls.includes("selectBuilding"), false);
+  assert.equal(calls.includes("scoreSidebar:isOpen"), false);
+  assert.equal(calls.includes("scoreSidebar:hide"), false);
 });
 
 test("filter changes with selected building recompute selection before point-source refresh", () => {
@@ -1936,6 +2276,215 @@ test("special point render plan respects tree and light toggles in expanded mode
   assert.equal(plan.vectorVisible, false);
   assert.equal(plan.features.type, "FeatureCollection");
   assert.equal(plan.features.features.length, 0);
+});
+
+test("map renderers keep deck-update caller diagnostics on explicit, scheduled, and late deck-init paths", async () => {
+  let scheduledTimer = null;
+  let scheduledDelay = null;
+  let nextTimerId = 0;
+  const browser = createBrowserContext({
+    setTimeout(callback, delay) {
+      scheduledTimer = callback;
+      scheduledDelay = delay;
+      nextTimerId += 1;
+      return nextTimerId;
+    },
+    clearTimeout() {
+      scheduledTimer = null;
+      scheduledDelay = null;
+    },
+  });
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  let visibleAmenityFeatures = [];
+  let deckUpdateTimer = null;
+  let deckAmenityOverlay = null;
+  let resolveDeckLoaded;
+  const deckLoaded = new Promise((resolve) => {
+    resolveDeckLoaded = resolve;
+  });
+  const sources = {
+    amenities: { setData() {} },
+    trees: { setData() {} },
+    "street-lights": { setData() {} },
+  };
+  browser.window.deck = {
+    MapboxOverlay: function MapboxOverlay(options) {
+      this.options = options;
+      this.setProps = function (props) {
+        this.props = props;
+      };
+    },
+  };
+
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getLayer() {
+        return null;
+      },
+      setLayoutProperty() {},
+      getSource(id) {
+        return sources[id] || null;
+      },
+      getZoom() {
+        return 14;
+      },
+      getCanvas() {
+        return { style: {} };
+      },
+      addControl() {},
+      on() {},
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    treeLayerIds: [],
+    streetLightLayerIds: [],
+    treesAndLightsLayerIds: [],
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks", "trees", "street-lights"];
+    },
+    getShowTreesChecked() {
+      return true;
+    },
+    getShowLightsChecked() {
+      return true;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    setVisibleAmenityFeatures(value) {
+      visibleAmenityFeatures = value;
+    },
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "parks" } }],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getTreesInRadiusIds() {
+      return new Set();
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getStreetLightsInRadiusIds() {
+      return new Set();
+    },
+    getDeckAmenityOverlay() {
+      return deckAmenityOverlay;
+    },
+    setDeckAmenityOverlay(value) {
+      deckAmenityOverlay = value;
+    },
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    ensureDeckGlLoaded() {
+      return deckLoaded;
+    },
+    getDeckUpdateTimer() {
+      return deckUpdateTimer;
+    },
+    setDeckUpdateTimer(value) {
+      deckUpdateTimer = value;
+    },
+  });
+
+  browser.window.Urban95MapRenderers.applyShowPointsToggle();
+  const beforeSyncCounters = counters.length;
+  browser.window.Urban95MapRenderers.syncPointLayerVisibility();
+  const syncCounters = counters.slice(beforeSyncCounters).filter(
+    (entry) => entry.name === "renderer:updateDeckAmenityLayers:start"
+  );
+  assert.equal(syncCounters.length, 0);
+  const beforeDeckInitCounters = counters.length;
+  browser.window.Urban95MapRenderers.updateAmenitiesSource();
+  const initPendingCounters = counters.slice(beforeDeckInitCounters).filter(
+    (entry) => entry.name === "renderer:deckAmenityLayers" && entry.meta && entry.meta.branch === "initPending"
+  );
+  assert.equal(initPendingCounters.length, 1);
+  assert.equal(deckAmenityOverlay, null);
+  resolveDeckLoaded();
+  await deckLoaded;
+  await Promise.resolve();
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  assert.equal(typeof scheduledTimer, "function");
+  assert.equal(scheduledDelay, 80);
+  scheduledTimer();
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
+  assert.equal(typeof scheduledTimer, "function");
+  scheduledTimer();
+
+  const deckCounters = counters.filter(
+    (entry) => entry.name === "renderer:updateDeckAmenityLayers:start"
+  );
+  assert.ok(deckCounters.length >= 4);
+  assert.ok(deckCounters.some((entry) => entry.meta && entry.meta.caller === "applyShowPointsToggle"));
+  assert.ok(deckCounters.some((entry) => entry.meta && entry.meta.caller === "updateAmenitiesSource"));
+  assert.ok(
+    deckCounters.some(
+      (entry) =>
+        entry.meta &&
+        entry.meta.caller === "ensureDeckGlLoaded" &&
+        entry.meta.scoreMode === "expanded" &&
+        entry.meta.mode === "house"
+    )
+  );
+  assert.ok(
+    deckCounters.some(
+      (entry) =>
+        entry.meta &&
+        entry.meta.caller === "scheduleDeckUpdate" &&
+        entry.meta.reason === "moveend"
+    )
+  );
+  assert.ok(
+    deckCounters.some(
+      (entry) =>
+        entry.meta &&
+        entry.meta.caller === "scheduleDeckUpdate" &&
+        entry.meta.reason === "zoomend"
+    )
+  );
 });
 
 test("map events register expected handlers and call injected dependencies", () => {
@@ -2998,7 +3547,7 @@ test("task-5 app coordinator passes focused grouped amenity mode dependencies", 
   );
   assert.match(
     amenityModeSource,
-    /renderers:\s*\{\s*applyShowPointsToggle:\s*Urban95MapRenderers\.applyShowPointsToggle,\s*updateAmenitiesSource:\s*Urban95MapRenderers\.updateAmenitiesSource,\s*updateTreesSource:\s*Urban95MapRenderers\.updateTreesSource,\s*updateStreetLightsSource:\s*Urban95MapRenderers\.updateStreetLightsSource,\s*updateBuildingColors:\s*Urban95MapRenderers\.updateBuildingColors,\s*updateNeighborhoodSurfaceData:\s*Urban95MapRenderers\.updateNeighborhoodSurfaceData,\s*\}/s
+    /renderers:\s*\{\s*syncPointLayerVisibility:\s*Urban95MapRenderers\.syncPointLayerVisibility,\s*applyShowPointsToggle:\s*Urban95MapRenderers\.applyShowPointsToggle,\s*updateAmenitiesSource:\s*Urban95MapRenderers\.updateAmenitiesSource,\s*updateTreesSource:\s*Urban95MapRenderers\.updateTreesSource,\s*updateStreetLightsSource:\s*Urban95MapRenderers\.updateStreetLightsSource,\s*updateBuildingColors:\s*Urban95MapRenderers\.updateBuildingColors,\s*updateNeighborhoodSurfaceData:\s*Urban95MapRenderers\.updateNeighborhoodSurfaceData,\s*\}/s
   );
   assert.match(
     amenityModeSource,
@@ -3960,6 +4509,10 @@ test("selection commits selected building shell before deferred sidebar detail w
     context.calls.filter((call) => call[0] === "syncScoreSidebar").map((call) => call[1]),
     [88]
   );
+  assert.equal(
+    context.calls.some((call) => call[0] === "syncScoreSidebar" && call[1] === 87),
+    false
+  );
   assert.deepEqual(
     context.calls.filter((call) => call[0] === "setAmenitiesInRadiusIds").map((call) => call[1]),
     [[1, 2]]
@@ -3983,6 +4536,10 @@ test("selection clear invalidates deferred selected-building work", () => {
   );
   assert.equal(
     context.calls.some((call) => call[0] === "syncScoreSidebar"),
+    false
+  );
+  assert.equal(
+    context.calls.some((call) => call[0] === "syncScoreSidebar" && call[1] === 87),
     false
   );
   assert.deepEqual(
