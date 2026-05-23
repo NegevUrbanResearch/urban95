@@ -2,6 +2,7 @@
   var deps = null;
   var hasRadiusOverlayData = false;
   var hasSelectedBuildingOverlayData = false;
+  var selectedBuildingRefreshGeneration = 0;
 
   function configure(nextDeps) {
     deps = nextDeps || null;
@@ -33,6 +34,19 @@
     if (d.urban95Perf && typeof d.urban95Perf.mark === "function") {
       d.urban95Perf.mark(name, meta);
     }
+  }
+
+  function nextSelectedBuildingRefreshToken() {
+    selectedBuildingRefreshGeneration += 1;
+    return selectedBuildingRefreshGeneration;
+  }
+
+  function isCurrentSelectedBuildingRefreshToken(token) {
+    return token === selectedBuildingRefreshGeneration;
+  }
+
+  function invalidateSelectedBuildingRefreshToken() {
+    selectedBuildingRefreshGeneration += 1;
   }
 
   function featureCount(data) {
@@ -366,8 +380,35 @@
     });
   }
 
+  function showSelectedBuildingSidebarShell(d, building) {
+    if (typeof d.showScoreExplainSidebarShell === "function") {
+      d.showScoreExplainSidebarShell(building);
+    }
+  }
+
+  function requestAnimationFrameOrNow(d, callback) {
+    if (typeof d.requestAnimationFrame === "function") {
+      return d.requestAnimationFrame(callback);
+    }
+    return callback();
+  }
+
+  function scheduleSelectedBuildingDetailSync(token) {
+    var d = requireDeps();
+    requestAnimationFrameOrNow(d, function () {
+      if (!isCurrentSelectedBuildingRefreshToken(token)) return;
+      perfSpan(
+        d,
+        "selectedBuilding:deferredSidebarRadiusUpdate",
+        null,
+        updateRadiusInfo
+      );
+    });
+  }
+
   function selectBuilding(building, doFly) {
     var d = requireDeps();
+    var refreshToken = nextSelectedBuildingRefreshToken();
     var shouldFly = doFly !== false;
     perfMark(d, "selection:selectBuilding:start", function () {
       return {
@@ -404,14 +445,15 @@
         d.setTreesInRadiusIds(new Set());
         d.setStreetLightsInRadiusIds(new Set());
         d.setLatestRadiusCounts({});
+        var weightedRadiusPolygon = buildUrban95ReferenceRadius(building.lng, building.lat);
+        var weightedFlyZoom = shouldFly
+          ? Math.max(d.map.getZoom(), d.getZoomForPolygon(weightedRadiusPolygon))
+          : null;
 
         var weightedRadiusSource = d.map.getSource(d.radiusSourceId);
         perfSpan(d, "selection:weightedRadiusSource", null, function () {
           if (weightedRadiusSource) {
-            setRadiusSourceData(
-              weightedRadiusSource,
-              buildUrban95ReferenceRadius(building.lng, building.lat)
-            );
+            setRadiusSourceData(weightedRadiusSource, weightedRadiusPolygon);
           }
         });
 
@@ -420,14 +462,14 @@
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
-        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "weighted" }, updateRadiusInfo);
+        showSelectedBuildingSidebarShell(d, building);
+        scheduleSelectedBuildingDetailSync(refreshToken);
 
         if (shouldFly) {
-          var radiusPolygon = buildUrban95ReferenceRadius(building.lng, building.lat);
           perfSpan(d, "selection:flySchedule", { branch: "weighted" }, function () {
             d.map.easeTo({
               center: [building.lng, building.lat],
-              zoom: Math.max(d.map.getZoom(), d.getZoomForPolygon(radiusPolygon)),
+              zoom: weightedFlyZoom,
               duration: 1400,
               easing: easeInOutQuad,
               essential: true,
@@ -453,6 +495,7 @@
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
+        showSelectedBuildingSidebarShell(d, building);
         d.showIsochroneLoadingScreen();
         perfSpan(d, "selection:loadIsochronesTrigger", null, function () {
           loadIsochrones();
@@ -468,7 +511,7 @@
             });
           });
         }
-        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "isochronesPending" }, updateRadiusInfo);
+        scheduleSelectedBuildingDetailSync(refreshToken);
         return;
       }
 
@@ -483,11 +526,13 @@
       }
 
       if (polygon) {
+        var isochroneFlyZoom = shouldFly ? d.getZoomForPolygon(polygon) : null;
         perfSpan(d, "selection:radiusSource", { branch: "isochroneFound" }, function () {
             var source = d.map.getSource(d.radiusSourceId);
             setRadiusSourceData(source, polygon);
         });
-          } else {
+        showSelectedBuildingSidebarShell(d, building);
+      } else {
         perfSpan(d, "selection:radiusSource", { branch: "isochroneMissing" }, function () {
             var emptySource = d.map.getSource(d.radiusSourceId);
             setRadiusSourceData(emptySource, { type: "FeatureCollection", features: [] });
@@ -502,7 +547,8 @@
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
-        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "isochroneMissing" }, updateRadiusInfo);
+        showSelectedBuildingSidebarShell(d, building);
+        scheduleSelectedBuildingDetailSync(refreshToken);
 
         if (shouldFly) {
           perfSpan(d, "selection:flySchedule", { branch: "isochroneMissing" }, function () {
@@ -519,33 +565,34 @@
       }
 
       var applyRadius = function () {
+        if (!isCurrentSelectedBuildingRefreshToken(refreshToken)) return;
         var result = getItemsInPolygon(polygon);
+        if (!isCurrentSelectedBuildingRefreshToken(refreshToken)) return;
         d.setAmenitiesInRadiusIds(result.amenityIndices);
         d.setTreesInRadiusIds(result.treeIndices);
         d.setStreetLightsInRadiusIds(result.streetLightIndices);
         d.setLatestRadiusCounts(result.counts);
+        if (!isCurrentSelectedBuildingRefreshToken(refreshToken)) return;
         perfSpan(d, "selection:pointSourceRefresh", { branch: "isochroneFound" }, function () {
+          if (!isCurrentSelectedBuildingRefreshToken(refreshToken)) return;
           d.updateAmenitiesSource();
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
-        perfSpan(d, "selection:sidebarRadiusUpdate", { branch: "isochroneFound" }, updateRadiusInfo);
+        scheduleSelectedBuildingDetailSync(refreshToken);
       };
 
+      requestAnimationFrameOrNow(d, applyRadius);
       if (shouldFly) {
         perfSpan(d, "selection:flySchedule", { branch: "isochroneFound" }, function () {
-          var zoom = d.getZoomForPolygon(polygon);
-          d.requestAnimationFrame(applyRadius);
           d.map.easeTo({
             center: [building.lng, building.lat],
-            zoom: zoom,
+            zoom: isochroneFlyZoom,
             duration: 1400,
             easing: easeInOutQuad,
             essential: true,
           });
         });
-      } else {
-        applyRadius();
       }
     });
   }
@@ -570,6 +617,7 @@
     if (!d.hasRadiusSelectionState() && !hasRadiusOverlayData && !hasSelectedBuildingOverlayData) {
       return;
     }
+    invalidateSelectedBuildingRefreshToken();
     d.setSelectedBuilding(null);
     setSelectedBuildingVectorState(null);
     d.setAmenitiesInRadiusIds(new Set());
@@ -605,5 +653,8 @@
     updateRadiusInfo: updateRadiusInfo,
     clearRadiusSelection: clearRadiusSelection,
     buildUrban95ReferenceRadius: buildUrban95ReferenceRadius,
+    nextSelectedBuildingRefreshToken: nextSelectedBuildingRefreshToken,
+    isCurrentSelectedBuildingRefreshToken: isCurrentSelectedBuildingRefreshToken,
+    invalidateSelectedBuildingRefreshToken: invalidateSelectedBuildingRefreshToken,
   };
 })();

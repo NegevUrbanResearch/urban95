@@ -990,9 +990,9 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
     "isoDeferred",
     "amenityApply",
     "radiusInfo",
-    "buildings",
     "surface",
     "selectBuilding:false",
+    "buildings",
   ]);
   assertSubsequence([
     "session:analysis mode -> citywide",
@@ -1134,6 +1134,100 @@ test("filter changes refresh point sources when selected-building recompute is u
     "updateTreesSource",
     "updateStreetLightsSource",
     "updateNeighborhoodSurfaceData",
+  ]);
+});
+
+test("walk-minute selected building recompute precedes global recolor", () => {
+  const ControlActions = runControlActionsModule();
+  const calls = [];
+  const rafQueue = [];
+  const selectedBuilding = { properties: { building_id: 404 } };
+  const actions = ControlActions.create({
+    perf: {
+      session: () => {},
+      mark: (name, meta) => {
+        void meta;
+        calls.push(name);
+      },
+      phase: (_name, callback) => callback(),
+      span: (name, meta, callback) => {
+        void meta;
+        calls.push(name);
+        return callback();
+      },
+    },
+    state: {
+      getCurrentMode: () => "house",
+      getSelectedBuilding: () => selectedBuilding,
+      getSelectedNeighborhood: () => null,
+      clearDerivedCaches: () => {},
+      getIsochronesLoaded: () => true,
+      getScoreMode: () => "expanded",
+      getWalkMinutes: () => 10,
+      setIsochronesDeferred: () => {},
+    },
+    pointDataLoader: { canRefreshPointAnalysisAfterPointDataLoad: () => true },
+    loadingUi: {
+      showIsochroneLoadingScreen: () => {},
+      getWaitingForIsochroneLoad: () => false,
+      hideIsochroneLoadingScreen: () => {},
+      mark: () => {},
+    },
+    amenityMode: { apply: () => Promise.resolve() },
+    renderers: {
+      applyShowPointsToggle: () => {},
+      updateAmenitiesSource: () => calls.push("updateAmenitiesSource"),
+      updateTreesSource: () => calls.push("updateTreesSource"),
+      updateStreetLightsSource: () => calls.push("updateStreetLightsSource"),
+      updateBuildingColors: () => calls.push("updateBuildingColors"),
+      updateNeighborhoodSurfaceData: () => calls.push("updateNeighborhoodSurfaceData"),
+      updateNeighborhoodColors: () => calls.push("updateNeighborhoodColors"),
+    },
+    selection: {
+      loadIsochrones: () => Promise.resolve(),
+      selectBuilding: (_building, doFly) => calls.push("selectBuilding:" + doFly),
+      updateRadiusInfo: () => {},
+      clearRadiusSelection: () => {},
+    },
+    dashboards: {
+      showNeighborhoodModal: () => {},
+      renderCitywideModal: () => {},
+      updateCitywideModalTitle: () => {},
+      hideNeighborhoodModal: () => {},
+      hideCitywideModal: () => {},
+    },
+    scoreSidebar: { isOpen: () => false, hide: () => {} },
+    modeController: { switchMode: () => {} },
+    map: { getLayer: () => false, setLayoutProperty: () => {} },
+    ui: { getNeighborhoodModal: () => null, getCitywideModal: () => null },
+    requestAnimationFrame: (callback) => {
+      rafQueue.push(callback);
+      return rafQueue.length;
+    },
+  });
+
+  actions.onWalkMinutesChanged();
+
+  assert.deepEqual(calls.slice(0, 4), [
+    "walkMinutesToggle:start",
+    "walkMinutesToggle:updateNeighborhoodSurfaceData",
+    "updateNeighborhoodSurfaceData",
+    "walkMinutesToggle:selectBuilding",
+  ]);
+  assert.ok(!calls.includes("updateBuildingColors"));
+  assert.ok(calls.includes("selectBuilding:false"));
+  assert.equal(rafQueue.length, 1);
+
+  rafQueue.shift()();
+
+  assert.deepEqual(calls, [
+    "walkMinutesToggle:start",
+    "walkMinutesToggle:updateNeighborhoodSurfaceData",
+    "updateNeighborhoodSurfaceData",
+    "walkMinutesToggle:selectBuilding",
+    "selectBuilding:false",
+    "walkMinutesToggle:updateBuildingColors",
+    "updateBuildingColors",
   ]);
 });
 
@@ -1767,7 +1861,7 @@ test("special point render plan returns in-radius GeoJSON subset in expanded mod
     artifactKey: "trees",
     filterType: "trees",
     getWeightedToggle: function () {
-      return false;
+      return true;
     },
     getData: function () {
       return data;
@@ -1786,6 +1880,62 @@ test("special point render plan returns in-radius GeoJSON subset in expanded mod
   assert.equal(plan.features.features.length, 2);
   assert.equal(plan.features.features[0], data.features[1]);
   assert.equal(plan.features.features[1], data.features[2]);
+});
+
+test("special point render plan respects tree and light toggles in expanded mode", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const data = {
+    type: "FeatureCollection",
+    features: [{ type: "Feature", properties: { id: 1 } }],
+  };
+
+  browser.window.Urban95MapRenderers.configure({
+    map: {
+      getZoom: function () {
+        return 12;
+      },
+    },
+    hasGeneratedArtifact: function () {
+      return false;
+    },
+    getCurrentMode: function () {
+      return "house";
+    },
+    getScoreMode: function () {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    getSelectedAmenityTypes: function () {
+      return new Set(["trees"]);
+    },
+    getAllFilterTypes: function () {
+      return ["trees", "street-lights"];
+    },
+  });
+
+  const plan = browser.window.Urban95MapRenderers.getSpecialPointRenderPlan({
+    artifactKey: "trees",
+    filterType: "trees",
+    getWeightedToggle: function () {
+      return false;
+    },
+    getData: function () {
+      return data;
+    },
+    getInRadiusIds: function () {
+      return new Set([0]);
+    },
+    isOnlyFilter: function () {
+      return true;
+    },
+  });
+
+  assert.equal(plan.geojsonVisible, true);
+  assert.equal(plan.vectorVisible, false);
+  assert.equal(plan.features.type, "FeatureCollection");
+  assert.equal(plan.features.features.length, 0);
 });
 
 test("map events register expected handlers and call injected dependencies", () => {
@@ -3479,6 +3629,372 @@ test("mode controller keeps house cleanup centralized in switchMode", () => {
   assert.doesNotMatch(appSource, /exitNeighborhoodMode/);
 });
 
+function createSelectionDeferredSidebarTestContext() {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/selection.js", browser);
+
+  const calls = [];
+  const rafQueue = [];
+  const radiusSource = {
+    setData(data) {
+      const count =
+        data && Array.isArray(data.features) ? data.features.length : data && data.type === "Feature" ? 1 : 0;
+      calls.push([
+        "radius:setData",
+        data && data.properties && data.properties.building_id ? data.properties.building_id : count,
+      ]);
+    },
+  };
+  const selectedBuildingSource = {
+    setData(data) {
+      const buildingId =
+        data &&
+        Array.isArray(data.features) &&
+        data.features[0] &&
+        data.features[0].properties &&
+        data.features[0].properties.building_id;
+      calls.push(["building:setData", buildingId == null ? null : buildingId]);
+    },
+  };
+  const state = {
+    selectedBuildingVectorId: null,
+    sidebarShellShown: false,
+  };
+  const isochroneIndex = {
+    "87_5": {
+      type: "Feature",
+      properties: { building_id: 87, matchCoord: 1 },
+      geometry: { type: "Polygon", coordinates: [] },
+    },
+    "88_5": {
+      type: "Feature",
+      properties: { building_id: 88, matchCoord: 2 },
+      geometry: { type: "Polygon", coordinates: [] },
+    },
+  };
+  const deps = {
+    map: {
+      getSource(id) {
+        return id === "radius-source" ? radiusSource : selectedBuildingSource;
+      },
+      getLayer() {
+        return false;
+      },
+      easeTo(options) {
+        calls.push(["easeTo", options.center[0], options.center[1], options.zoom]);
+      },
+      getZoom() {
+        return 15;
+      },
+      setFeatureState() {},
+      removeFeatureState() {},
+    },
+    turf: {
+      distance() {
+        return 0;
+      },
+      bbox() {
+        return [0, 0, 10, 10];
+      },
+      booleanPointInPolygon(coord, polygon) {
+        return coord[0] === polygon.properties.matchCoord;
+      },
+    },
+    urban95Perf: {
+      phase(_name, fn) {
+        return fn();
+      },
+      span(_name, _meta, fn) {
+        return fn();
+      },
+      mark() {},
+    },
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getWalkMinutes() {
+      return 5;
+    },
+    getIsochronesLoaded() {
+      return true;
+    },
+    getIsochronesLookupMode() {
+      return "legacy";
+    },
+    getIsochroneIndex() {
+      return isochroneIndex;
+    },
+    compactIsochroneFeature() {
+      throw new Error("compactIsochroneFeature should not run in this test");
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["park"]);
+    },
+    getAllFilterTypes() {
+      return ["park"];
+    },
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: { amenity_type: "park" },
+            geometry: { type: "Point", coordinates: [1, 1] },
+          },
+          {
+            type: "Feature",
+            properties: { amenity_type: "park" },
+            geometry: { type: "Point", coordinates: [2, 2] },
+          },
+          {
+            type: "Feature",
+            properties: { amenity_type: "park" },
+            geometry: { type: "Point", coordinates: [2, 3] },
+          },
+        ],
+      };
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    radiusSourceId: "radius-source",
+    selectedBuildingSourceId: "selected-building-source",
+    getSelectedBuildingVectorId() {
+      return state.selectedBuildingVectorId;
+    },
+    setSelectedBuildingVectorId(value) {
+      state.selectedBuildingVectorId = value;
+      calls.push(["setSelectedBuildingVectorId", value]);
+    },
+    setSelectedBuilding(building) {
+      calls.push([
+        "setSelectedBuilding",
+        building && building.feature && building.feature.properties
+          ? building.feature.properties.building_id
+          : null,
+      ]);
+    },
+    setAmenitiesInRadiusIds(value) {
+      calls.push(["setAmenitiesInRadiusIds", Array.from(value.values()).sort((a, b) => a - b)]);
+    },
+    setTreesInRadiusIds(value) {
+      calls.push(["setTreesInRadiusIds", value.size]);
+    },
+    setStreetLightsInRadiusIds(value) {
+      calls.push(["setStreetLightsInRadiusIds", value.size]);
+    },
+    setLatestRadiusCounts(value) {
+      calls.push(["setLatestRadiusCounts", value.park || 0]);
+    },
+    updateAmenitiesSource() {
+      calls.push(["updateAmenitiesSource"]);
+    },
+    updateTreesSource() {
+      calls.push(["updateTreesSource"]);
+    },
+    updateStreetLightsSource() {
+      calls.push(["updateStreetLightsSource"]);
+    },
+    showScoreExplainSidebarShell(building) {
+      state.sidebarShellShown = true;
+      calls.push([
+        "showScoreExplainSidebarShell",
+        building && building.feature && building.feature.properties
+          ? building.feature.properties.building_id
+          : null,
+      ]);
+    },
+    syncScoreSidebar() {
+      calls.push([
+        "syncScoreSidebar",
+        state.selectedBuildingVectorId,
+      ]);
+    },
+    hideScoreSidebar(options) {
+      calls.push(["hideScoreSidebar", options.restoreFocus]);
+    },
+    requestAnimationFrame(callback) {
+      rafQueue.push(callback);
+      calls.push(["requestAnimationFrame", rafQueue.length]);
+      return rafQueue.length;
+    },
+    getZoomForPolygon(polygon) {
+      calls.push([
+        "getZoomForPolygon",
+        polygon.properties.building_id || "radius",
+        state.sidebarShellShown,
+      ]);
+      return polygon.properties.building_id === 87 ? 16 : 17;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    radiusInfoEl: { style: { display: "block" } },
+    hasRadiusSelectionState() {
+      return false;
+    },
+  };
+
+  const buildingA = {
+    lng: 34.7941,
+    lat: 31.25104,
+    properties: { building_id: 87 },
+    feature: {
+      type: "Feature",
+      properties: { building_id: 87 },
+      geometry: { type: "Polygon", coordinates: [] },
+    },
+  };
+  const buildingB = {
+    lng: 34.795,
+    lat: 31.252,
+    properties: { building_id: 88 },
+    feature: {
+      type: "Feature",
+      properties: { building_id: 88 },
+      geometry: { type: "Polygon", coordinates: [] },
+    },
+  };
+
+  browser.window.Urban95Selection.configure(deps);
+
+  return {
+    browser,
+    calls,
+    rafQueue,
+    buildingA,
+    buildingB,
+    flushRafQueue() {
+      while (rafQueue.length > 0) {
+        rafQueue.shift()();
+      }
+    },
+  };
+}
+
+test("selection commits selected building shell before deferred sidebar detail work", () => {
+  const context = createSelectionDeferredSidebarTestContext();
+
+  context.browser.window.Urban95Selection.selectBuilding(context.buildingA, true);
+  context.browser.window.Urban95Selection.selectBuilding(context.buildingB, false);
+  const preFlushCalls = context.calls.slice();
+
+  assert.deepEqual(
+    preFlushCalls.filter((call) => call[0] === "setSelectedBuilding").map((call) => call[1]),
+    [87, 88]
+  );
+  assert.deepEqual(
+    preFlushCalls.filter((call) => call[0] === "building:setData").map((call) => call[1]),
+    [87, 88]
+  );
+  assert.deepEqual(
+    preFlushCalls.filter((call) => call[0] === "radius:setData").map((call) => call[1]),
+    [87, 88]
+  );
+  assert.deepEqual(
+    preFlushCalls.filter((call) => call[0] === "showScoreExplainSidebarShell").map((call) => call[1]),
+    [87, 88]
+  );
+  assert.equal(
+    preFlushCalls.some((call) => call[0] === "syncScoreSidebar"),
+    false
+  );
+  assert.equal(
+    preFlushCalls.some((call) => call[0] === "setAmenitiesInRadiusIds"),
+    false
+  );
+  assert.equal(
+    preFlushCalls.some((call) => call[0] === "setLatestRadiusCounts"),
+    false
+  );
+  assert.equal(
+    preFlushCalls.some((call) => call[0] === "updateAmenitiesSource"),
+    false
+  );
+  assert.equal(
+    preFlushCalls.some((call) => call[0] === "updateTreesSource"),
+    false
+  );
+  assert.equal(
+    preFlushCalls.some((call) => call[0] === "updateStreetLightsSource"),
+    false
+  );
+  assert.deepEqual(
+    preFlushCalls.slice(0, 11),
+    [
+      ["setSelectedBuilding", 87],
+      ["setSelectedBuildingVectorId", 87],
+      ["building:setData", 87],
+      ["getZoomForPolygon", 87, false],
+      ["radius:setData", 87],
+      ["showScoreExplainSidebarShell", 87],
+      ["requestAnimationFrame", 1],
+      ["easeTo", 34.7941, 31.25104, 16],
+      ["setSelectedBuilding", 88],
+      ["setSelectedBuildingVectorId", 88],
+      ["building:setData", 88],
+    ]
+  );
+  assert.deepEqual(
+    preFlushCalls.slice(11, 13),
+    [
+      ["radius:setData", 88],
+      ["showScoreExplainSidebarShell", 88],
+    ]
+  );
+  assert.deepEqual(
+    preFlushCalls.filter((call) => call[0] === "getZoomForPolygon"),
+    [["getZoomForPolygon", 87, false]]
+  );
+
+  context.flushRafQueue();
+
+  assert.deepEqual(
+    context.calls.filter((call) => call[0] === "syncScoreSidebar").map((call) => call[1]),
+    [88]
+  );
+  assert.deepEqual(
+    context.calls.filter((call) => call[0] === "setAmenitiesInRadiusIds").map((call) => call[1]),
+    [[1, 2]]
+  );
+  assert.deepEqual(
+    context.calls.filter((call) => call[0] === "setLatestRadiusCounts").map((call) => call[1]),
+    [2]
+  );
+});
+
+test("selection clear invalidates deferred selected-building work", () => {
+  const context = createSelectionDeferredSidebarTestContext();
+
+  context.browser.window.Urban95Selection.selectBuilding(context.buildingA, true);
+  context.browser.window.Urban95Selection.clearRadiusSelection();
+  context.flushRafQueue();
+
+  assert.deepEqual(
+    context.calls.filter((call) => call[0] === "showScoreExplainSidebarShell").map((call) => call[1]),
+    [87]
+  );
+  assert.equal(
+    context.calls.some((call) => call[0] === "syncScoreSidebar"),
+    false
+  );
+  assert.deepEqual(
+    context.calls.filter((call) => call[0] === "setAmenitiesInRadiusIds").map((call) => call[1]),
+    [[]]
+  );
+  assert.deepEqual(
+    context.calls.filter((call) => call[0] === "setLatestRadiusCounts").map((call) => call[1]),
+    [0]
+  );
+});
+
 test("selection clearRadiusSelection uses injected radius-state guard for no-op clears", () => {
   const selectionSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "map", "selection.js"),
@@ -3791,13 +4307,15 @@ test("controls bind validates dependencies and returns the coordinator surface",
   const appState = browser.window.Urban95AppState.create();
   appState.setSelectedAmenityTypes(new Set(["trees"]));
   appState.setAllFilterTypes(["trees", "street-lights"]);
+  let scoreMode = "weighted";
+  let currentMode = "house";
   const binding = browser.window.Urban95Controls.bind({
     elements,
     scoreModel: browser.window.Urban95ScoreModel,
     getState() {
       return {
-        scoreMode: "weighted",
-        currentMode: "house",
+        scoreMode,
+        currentMode,
         selectedAmenityTypes: appState.getSelectedAmenityTypes(),
         allFilterTypes: appState.getAllFilterTypes(),
         lastFilterRadioSelection: appState.getLastFilterRadioSelection(),
@@ -3846,6 +4364,21 @@ test("controls bind validates dependencies and returns the coordinator surface",
   ].forEach(function (memberName) {
     assert.equal(typeof binding[memberName], "function");
   });
+
+  binding.updateShowPointsToggleLabel();
+  assert.equal(elements.urban95PointToggles.style.display, "");
+  assert.equal(elements.amenityPointsToggleWrap.style.display, "none");
+
+  scoreMode = "expanded";
+  binding.updateShowPointsToggleLabel();
+  assert.equal(elements.urban95PointToggles.style.display, "");
+  assert.equal(elements.amenityPointsToggleWrap.style.display, "");
+
+  currentMode = "neighborhood";
+  binding.updateShowPointsToggleLabel();
+  assert.equal(elements.urban95PointToggles.style.display, "none");
+  assert.equal(elements.amenityPointsToggleWrap.style.display, "");
+
   assert.ok(listeners.some((entry) => entry.type === "keydown"));
 });
 
@@ -3937,9 +4470,271 @@ test("task-5 sidebar contract uses injected padding callback and restoreFocus-aw
   assert.match(sidebarSource, /restoreFocusAfterHide\s*:\s*"function"/);
   assert.match(sidebarSource, /function hideScoreExplainSidebar\s*\(\s*options\s*\)/);
   assert.match(sidebarSource, /var restoreFocus = !options \|\| options\.restoreFocus !== false;/);
-  assert.match(sidebarSource, /d\.setSidebarPadding\(true,\s*getSidebarWidth\(\)\)/);
+  assert.match(sidebarSource, /d\.setSidebarPadding\(true,\s*getSidebarWidth\(\),\s*options\)/);
   assert.match(sidebarSource, /d\.setSidebarPadding\(false,\s*0\)/);
   assert.match(sidebarSource, /if \(!isScoreExplainSidebarOpen\(\)\) return;/);
+});
+
+test("score sidebar shell records opt-in perf span without building breakdown content", () => {
+  function createClassList() {
+    const names = new Set();
+    return {
+      add(name) {
+        names.add(name);
+      },
+      remove(name) {
+        names.delete(name);
+      },
+      contains(name) {
+        return names.has(name);
+      },
+      toggle(name, force) {
+        if (force === true) {
+          names.add(name);
+          return true;
+        }
+        if (force === false) {
+          names.delete(name);
+          return false;
+        }
+        if (names.has(name)) {
+          names.delete(name);
+          return false;
+        }
+        names.add(name);
+        return true;
+      },
+    };
+  }
+
+  function createElement(overrides) {
+    return Object.assign(
+      {
+        hidden: false,
+        innerHTML: "",
+        textContent: "",
+        style: {
+          setProperty() {},
+          removeProperty() {},
+        },
+        classList: createClassList(),
+        attrs: {},
+        listeners: [],
+        focusCalls: [],
+        children: [],
+        setAttribute(name, value) {
+          this.attrs[name] = value;
+        },
+        removeAttribute(name) {
+          delete this.attrs[name];
+        },
+        getAttribute(name) {
+          return this.attrs[name];
+        },
+        addEventListener(type, handler) {
+          this.listeners.push({ type, handler });
+        },
+        appendChild(child) {
+          this.children.push(child);
+          return child;
+        },
+        focus(options) {
+          this.focusCalls.push(options);
+        },
+        contains() {
+          return false;
+        },
+        querySelector() {
+          return null;
+        },
+        getBoundingClientRect() {
+          return { width: 400 };
+        },
+      },
+      overrides || {}
+    );
+  }
+
+  let now = 0;
+  const sidebarEl = createElement();
+  const bodyEl = createElement();
+  const emptyEl = createElement();
+  const heroEl = createElement();
+  const noteEl = createElement();
+  const buildingContextEl = createElement({ hidden: true });
+  const buildingContextIdEl = createElement();
+  const buildingContextCoordsEl = createElement({ hidden: true });
+  const closeButtonEl = createElement();
+  const backdropEl = createElement({ hidden: true });
+  const browser = createBrowserContext({
+    location: {
+      href: "http://localhost:8080/docs/index.html?perf=1",
+      search: "?perf=1",
+    },
+    performance: {
+      now() {
+        now += 1;
+        return now;
+      },
+      getEntriesByType() {
+        return [];
+      },
+    },
+    matchMedia() {
+      return { matches: false };
+    },
+    requestAnimationFrame() {
+      return 1;
+    },
+    cancelAnimationFrame() {},
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+    addEventListener() {},
+    document: {
+      readyState: "loading",
+      activeElement: null,
+      body: createElement(),
+      addEventListener() {},
+      createElement() {
+        return createElement();
+      },
+      getElementById() {
+        return null;
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
+
+  let breakdownCalls = 0;
+  let metricsCalls = 0;
+  const building = {
+    feature: {
+      properties: {
+        building_id: 87,
+      },
+    },
+    lat: 31.251,
+    lng: 34.791,
+  };
+
+  browser.window.Urban95ScoreSidebar.configure({
+    getScoreMode() {
+      return "weighted";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return [];
+    },
+    getSelectedBuilding() {
+      return building;
+    },
+    buildExplainScoreBreakdown() {
+      breakdownCalls += 1;
+      return null;
+    },
+    buildPercentileMetrics() {
+      metricsCalls += 1;
+      return null;
+    },
+    getScoreModeLabel() {
+      return "Urban95";
+    },
+    getScoreMinutes() {
+      return 10;
+    },
+    escapeHtml(value) {
+      return String(value);
+    },
+    renderHorizonLabelCell() {
+      return "";
+    },
+    renderHorizonSubLabelCell() {
+      return "";
+    },
+    getWeightedCategoryIcon() {
+      return "park";
+    },
+    getWeightedSubcategoryIcon() {
+      return "tree";
+    },
+    getScoreExplainRowIcon() {
+      return "circle";
+    },
+    getScoreExplainPartialFilterSet() {
+      return null;
+    },
+    isScoreExplainCategoryFilterHighlighted() {
+      return false;
+    },
+    isScoreExplainRowFilterHighlighted() {
+      return false;
+    },
+    formatScoreExplainRowValue() {
+      return "0";
+    },
+    horizonBarFillStyle() {
+      return "";
+    },
+    horizonSubBarFillStyle() {
+      return "";
+    },
+    explainRankBarColor() {
+      return "#2563eb";
+    },
+    heroPercentileMeterFillStyle() {
+      return "";
+    },
+    getOrdinalSuffix() {
+      return "th";
+    },
+    formatMetricNumber(value) {
+      return String(value);
+    },
+    formatScoreInteger(value) {
+      return String(value);
+    },
+    setSidebarPadding() {},
+    restoreFocusAfterHide() {},
+    referenceRadiusMeters: 100,
+    scoreExplainIconNeutral: "#64748b",
+    sidebarEl,
+    bodyEl,
+    emptyEl,
+    heroEl,
+    noteEl,
+    buildingContextEl,
+    buildingContextIdEl,
+    buildingContextCoordsEl,
+    closeButtonEl,
+    backdropEl,
+  });
+
+  browser.window.Urban95ScoreSidebar.showShell(building);
+
+  assert.equal(breakdownCalls, 0);
+  assert.equal(metricsCalls, 0);
+  assert.equal(bodyEl.innerHTML, "");
+  assert.equal(emptyEl.hidden, false);
+  assert.equal(emptyEl.textContent, "Loading score details...");
+  assert.equal(buildingContextEl.hidden, false);
+  assert.equal(buildingContextIdEl.textContent, "Building #87");
+  assert.equal(buildingContextCoordsEl.textContent, "31.25100, 34.79100");
+  assert.ok(sidebarEl.classList.contains("is-open"));
+  assert.ok(browser.window.urban95Perf.records.some((record) => record.kind === "span" && record.name === "scoreSidebar:showShell"));
+  assert.equal(
+    browser.window.urban95Perf.records.some((record) => record.name === "scoreSidebar:buildBreakdown"),
+    false
+  );
+  assert.equal(
+    browser.window.urban95Perf.records.some((record) => record.name === "scoreSidebar:buildMetrics"),
+    false
+  );
 });
 
 test("task-5 app coordinator injects sidebar chrome and uses non-focus-stealing cleanup hides", () => {
@@ -4043,6 +4838,100 @@ test("score sidebar chrome owns map padding and focus restoration", () => {
   assert.deepEqual(canvas.attrs, { tabindex: "-1" });
   assert.deepEqual(JSON.parse(JSON.stringify(canvas.focusCalls)), [{ preventScroll: true }]);
   assert.deepEqual(mapElement.focusCalls, []);
+});
+
+test("score sidebar chrome does not reapply unchanged open padding during camera flight", () => {
+  const mapCalls = [];
+  const browser = createBrowserContext({
+    matchMedia() {
+      return { matches: false };
+    },
+    document: {
+      getElementById() {
+        return null;
+      },
+    },
+  });
+  const map = {
+    currentPadding: { top: 0, right: 0, bottom: 0, left: 0 },
+    getPadding() {
+      mapCalls.push({ type: "getPadding" });
+      return this.currentPadding;
+    },
+    setPadding(nextPadding) {
+      mapCalls.push({ type: "setPadding", value: nextPadding });
+      this.currentPadding = Object.assign({}, nextPadding);
+    },
+    resize() {
+      mapCalls.push({ type: "resize" });
+    },
+  };
+
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+
+  const chrome = browser.window.Urban95ScoreSidebarChrome.create({
+    map: map,
+    document: browser.window.document,
+    matchMedia: browser.window.matchMedia,
+  });
+
+  chrome.setSidebarPadding(true, 421);
+  chrome.setSidebarPadding(true, 421);
+  chrome.setSidebarPadding(false, 0);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(mapCalls)), [
+    { type: "getPadding" },
+    { type: "setPadding", value: { top: 0, right: 421, bottom: 0, left: 0 } },
+    { type: "resize" },
+    { type: "setPadding", value: { top: 0, right: 0, bottom: 0, left: 0 } },
+    { type: "resize" },
+  ]);
+});
+
+test("score sidebar chrome can resize an unchanged open sidebar without reapplying padding", () => {
+  const mapCalls = [];
+  const browser = createBrowserContext({
+    matchMedia() {
+      return { matches: false };
+    },
+    document: {
+      getElementById() {
+        return null;
+      },
+    },
+  });
+  const map = {
+    currentPadding: { top: 0, right: 0, bottom: 0, left: 0 },
+    getPadding() {
+      mapCalls.push({ type: "getPadding" });
+      return this.currentPadding;
+    },
+    setPadding(nextPadding) {
+      mapCalls.push({ type: "setPadding", value: nextPadding });
+      this.currentPadding = Object.assign({}, nextPadding);
+    },
+    resize() {
+      mapCalls.push({ type: "resize" });
+    },
+  };
+
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+
+  const chrome = browser.window.Urban95ScoreSidebarChrome.create({
+    map: map,
+    document: browser.window.document,
+    matchMedia: browser.window.matchMedia,
+  });
+
+  chrome.setSidebarPadding(true, 421);
+  chrome.setSidebarPadding(true, 421, { forceResize: true });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(mapCalls)), [
+    { type: "getPadding" },
+    { type: "setPadding", value: { top: 0, right: 421, bottom: 0, left: 0 } },
+    { type: "resize" },
+    { type: "resize" },
+  ]);
 });
 
 test("score explanation create fails fast when a required scoreModel member is missing", () => {

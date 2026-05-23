@@ -638,6 +638,7 @@ Urban95Selection.configure({
   updateAmenitiesSource: Urban95MapRenderers.updateAmenitiesSource,
   updateTreesSource: Urban95MapRenderers.updateTreesSource,
   updateStreetLightsSource: Urban95MapRenderers.updateStreetLightsSource,
+  showScoreExplainSidebarShell: Urban95ScoreSidebar.showShell,
   syncScoreSidebar: Urban95ScoreSidebar.sync,
   hideScoreSidebar: Urban95ScoreSidebar.hide,
   getZoomForPolygon: getZoomForPolygon,

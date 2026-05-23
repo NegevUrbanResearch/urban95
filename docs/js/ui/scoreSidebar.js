@@ -516,10 +516,10 @@
     return !!(el && el.classList.contains("is-open"));
   }
 
-  function setScoreExplainMapPadding(open) {
+  function setScoreExplainMapPadding(open, options) {
     var d = requireDeps();
     if (open) {
-      d.setSidebarPadding(true, getSidebarWidth());
+      d.setSidebarPadding(true, getSidebarWidth(), options);
       return;
     }
     d.setSidebarPadding(false, 0);
@@ -663,6 +663,24 @@
     });
   }
 
+  function showScoreExplainSidebarShell(building) {
+    return perfSpan("scoreSidebar:showShell", null, function () {
+      void building;
+      var d = requireDeps();
+      var root = d.bodyEl;
+      var emptyEl = d.emptyEl;
+      if (root) {
+        root.innerHTML = "";
+      }
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = "Loading score details...";
+      }
+      populateScoreExplainSidebarHeader(null, null);
+      showScoreExplainSidebar();
+    });
+  }
+
   function bindGlobalSidebarChrome() {
     if (globalBindingsAttached || !deps) return;
     globalBindingsAttached = true;
@@ -684,7 +702,7 @@
     }
     window.addEventListener("resize", function () {
       if (isScoreExplainSidebarOpen()) {
-        setScoreExplainMapPadding(true);
+        setScoreExplainMapPadding(true, { forceResize: true });
         syncScoreExplainBackdrop();
         scheduleFitScoreExplainSidebar();
       }
@@ -695,6 +713,7 @@
     configure: configure,
     render: renderScoreExplainSidebar,
     show: showScoreExplainSidebar,
+    showShell: showScoreExplainSidebarShell,
     hide: hideScoreExplainSidebar,
     sync: syncScoreExplainSidebar,
     isOpen: isScoreExplainSidebarOpen,
@@ -713,6 +732,7 @@
     syncScoreExplainBackdrop: syncScoreExplainBackdrop,
     focusMapContainerAfterSidebar: focusMapContainerAfterSidebar,
     showScoreExplainSidebar: showScoreExplainSidebar,
+    showScoreExplainSidebarShell: showScoreExplainSidebarShell,
     hideScoreExplainSidebar: hideScoreExplainSidebar,
     syncScoreExplainSidebar: syncScoreExplainSidebar,
   };

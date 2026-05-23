@@ -130,7 +130,7 @@
     function updateShowPointsToggleLabel() {
       var state = readState();
       if (elements.urban95PointToggles) {
-        elements.urban95PointToggles.style.display = state.scoreMode === "weighted" ? "" : "none";
+        elements.urban95PointToggles.style.display = state.currentMode === "house" ? "" : "none";
       }
       if (elements.amenityPointsToggleWrap) {
         elements.amenityPointsToggleWrap.style.display = state.scoreMode === "expanded" ? "" : "none";

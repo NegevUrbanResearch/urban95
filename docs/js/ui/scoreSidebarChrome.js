@@ -3,6 +3,7 @@
     var validated = validateDeps(deps || null);
     var scoreSidebarPaddingActive = false;
     var scoreSidebarPaddingSnapshot = null;
+    var scoreSidebarAppliedPadding = null;
 
     function cloneMapPadding(padding) {
       return {
@@ -23,7 +24,19 @@
       return { top: 0, right: 0, bottom: 0, left: 0 };
     }
 
-    function setSidebarPadding(open, width) {
+    function isSamePadding(a, b) {
+      return (
+        a &&
+        b &&
+        a.top === b.top &&
+        a.right === b.right &&
+        a.bottom === b.bottom &&
+        a.left === b.left
+      );
+    }
+
+    function setSidebarPadding(open, width, options) {
+      var opts = options || {};
       var media = validated.matchMedia("(max-width: 768px)");
       var isMobile = !!(media && media.matches);
       if (open && !isMobile) {
@@ -31,11 +44,17 @@
           scoreSidebarPaddingSnapshot = readMapPaddingSnapshot();
         }
         scoreSidebarPaddingActive = true;
-        validated.map.setPadding(
-          Object.assign({}, scoreSidebarPaddingSnapshot, {
-            right: Math.round(width || 0),
-          })
-        );
+        var nextPadding = Object.assign({}, scoreSidebarPaddingSnapshot, {
+          right: Math.round(width || 0),
+        });
+        if (scoreSidebarPaddingActive && isSamePadding(scoreSidebarAppliedPadding, nextPadding)) {
+          if (opts.forceResize) {
+            validated.map.resize();
+          }
+          return;
+        }
+        validated.map.setPadding(nextPadding);
+        scoreSidebarAppliedPadding = nextPadding;
         validated.map.resize();
         return;
       }
@@ -45,6 +64,7 @@
       }
       scoreSidebarPaddingActive = false;
       scoreSidebarPaddingSnapshot = null;
+      scoreSidebarAppliedPadding = null;
       validated.map.resize();
     }
 

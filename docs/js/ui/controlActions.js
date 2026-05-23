@@ -31,6 +31,12 @@
     var ui = deps.ui || {};
     var setIsochronesDeferred =
       typeof state.setIsochronesDeferred === "function" ? state.setIsochronesDeferred : null;
+    var requestAnimationFrameFn =
+      typeof deps.requestAnimationFrame === "function"
+        ? deps.requestAnimationFrame
+        : typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
+          ? window.requestAnimationFrame.bind(window)
+          : null;
     var getNeighborhoodModal = ui.getNeighborhoodModal;
     var getCitywideModal = ui.getCitywideModal;
 
@@ -104,6 +110,13 @@
 
     function clearDerivedCaches() {
       state.clearDerivedCaches();
+    }
+
+    function requestAnimationFrameOrNow(callback) {
+      if (requestAnimationFrameFn) {
+        return requestAnimationFrameFn(callback);
+      }
+      return callback();
     }
 
     function onFilterSelectionChanged() {
@@ -208,15 +221,22 @@
     function onWalkMinutesChanged() {
       perfMark("walkMinutesToggle:start", flowMeta);
       if (state.getCurrentMode() === "house") {
-        perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
-          renderers.updateBuildingColors();
-        });
         perfSpan("walkMinutesToggle:updateNeighborhoodSurfaceData", flowMeta, function () {
           renderers.updateNeighborhoodSurfaceData();
         });
-        if (state.getSelectedBuilding()) {
+        var selectedBuilding = state.getSelectedBuilding();
+        if (selectedBuilding) {
           perfSpan("walkMinutesToggle:selectBuilding", flowMeta, function () {
-            selection.selectBuilding(state.getSelectedBuilding(), false);
+            selection.selectBuilding(selectedBuilding, false);
+          });
+          requestAnimationFrameOrNow(function () {
+            perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
+              renderers.updateBuildingColors();
+            });
+          });
+        } else {
+          perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
+            renderers.updateBuildingColors();
           });
         }
       }

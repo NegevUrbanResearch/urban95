@@ -181,7 +181,7 @@
     var allFilterTypes = d.getAllFilterTypes();
     var useAll = selectedAmenityTypes.size === allFilterTypes.length;
     var showKind = useAll || selectedAmenityTypes.has(config.filterType);
-    if (!showKind) {
+    if (!showKind || !config.getWeightedToggle()) {
       return {
         geojsonVisible: d.getCurrentMode() === "house",
         vectorVisible: false,
