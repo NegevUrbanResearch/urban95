@@ -2528,14 +2528,36 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
     (entry) => entry.name === "renderer:deckAmenityLayers" && entry.meta && entry.meta.branch === "initPending"
   );
   assert.equal(initPendingCounters.length, 1);
+  const sourceStartCounter = counters.find(
+    (entry) => entry.name === "renderer:updateAmenitiesSource:start"
+  );
+  assert.equal(sourceStartCounter.meta.caller, "direct");
+  assert.equal(sourceStartCounter.meta.visibleFeatures, 0);
+  assert.equal(sourceStartCounter.meta.radiusFilterActive, true);
   assert.equal(deckAmenityOverlay, null);
   resolveDeckLoaded();
   await deckLoaded;
   await Promise.resolve();
   browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  const moveendScheduleCounter = counters.find(
+    (entry) => entry.name === "renderer:scheduleDeckUpdate" && entry.meta.reason === "moveend"
+  );
+  assert.equal(moveendScheduleCounter.meta.scoreMode, "expanded");
+  assert.equal(moveendScheduleCounter.meta.mode, "house");
+  assert.equal(moveendScheduleCounter.meta.visibleFeatures, 1);
+  assert.equal(moveendScheduleCounter.meta.replacedPending, false);
   assert.equal(typeof scheduledTimer, "function");
   assert.equal(scheduledDelay, 80);
   scheduledTimer();
+  assert.ok(
+    counters.some(
+      (entry) =>
+        entry.name === "renderer:scheduleDeckUpdate:execute" &&
+        entry.meta.reason === "moveend" &&
+        entry.meta.scoreMode === "expanded" &&
+        entry.meta.visibleFeatures === 1
+    )
+  );
   browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
   assert.equal(typeof scheduledTimer, "function");
   scheduledTimer();
@@ -2543,7 +2565,7 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
   const deckCounters = counters.filter(
     (entry) => entry.name === "renderer:updateDeckAmenityLayers:start"
   );
-  assert.ok(deckCounters.length >= 4);
+  assert.ok(deckCounters.length >= 3);
   assert.ok(deckCounters.some((entry) => entry.meta && entry.meta.caller === "applyShowPointsToggle"));
   assert.ok(deckCounters.some((entry) => entry.meta && entry.meta.caller === "updateAmenitiesSource"));
   assert.ok(
@@ -2556,21 +2578,1015 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
     )
   );
   assert.ok(
-    deckCounters.some(
+    counters.some(
       (entry) =>
+        entry.name === "renderer:scheduleDeckUpdate:skip" &&
         entry.meta &&
-        entry.meta.caller === "scheduleDeckUpdate" &&
         entry.meta.reason === "moveend"
     )
   );
   assert.ok(
-    deckCounters.some(
+    counters.some(
       (entry) =>
+        entry.name === "renderer:scheduleDeckUpdate:skip" &&
         entry.meta &&
-        entry.meta.caller === "scheduleDeckUpdate" &&
         entry.meta.reason === "zoomend"
     )
   );
+});
+
+test("map renderers updateAmenitiesSource records caller and transaction diagnostics", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  let visibleAmenityFeatures = [];
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getSource(id) {
+        return id === "amenities" ? { setData() {} } : null;
+      },
+      getZoom() {
+        return 16;
+      },
+      getCanvas() {
+        return { style: {} };
+      },
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks"];
+    },
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [
+          { type: "Feature", properties: { amenity_type: "parks" }, geometry: { type: "Point", coordinates: [0, 0] } },
+        ],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    setVisibleAmenityFeatures(value) {
+      visibleAmenityFeatures = value;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getDeckAmenityOverlay() {
+      return null;
+    },
+    setDeckHovering() {},
+    ensureDeckGlLoaded() {
+      return new Promise(() => {});
+    },
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.Urban95MapRenderers.updateAmenitiesSource({
+    caller: "selection:pointSourceRefresh",
+    selectionTransactionId: 12,
+    selectedBuildingId: 87,
+  });
+
+  const start = counters.find((entry) => entry.name === "renderer:updateAmenitiesSource:start");
+  const end = counters.find((entry) => entry.name === "renderer:updateAmenitiesSource:end");
+  assert.equal(start.meta.caller, "selection:pointSourceRefresh");
+  assert.equal(start.meta.selectionTransactionId, 12);
+  assert.equal(start.meta.selectedBuildingId, 87);
+  assert.equal(start.meta.radiusFilterActive, true);
+  assert.equal(end.meta.caller, "selection:pointSourceRefresh");
+  assert.equal(end.meta.allFeatures, 1);
+  assert.equal(end.meta.visibleFeatures, 1);
+});
+
+test("map renderers can defer deck updates while keeping amenity source data and visible features fresh", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  const sourceSets = [];
+  let visibleAmenityFeatures = [];
+  let overlaySetPropsCount = 0;
+  const sources = {
+    amenities: {
+      setData(data) {
+        sourceSets.push(data);
+      },
+    },
+  };
+
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getSource(id) {
+        return sources[id] || null;
+      },
+      getZoom() {
+        return 16;
+      },
+      getCanvas() {
+        return { width: 1200, height: 800, style: {} };
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks", "trees", "street-lights"];
+    },
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: { amenity_type: "parks", name: "Playground A" },
+            geometry: { type: "Point", coordinates: [34.79, 31.25] },
+          },
+          {
+            type: "Feature",
+            properties: { amenity_type: "parks", name: "Playground B" },
+            geometry: { type: "Point", coordinates: [34.8, 31.26] },
+          },
+        ],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([1]);
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    setVisibleAmenityFeatures(value) {
+      visibleAmenityFeatures = value;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getDeckAmenityOverlay() {
+      return {
+        setProps() {
+          overlaySetPropsCount += 1;
+        },
+      };
+    },
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    getAmenityConfig() {
+      return { label: "Parks", color: "#2563eb" };
+    },
+    amenityClusterMinZoom: 13,
+    amenityClusterDissolveZoom: 18,
+    amenityClusterPixelRadius: 40,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.Urban95MapRenderers.updateAmenitiesSource({
+    caller: "selection:pointSourceRefresh",
+    selectionTransactionId: 44,
+    selectedBuildingId: 87,
+    deferDeckRender: true,
+  });
+
+  assert.equal(sourceSets.length, 1);
+  assert.equal(sourceSets[0].features.length, 2);
+  assert.equal(visibleAmenityFeatures.length, 2);
+  assert.equal(visibleAmenityFeatures[0].properties._inRadius, false);
+  assert.equal(visibleAmenityFeatures[1].properties._inRadius, true);
+  assert.equal(overlaySetPropsCount, 0);
+  assert.ok(
+    counters.some(
+      (entry) =>
+        entry.name === "renderer:updateAmenitiesSource:end" &&
+        entry.meta &&
+        entry.meta.branch === "visible" &&
+        entry.meta.visibleFeatures === 2
+    )
+  );
+});
+
+test("map renderers clear existing deck layers when the amenity points toggle turns off", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  let showAmenityPointsChecked = true;
+  const overlay = {
+    propsHistory: [],
+    setProps(props) {
+      this.propsHistory.push(props);
+      this.props = props;
+    },
+  };
+
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter() {},
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getZoom() {
+        return 16;
+      },
+      project(coordinates) {
+        return { x: coordinates[0] * 1000, y: coordinates[1] * 1000 };
+      },
+      getCanvas() {
+        return { width: 1200, height: 800, style: {} };
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getVisibleAmenityFeatures() {
+      return [
+        {
+          type: "Feature",
+          properties: { amenity_type: "parks", _inRadius: true },
+          geometry: { type: "Point", coordinates: [34.79, 31.25] },
+        },
+      ];
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return showAmenityPointsChecked;
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    getDeckHovering() {
+      return false;
+    },
+    setDeckHovering() {},
+    getAmenityConfig() {
+      return { label: "Parks", color: "#2563eb" };
+    },
+    amenityClusterMinZoom: 13,
+    amenityClusterDissolveZoom: 18,
+    amenityClusterPixelRadius: 40,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.deck = makeDeckLayerConstructors([]);
+  installFakeCanvas(browser.window.document);
+
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "initial" });
+  assert.ok(Array.isArray(overlay.props.layers));
+  assert.equal(overlay.props.layers.length, 2);
+
+  showAmenityPointsChecked = false;
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "toggleOff" });
+
+  assert.ok(Array.isArray(overlay.propsHistory[overlay.propsHistory.length - 1].layers));
+  assert.equal(overlay.propsHistory[overlay.propsHistory.length - 1].layers.length, 0);
+});
+
+test("map renderers clear existing deck layers when house render gating becomes false", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  let currentMode = "house";
+  let zoom = 16;
+  const overlay = {
+    propsHistory: [],
+    setProps(props) {
+      this.propsHistory.push(props);
+      this.props = props;
+    },
+  };
+
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter() {},
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getZoom() {
+        return zoom;
+      },
+      project(coordinates) {
+        return { x: coordinates[0] * 1000, y: coordinates[1] * 1000 };
+      },
+      getCanvas() {
+        return { width: 1200, height: 800, style: {} };
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    getCurrentMode() {
+      return currentMode;
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getVisibleAmenityFeatures() {
+      return [
+        {
+          type: "Feature",
+          properties: { amenity_type: "parks", _inRadius: true },
+          geometry: { type: "Point", coordinates: [34.79, 31.25] },
+        },
+      ];
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    getDeckHovering() {
+      return false;
+    },
+    setDeckHovering() {},
+    getAmenityConfig() {
+      return { label: "Parks", color: "#2563eb" };
+    },
+    amenityClusterMinZoom: 13,
+    amenityClusterDissolveZoom: 18,
+    amenityClusterPixelRadius: 40,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.deck = makeDeckLayerConstructors([]);
+  installFakeCanvas(browser.window.document);
+
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "initial" });
+  assert.equal(overlay.props.layers.length, 2);
+
+  currentMode = "neighborhood";
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "modeChange" });
+  assert.ok(Array.isArray(overlay.propsHistory[overlay.propsHistory.length - 1].layers));
+  assert.equal(overlay.propsHistory[overlay.propsHistory.length - 1].layers.length, 0);
+
+  currentMode = "house";
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "rerender" });
+  assert.equal(overlay.props.layers.length, 2);
+
+  zoom = 12;
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "zoomHidden" });
+  assert.ok(Array.isArray(overlay.propsHistory[overlay.propsHistory.length - 1].layers));
+  assert.equal(overlay.propsHistory[overlay.propsHistory.length - 1].layers.length, 0);
+});
+
+function makeDeckLayerConstructors(layerConstructs) {
+  return {
+    IconLayer: function IconLayer(options) {
+      layerConstructs.push({ type: "IconLayer", options });
+      this.options = options;
+    },
+    TextLayer: function TextLayer(options) {
+      layerConstructs.push({ type: "TextLayer", options });
+      this.options = options;
+    },
+  };
+}
+
+function installFakeCanvas(documentRef) {
+  const originalCreateElement = documentRef.createElement.bind(documentRef);
+  documentRef.createElement = function createElement(tagName) {
+    const element = originalCreateElement(tagName);
+    if (String(tagName).toLowerCase() === "canvas") {
+      element.getContext = function getContext() {
+        return {
+          save() {},
+          restore() {},
+          beginPath() {},
+          rect() {},
+          clip() {},
+          arc() {},
+          fill() {},
+          moveTo() {},
+          closePath() {},
+          stroke() {},
+        };
+      };
+    }
+    return element;
+  };
+}
+
+test("map renderers reuse amenity icon atlas when exact icon key set repeats", () => {
+  const browser = createBrowserContext();
+  installFakeCanvas(browser.window.document);
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  const spans = [];
+  const layerConstructs = [];
+  let visibleAmenityFeatures = [
+    {
+      type: "Feature",
+      properties: { amenity_type: "parks", _inRadius: true },
+      geometry: { type: "Point", coordinates: [34.79, 31.25] },
+    },
+  ];
+  const overlay = {
+    propsHistory: [],
+    setProps(props) {
+      this.propsHistory.push(props);
+      this.props = props;
+    },
+  };
+  const sources = {
+    amenities: {
+      setData() {},
+    },
+  };
+
+  browser.window.deck = makeDeckLayerConstructors(layerConstructs);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(name, meta, callback) {
+        const result = callback();
+        spans.push({ name, meta: typeof meta === "function" ? meta() : meta });
+        return result;
+      },
+    },
+    map: {
+      getZoom() {
+        return 16;
+      },
+      project() {
+        return { x: 100, y: 100 };
+      },
+      getCanvas() {
+        return { width: 1440, height: 1100, style: {} };
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    getDeckHovering() {
+      return false;
+    },
+    setDeckHovering() {},
+    getAmenityConfig() {
+      return { label: "Parks", color: "#2563eb" };
+    },
+    amenityClusterMinZoom: 13,
+    amenityClusterDissolveZoom: 18,
+    amenityClusterPixelRadius: 40,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "first" });
+  const firstAtlas = overlay.props.layers[0].options.iconAtlas;
+  const firstMapping = overlay.props.layers[0].options.iconMapping;
+  const firstIconLayer = overlay.props.layers[0];
+
+  visibleAmenityFeatures = [
+    {
+      type: "Feature",
+      properties: { amenity_type: "parks", _inRadius: true },
+      geometry: { type: "Point", coordinates: [34.8, 31.26] },
+    },
+  ];
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "second" });
+
+  assert.equal(overlay.propsHistory.length, 2);
+  assert.notEqual(overlay.props.layers[0].options.data[0].position[0], 34.79);
+  assert.equal(overlay.props.layers[0].options.iconAtlas, firstAtlas);
+  assert.equal(overlay.props.layers[0].options.iconMapping, firstMapping);
+  assert.equal(firstIconLayer.options.getIcon(firstIconLayer.options.data[0]), "parks:1|1|0|1");
+  assert.equal(
+    overlay.props.layers[0].options.getIcon(overlay.props.layers[0].options.data[0]),
+    "parks:1|1|0|1"
+  );
+  assert.equal(
+    spans.filter(function (entry) {
+      return entry.name === "renderer:buildAmenityIconAtlas";
+    }).length,
+    2
+  );
+  assert.ok(counters.some((entry) => entry.name === "renderer:amenityIconAtlas:cacheHit"));
+  assert.ok(counters.some((entry) => entry.name === "renderer:amenityIconAtlas:cacheMiss"));
+});
+
+test("map renderers keep cluster data fresh when reused atlas keys stay the same", () => {
+  const browser = createBrowserContext();
+  installFakeCanvas(browser.window.document);
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const layerConstructs = [];
+  const tooltipEl = { style: {}, textContent: "" };
+  let fitBoundsArgs = null;
+  let visibleAmenityFeatures = [
+    {
+      type: "Feature",
+      properties: { amenity_type: "parks", _inRadius: true, name: "First A" },
+      geometry: { type: "Point", coordinates: [34.79, 31.25] },
+    },
+    {
+      type: "Feature",
+      properties: { amenity_type: "parks", _inRadius: true, name: "First B" },
+      geometry: { type: "Point", coordinates: [34.79001, 31.25001] },
+    },
+  ];
+  const overlay = {
+    setProps(props) {
+      this.props = props;
+    },
+  };
+
+  browser.window.deck = makeDeckLayerConstructors(layerConstructs);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter() {},
+      phase(_name, callback) { return callback(); },
+      span(_name, _meta, callback) { return callback(); },
+    },
+    map: {
+      getZoom() { return 16; },
+      project(coordinates) { return { x: coordinates[0] * 1000, y: coordinates[1] * 1000 }; },
+      getCanvas() { return { width: 1440, height: 1100, style: {} }; },
+      getCenter() { return { lng: 34.79, lat: 31.25 }; },
+      getBearing() { return 0; },
+      getPitch() { return 0; },
+      fitBounds(bounds, options) { fitBoundsArgs = { bounds, options }; },
+      once(_eventName, callback) { callback(); },
+      easeTo() {},
+    },
+    tooltipEl,
+    getCurrentMode() { return "house"; },
+    getScoreMode() { return "expanded"; },
+    getSelectedAmenityTypes() { return new Set(["parks"]); },
+    getVisibleAmenityFeatures() { return visibleAmenityFeatures; },
+    getShowAmenityPointsTogglePresent() { return true; },
+    getShowAmenityPointsChecked() { return true; },
+    getDeckAmenityOverlay() { return overlay; },
+    getDeckHovering() { return false; },
+    setDeckHovering() {},
+    setLastDeckClickTime() {},
+    getAmenityConfig() { return { label: "Parks", color: "#2563eb" }; },
+    amenityClusterMinZoom: 13,
+    amenityClusterDissolveZoom: 18,
+    amenityClusterPixelRadius: 40,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "first" });
+  const firstAtlas = overlay.props.layers[0].options.iconAtlas;
+
+  visibleAmenityFeatures = [
+    {
+      type: "Feature",
+      properties: { amenity_type: "parks", _inRadius: true, name: "Second A" },
+      geometry: { type: "Point", coordinates: [34.8, 31.26] },
+    },
+    {
+      type: "Feature",
+      properties: { amenity_type: "parks", _inRadius: true, name: "Second B" },
+      geometry: { type: "Point", coordinates: [34.80001, 31.26001] },
+    },
+  ];
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "second" });
+
+  const iconLayer = overlay.props.layers[0];
+  const textLayer = overlay.props.layers[1];
+  const cluster = iconLayer.options.data[0];
+  assert.equal(iconLayer.options.iconAtlas, firstAtlas);
+  assert.equal(iconLayer.options.getIcon(cluster), "parks:2|1|1|2");
+  assert.equal(textLayer.options.data[0], cluster);
+  assert.equal(textLayer.options.getText(cluster), "2");
+  assert.equal(JSON.stringify(cluster.sampleNames), JSON.stringify(["Second A", "Second B"]));
+  assert.equal(JSON.stringify(cluster.members), JSON.stringify([[34.8, 31.26], [34.80001, 31.26001]]));
+
+  iconLayer.options.onHover({ object: cluster, x: 10, y: 20 });
+  assert.match(tooltipEl.textContent, /Second A/);
+
+  iconLayer.options.onClick({ object: cluster });
+  assert.ok(fitBoundsArgs);
+  assert.equal(JSON.stringify(fitBoundsArgs.bounds), JSON.stringify([[34.8, 31.26], [34.80001, 31.26001]]));
+});
+
+test("map renderers rebuild amenity icon atlas when exact icon key set changes", () => {
+  const browser = createBrowserContext();
+  installFakeCanvas(browser.window.document);
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const spans = [];
+  let visibleAmenityFeatures = [
+    {
+      type: "Feature",
+      properties: { amenity_type: "parks", _inRadius: true },
+      geometry: { type: "Point", coordinates: [34.79, 31.25] },
+    },
+  ];
+  const overlay = {
+    setProps(props) {
+      this.props = props;
+    },
+  };
+  browser.window.deck = makeDeckLayerConstructors([]);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter() {},
+      phase(_name, callback) {
+        return callback();
+      },
+      span(name, meta, callback) {
+        const result = callback();
+        spans.push({ name, meta: typeof meta === "function" ? meta() : meta });
+        return result;
+      },
+    },
+    map: {
+      getZoom() {
+        return 16;
+      },
+      project() {
+        return { x: 100, y: 100 };
+      },
+      getCanvas() {
+        return { width: 1440, height: 1100, style: {} };
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks", "schools"]);
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    getDeckHovering() {
+      return false;
+    },
+    setDeckHovering() {},
+    getAmenityConfig(type) {
+      return { label: type, color: type === "schools" ? "#dc2626" : "#2563eb" };
+    },
+    amenityClusterMinZoom: 13,
+    amenityClusterDissolveZoom: 18,
+    amenityClusterPixelRadius: 40,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "first" });
+  const firstAtlas = overlay.props.layers[0].options.iconAtlas;
+
+  visibleAmenityFeatures = [
+    {
+      type: "Feature",
+      properties: { amenity_type: "schools", _inRadius: true },
+      geometry: { type: "Point", coordinates: [34.8, 31.26] },
+    },
+  ];
+  browser.window.Urban95MapRenderers.updateDeckAmenityLayers({ caller: "second" });
+
+  assert.notEqual(overlay.props.layers[0].options.iconAtlas, firstAtlas);
+  assert.equal(
+    spans.filter(function (entry) {
+      return entry.name === "renderer:buildAmenityIconAtlas";
+    }).length,
+    2
+  );
+});
+
+test("map renderers skip duplicate scheduled deck updates when render state is unchanged", () => {
+  let scheduledTimer = null;
+  let nextTimerId = 0;
+  const browser = createBrowserContext({
+    setTimeout(callback) {
+      scheduledTimer = callback;
+      nextTimerId += 1;
+      return nextTimerId;
+    },
+    clearTimeout() {
+      scheduledTimer = null;
+    },
+  });
+  installFakeCanvas(browser.window.document);
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  const spans = [];
+  let zoom = 16;
+  let center = { lng: 34.79, lat: 31.25 };
+  let allAmenitiesData = {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: { amenity_type: "parks", name: "First A" },
+        geometry: { type: "Point", coordinates: [34.79, 31.25] },
+      },
+      {
+        type: "Feature",
+        properties: { amenity_type: "parks", name: "First B" },
+        geometry: { type: "Point", coordinates: [34.79001, 31.25001] },
+      },
+    ],
+  };
+  let amenitiesInRadiusIds = new Set([0]);
+  let visibleAmenityFeatures = [];
+  const overlay = {
+    propsHistory: [],
+    setProps(props) {
+      this.propsHistory.push(props);
+      this.props = props;
+    },
+  };
+  const sources = {
+    amenities: {
+      setData() {},
+    },
+  };
+
+  browser.window.deck = makeDeckLayerConstructors([]);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(name, meta, callback) {
+        const result = callback();
+        spans.push({ name, meta: typeof meta === "function" ? meta() : meta });
+        return result;
+      },
+    },
+    map: {
+      getSource(id) {
+        return sources[id] || null;
+      },
+      getZoom() {
+        return zoom;
+      },
+      project(coordinates) {
+        return { x: coordinates[0] * 1000, y: coordinates[1] * 1000 };
+      },
+      getCanvas() {
+        return { width: 1440, height: 1100, style: {} };
+      },
+      getCenter() {
+        return center;
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks", "trees", "street-lights"];
+    },
+    getAllAmenitiesData() {
+      return allAmenitiesData;
+    },
+    getAmenitiesInRadiusIds() {
+      return amenitiesInRadiusIds;
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    setVisibleAmenityFeatures(value) {
+      visibleAmenityFeatures = value;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    getDeckHovering() {
+      return false;
+    },
+    setDeckHovering() {},
+    getAmenityConfig() {
+      return { label: "Parks", color: "#2563eb" };
+    },
+    getDeckUpdateTimer() {
+      return null;
+    },
+    setDeckUpdateTimer() {},
+    amenityClusterMinZoom: 13,
+    amenityClusterDissolveZoom: 18,
+    amenityClusterPixelRadius: 40,
+    amenityClusterMaxCount: 9,
+  });
+
+  browser.window.Urban95MapRenderers.updateAmenitiesSource({ caller: "initial" });
+  const initialPropsCount = overlay.propsHistory.length;
+  const initialClusterSpanCount = spans.filter((entry) => entry.name === "renderer:clusterVisibleAmenities").length;
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  scheduledTimer();
+
+  assert.equal(overlay.propsHistory.length, initialPropsCount);
+  assert.equal(
+    spans.filter((entry) => entry.name === "renderer:clusterVisibleAmenities").length,
+    initialClusterSpanCount
+  );
+  assert.ok(
+    counters.some(
+      (entry) =>
+        entry.name === "renderer:scheduleDeckUpdate:skip" &&
+        entry.meta &&
+        entry.meta.reason === "moveend"
+    )
+  );
+
+  center = { lng: 34.791, lat: 31.251 };
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
+  scheduledTimer();
+  assert.equal(overlay.propsHistory.length, initialPropsCount + 1);
+
+  allAmenitiesData = {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: { amenity_type: "parks", name: "Second A" },
+        geometry: { type: "Point", coordinates: [34.8, 31.26] },
+      },
+      {
+        type: "Feature",
+        properties: { amenity_type: "parks", name: "Second B" },
+        geometry: { type: "Point", coordinates: [34.80001, 31.26001] },
+      },
+    ],
+  };
+  amenitiesInRadiusIds = new Set([0, 1]);
+  browser.window.Urban95MapRenderers.updateAmenitiesSource({
+    caller: "selection:pointSourceRefresh",
+    deferDeckRender: true,
+  });
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  scheduledTimer();
+  assert.equal(overlay.propsHistory.length, initialPropsCount + 2);
 });
 
 test("map events register expected handlers and call injected dependencies", () => {
@@ -4249,7 +5265,9 @@ function createSelectionDeferredSidebarTestContext() {
   runBrowserScript("docs/js/map/selection.js", browser);
 
   const calls = [];
+  const perfRecords = [];
   const rafQueue = [];
+  const moveendHandlers = [];
   const radiusSource = {
     setData(data) {
       const count =
@@ -4298,6 +5316,9 @@ function createSelectionDeferredSidebarTestContext() {
       easeTo(options) {
         calls.push(["easeTo", options.center[0], options.center[1], options.zoom]);
       },
+      once(eventName, callback) {
+        if (eventName === "moveend") moveendHandlers.push(callback);
+      },
       getZoom() {
         return 15;
       },
@@ -4322,7 +5343,9 @@ function createSelectionDeferredSidebarTestContext() {
       span(_name, _meta, fn) {
         return fn();
       },
-      mark() {},
+      mark(name, meta) {
+        perfRecords.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
     },
     hasGeneratedArtifact() {
       return false;
@@ -4408,8 +5431,8 @@ function createSelectionDeferredSidebarTestContext() {
     setLatestRadiusCounts(value) {
       calls.push(["setLatestRadiusCounts", value.park || 0]);
     },
-    updateAmenitiesSource() {
-      calls.push(["updateAmenitiesSource"]);
+    updateAmenitiesSource(meta) {
+      calls.push(["updateAmenitiesSource", meta || null]);
     },
     updateTreesSource() {
       calls.push(["updateTreesSource"]);
@@ -4417,13 +5440,14 @@ function createSelectionDeferredSidebarTestContext() {
     updateStreetLightsSource() {
       calls.push(["updateStreetLightsSource"]);
     },
-    showScoreExplainSidebarShell(building) {
+    showScoreExplainSidebarShell(building, options) {
       state.sidebarShellShown = true;
       calls.push([
         "showScoreExplainSidebarShell",
         building && building.feature && building.feature.properties
           ? building.feature.properties.building_id
           : null,
+        options ? JSON.parse(JSON.stringify(options)) : null,
       ]);
     },
     syncScoreSidebar() {
@@ -4483,12 +5507,18 @@ function createSelectionDeferredSidebarTestContext() {
   return {
     browser,
     calls,
+    perfRecords,
     rafQueue,
     buildingA,
     buildingB,
     flushRafQueue() {
       while (rafQueue.length > 0) {
         rafQueue.shift()();
+      }
+    },
+    flushMoveendHandlers() {
+      while (moveendHandlers.length > 0) {
+        moveendHandlers.shift()();
       }
     },
   };
@@ -4514,8 +5544,11 @@ test("selection commits selected building shell before deferred sidebar detail w
     [87, 88]
   );
   assert.deepEqual(
-    preFlushCalls.filter((call) => call[0] === "showScoreExplainSidebarShell").map((call) => call[1]),
-    [87, 88]
+    preFlushCalls.filter((call) => call[0] === "showScoreExplainSidebarShell"),
+    [
+      ["showScoreExplainSidebarShell", 87, { preserveExistingDetail: true, reason: "amenitiesHouseSwitch" }],
+      ["showScoreExplainSidebarShell", 88, { preserveExistingDetail: true, reason: "amenitiesHouseSwitch" }],
+    ]
   );
   assert.equal(
     preFlushCalls.some((call) => call[0] === "syncScoreSidebar"),
@@ -4549,7 +5582,7 @@ test("selection commits selected building shell before deferred sidebar detail w
       ["building:setData", 87],
       ["getZoomForPolygon", 87, false],
       ["radius:setData", 87],
-      ["showScoreExplainSidebarShell", 87],
+      ["showScoreExplainSidebarShell", 87, { preserveExistingDetail: true, reason: "amenitiesHouseSwitch" }],
       ["requestAnimationFrame", 1],
       ["easeTo", 34.7941, 31.25104, 16],
       ["setSelectedBuilding", 88],
@@ -4561,13 +5594,24 @@ test("selection commits selected building shell before deferred sidebar detail w
     preFlushCalls.slice(11, 13),
     [
       ["radius:setData", 88],
-      ["showScoreExplainSidebarShell", 88],
+      ["showScoreExplainSidebarShell", 88, { preserveExistingDetail: true, reason: "amenitiesHouseSwitch" }],
     ]
   );
   assert.deepEqual(
     preFlushCalls.filter((call) => call[0] === "getZoomForPolygon"),
     [["getZoomForPolygon", 87, false]]
   );
+
+  context.flushMoveendHandlers();
+
+  const easeStartRecords = context.perfRecords.filter((record) => record.name === "selection:easeTo:start");
+  const easeMoveendRecords = context.perfRecords.filter((record) => record.name === "selection:easeTo:moveend");
+  assert.deepEqual(easeStartRecords.map((record) => record.meta.buildingId), [87]);
+  assert.deepEqual(easeMoveendRecords.map((record) => record.meta.buildingId), [87]);
+  assert.equal(easeStartRecords[0].meta.cameraToken, 1);
+  assert.equal(easeStartRecords[0].meta.zoom, 16);
+  assert.equal(easeMoveendRecords[0].meta.cameraToken, 1);
+  assert.equal(easeMoveendRecords[0].meta.staleCameraToken, true);
 
   context.flushRafQueue();
 
@@ -4587,6 +5631,26 @@ test("selection commits selected building shell before deferred sidebar detail w
     context.calls.filter((call) => call[0] === "setLatestRadiusCounts").map((call) => call[1]),
     [2]
   );
+});
+
+test("selection defers deck rebuild metadata only for flying house refreshes", () => {
+  const flyContext = createSelectionDeferredSidebarTestContext();
+  flyContext.browser.window.Urban95Selection.selectBuilding(flyContext.buildingA, true);
+  flyContext.flushRafQueue();
+
+  const flyRefresh = flyContext.calls.find((call) => call[0] === "updateAmenitiesSource");
+  assert.equal(flyRefresh[1].caller, "selection:pointSourceRefresh");
+  assert.equal(flyRefresh[1].selectedBuildingId, 87);
+  assert.equal(flyRefresh[1].deferDeckRender, true);
+
+  const reselectContext = createSelectionDeferredSidebarTestContext();
+  reselectContext.browser.window.Urban95Selection.selectBuilding(reselectContext.buildingA, false);
+  reselectContext.flushRafQueue();
+
+  const reselectRefresh = reselectContext.calls.find((call) => call[0] === "updateAmenitiesSource");
+  assert.equal(reselectRefresh[1].caller, "selection:pointSourceRefresh");
+  assert.equal(reselectRefresh[1].selectedBuildingId, 87);
+  assert.notEqual(reselectRefresh[1].deferDeckRender, true);
 });
 
 test("selection clear invalidates deferred selected-building work", () => {
@@ -4616,6 +5680,13 @@ test("selection clear invalidates deferred selected-building work", () => {
     context.calls.filter((call) => call[0] === "setLatestRadiusCounts").map((call) => call[1]),
     [0]
   );
+
+  context.flushMoveendHandlers();
+
+  const easeMoveendRecords = context.perfRecords.filter((record) => record.name === "selection:easeTo:moveend");
+  assert.deepEqual(easeMoveendRecords.map((record) => record.meta.buildingId), [87]);
+  assert.equal(easeMoveendRecords[0].meta.cameraToken, 1);
+  assert.equal(easeMoveendRecords[0].meta.staleCameraToken, true);
 });
 
 test("selection pending-isochrone path tags the loading overlay reason", () => {
@@ -4721,8 +5792,8 @@ test("selection pending-isochrone path tags the loading overlay reason", () => {
     updateStreetLightsSource() {
       calls.push(["updateStreetLightsSource"]);
     },
-    showScoreExplainSidebarShell() {
-      calls.push(["showScoreExplainSidebarShell"]);
+    showScoreExplainSidebarShell(_building, options) {
+      calls.push(["showScoreExplainSidebarShell", options || null]);
     },
     syncScoreSidebar() {},
     hideScoreSidebar() {},
@@ -4764,6 +5835,10 @@ test("selection pending-isochrone path tags the loading overlay reason", () => {
 
   assert.equal(showOverlayCalls.length, 1);
   assert.equal(showOverlayCalls[0].reason, "selectedBuildingPendingIsochrones");
+  assert.deepEqual(
+    calls.filter((call) => call[0] === "showScoreExplainSidebarShell"),
+    [["showScoreExplainSidebarShell", null]]
+  );
   assert.ok(calls.some((call) => call[0] === "loadIsochronesLookup"));
 });
 
@@ -4882,8 +5957,8 @@ test("selection pending-isochrone path can suppress the global overlay while pre
     updateStreetLightsSource() {
       calls.push(["updateStreetLightsSource"]);
     },
-    showScoreExplainSidebarShell() {
-      calls.push(["showScoreExplainSidebarShell"]);
+    showScoreExplainSidebarShell(_building, options) {
+      calls.push(["showScoreExplainSidebarShell", options || null]);
     },
     syncScoreSidebar() {},
     hideScoreSidebar() {},
@@ -4926,7 +6001,10 @@ test("selection pending-isochrone path can suppress the global overlay while pre
 
   assert.deepEqual(showOverlayCalls, []);
   assert.ok(calls.some((call) => call[0] === "setData" && call[1] === 0));
-  assert.ok(calls.some((call) => call[0] === "showScoreExplainSidebarShell"));
+  assert.deepEqual(
+    calls.filter((call) => call[0] === "showScoreExplainSidebarShell"),
+    [["showScoreExplainSidebarShell", null]]
+  );
   assert.ok(calls.some((call) => call[0] === "loadIsochronesLookup"));
   assert.ok(calls.some((call) => call[0] === "setLoadingStatus" && call[1] === "Loading walking areas..."));
 });
@@ -5945,6 +7023,37 @@ test("score sidebar shell records opt-in perf span without building breakdown co
   assert.equal(buildingContextCoordsEl.textContent, "31.25100, 34.79100");
   assert.ok(sidebarEl.classList.contains("is-open"));
   assert.ok(browser.window.urban95Perf.records.some((record) => record.kind === "span" && record.name === "scoreSidebar:showShell"));
+  assert.ok(
+    browser.window.urban95Perf.records.some(
+      (record) =>
+        record.kind === "mark" &&
+        record.name === "scoreSidebar:showShell:loadingVisible" &&
+        record.meta &&
+        record.meta.buildingId === 87 &&
+        record.meta.scoreMode === "weighted" &&
+        record.meta.sidebarWasOpen === false &&
+        record.meta.hasExistingDetail === false
+    )
+  );
+  assert.ok(
+    browser.window.urban95Perf.records.some(
+      (record) =>
+        record.kind === "mark" &&
+        record.name === "scoreSidebar:showShell:firstOpenLoading" &&
+        record.meta &&
+        record.meta.sidebarWasOpen === false &&
+        record.meta.hasExistingDetail === false
+    )
+  );
+  assert.ok(
+    browser.window.urban95Perf.records.some(
+      (record) =>
+        record.kind === "mark" &&
+        record.name === "scoreSidebar:showShell:preserveExistingDetail" &&
+        record.meta &&
+        record.meta.preserved === false
+    )
+  );
   assert.equal(
     browser.window.urban95Perf.records.some((record) => record.name === "scoreSidebar:buildBreakdown"),
     false
@@ -5952,6 +7061,31 @@ test("score sidebar shell records opt-in perf span without building breakdown co
   assert.equal(
     browser.window.urban95Perf.records.some((record) => record.name === "scoreSidebar:buildMetrics"),
     false
+  );
+
+  bodyEl.innerHTML = "<p>Existing amenity detail</p>";
+  emptyEl.hidden = false;
+  emptyEl.textContent = "Loading score details...";
+  browser.window.Urban95ScoreSidebar.showShell(building, {
+    preserveExistingDetail: true,
+    reason: "amenitiesHouseSwitch",
+  });
+
+  assert.equal(bodyEl.innerHTML, "<p>Existing amenity detail</p>");
+  assert.equal(emptyEl.hidden, true);
+  assert.equal(emptyEl.textContent, "");
+  assert.equal(breakdownCalls, 0);
+  assert.equal(metricsCalls, 0);
+  assert.ok(
+    browser.window.urban95Perf.records.some(
+      (record) =>
+        record.kind === "mark" &&
+        record.name === "scoreSidebar:showShell:preserveExistingDetail" &&
+        record.meta &&
+        record.meta.requested === true &&
+        record.meta.preserved === true &&
+        record.meta.reason === "amenitiesHouseSwitch"
+    )
   );
 });
 
@@ -6150,6 +7284,65 @@ test("score sidebar chrome can resize an unchanged open sidebar without reapplyi
     { type: "resize" },
     { type: "resize" },
   ]);
+});
+
+test("score sidebar chrome records opt-in padding and resize diagnostics", () => {
+  const browser = createBrowserContext({
+    matchMedia() {
+      return { matches: false };
+    },
+    document: {
+      getElementById() {
+        return null;
+      },
+    },
+  });
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+
+  const records = [];
+  const mapCalls = [];
+  const chrome = browser.window.Urban95ScoreSidebarChrome.create({
+    map: {
+      setPadding(padding) {
+        mapCalls.push(["setPadding", padding.right]);
+      },
+      resize() {
+        mapCalls.push(["resize"]);
+      },
+      getPadding() {
+        return { top: 0, right: 0, bottom: 0, left: 0 };
+      },
+      getCanvas() {
+        return { setAttribute() {}, focus() {} };
+      },
+    },
+    document: browser.window.document,
+    matchMedia: browser.window.matchMedia,
+    perf: {
+      mark(name, metaFactory) {
+        records.push([name, metaFactory ? metaFactory() : null]);
+      },
+    },
+  });
+
+  chrome.setSidebarPadding(true, 421);
+  chrome.setSidebarPadding(true, 421);
+  chrome.setSidebarPadding(true, 421, { forceResize: true });
+
+  assert.deepEqual(records.map((entry) => entry[0]), [
+    "scoreSidebarChrome:setPadding",
+    "scoreSidebarChrome:resize",
+    "scoreSidebarChrome:paddingUnchanged",
+    "scoreSidebarChrome:paddingUnchanged",
+    "scoreSidebarChrome:resize",
+  ]);
+  assert.deepEqual(mapCalls, [["setPadding", 421], ["resize"], ["resize"]]);
+  assert.equal(records[0][1].open, true);
+  assert.equal(records[0][1].width, 421);
+  assert.equal(records[0][1].right, 421);
+  assert.equal(records[0][1].mobile, false);
+  assert.equal(records[2][1].forceResize, false);
+  assert.equal(records[3][1].forceResize, true);
 });
 
 test("score explanation create fails fast when a required scoreModel member is missing", () => {

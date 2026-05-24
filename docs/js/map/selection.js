@@ -3,6 +3,7 @@
   var hasRadiusOverlayData = false;
   var hasSelectedBuildingOverlayData = false;
   var selectedBuildingRefreshGeneration = 0;
+  var selectedBuildingCameraGeneration = 0;
 
   function configure(nextDeps) {
     deps = nextDeps || null;
@@ -47,6 +48,19 @@
 
   function invalidateSelectedBuildingRefreshToken() {
     selectedBuildingRefreshGeneration += 1;
+  }
+
+  function nextSelectedBuildingCameraToken() {
+    selectedBuildingCameraGeneration += 1;
+    return selectedBuildingCameraGeneration;
+  }
+
+  function invalidateSelectedBuildingCameraToken() {
+    selectedBuildingCameraGeneration += 1;
+  }
+
+  function isCurrentSelectedBuildingCameraToken(token) {
+    return token === selectedBuildingCameraGeneration;
   }
 
   function featureCount(data) {
@@ -380,10 +394,27 @@
     });
   }
 
-  function showSelectedBuildingSidebarShell(d, building) {
+  function resolveSelectedBuildingId(building) {
+    if (!building) return null;
+    if (building.feature && building.feature.properties) return building.feature.properties.building_id;
+    if (building.properties) return building.properties.building_id;
+    return null;
+  }
+
+  function showSelectedBuildingSidebarShell(d, building, options) {
     if (typeof d.showScoreExplainSidebarShell === "function") {
-      d.showScoreExplainSidebarShell(building);
+      d.showScoreExplainSidebarShell(building, options);
     }
+  }
+
+  function getPointSourceRefreshMeta(branch, refreshToken, selectedBuildingId, shouldFly) {
+    return {
+      caller: "selection:pointSourceRefresh",
+      selectionTransactionId: refreshToken,
+      selectedBuildingId: selectedBuildingId,
+      branch: branch,
+      deferDeckRender: shouldFly,
+    };
   }
 
   function requestAnimationFrameOrNow(d, callback) {
@@ -406,21 +437,49 @@
     });
   }
 
+  function performSelectedBuildingEaseTo(d, building, easeOptions, meta) {
+    var cameraToken = nextSelectedBuildingCameraToken();
+    var buildingId = resolveSelectedBuildingId(building);
+    if (typeof d.map.once === "function") {
+      d.map.once("moveend", function () {
+        perfMark(d, "selection:easeTo:moveend", function () {
+          return {
+            buildingId: buildingId,
+            cameraToken: cameraToken,
+            staleCameraToken: !isCurrentSelectedBuildingCameraToken(cameraToken),
+            branch: meta && meta.branch ? meta.branch : "",
+          };
+        });
+      });
+    }
+    perfMark(d, "selection:easeTo:start", function () {
+      return {
+        buildingId: buildingId,
+        cameraToken: cameraToken,
+        branch: meta && meta.branch ? meta.branch : "",
+        zoom: Math.round(Number(easeOptions && easeOptions.zoom) * 100) / 100,
+      };
+    });
+    d.map.easeTo(easeOptions);
+  }
+
   function selectBuilding(building, doFly, options) {
     var d = requireDeps();
     var opts = options || {};
     var suppressIsochroneLoadingOverlay = opts.suppressIsochroneLoadingOverlay === true;
     var refreshToken = nextSelectedBuildingRefreshToken();
     var shouldFly = doFly !== false;
+    if (!shouldFly) {
+      invalidateSelectedBuildingCameraToken();
+    }
+    var selectedBuildingId = resolveSelectedBuildingId(building);
     perfMark(d, "selection:selectBuilding:start", function () {
       return {
         scoreMode: d.getScoreMode(),
         walkMinutes: d.getWalkMinutes(),
         shouldFly: shouldFly,
         isochronesLoaded: d.getIsochronesLoaded(),
-        buildingId: building && building.feature && building.feature.properties
-          ? building.feature.properties.building_id
-          : "",
+        buildingId: selectedBuildingId == null ? "" : selectedBuildingId,
       };
     });
     return d.urban95Perf.phase("selectBuilding", function () {
@@ -460,7 +519,9 @@
         });
 
         perfSpan(d, "selection:pointSourceRefresh", { branch: "weighted" }, function () {
-          d.updateAmenitiesSource();
+          d.updateAmenitiesSource(
+            getPointSourceRefreshMeta("weighted", refreshToken, selectedBuildingId, shouldFly)
+          );
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
@@ -469,13 +530,13 @@
 
         if (shouldFly) {
           perfSpan(d, "selection:flySchedule", { branch: "weighted" }, function () {
-            d.map.easeTo({
+            performSelectedBuildingEaseTo(d, building, {
               center: [building.lng, building.lat],
               zoom: weightedFlyZoom,
               duration: 1400,
               easing: easeInOutQuad,
               essential: true,
-            });
+            }, { branch: "weighted" });
           });
         }
         return;
@@ -486,14 +547,16 @@
         d.setTreesInRadiusIds(new Set());
         d.setStreetLightsInRadiusIds(new Set());
         d.setLatestRadiusCounts({});
-            var pendingRadiusSource = d.map.getSource(d.radiusSourceId);
+        var pendingRadiusSource = d.map.getSource(d.radiusSourceId);
         perfSpan(d, "selection:radiusSource", { branch: "isochronesPending" }, function () {
           if (pendingRadiusSource) {
             setRadiusSourceData(pendingRadiusSource, { type: "FeatureCollection", features: [] });
           }
         });
         perfSpan(d, "selection:pointSourceRefresh", { branch: "isochronesPending" }, function () {
-          d.updateAmenitiesSource();
+          d.updateAmenitiesSource(
+            getPointSourceRefreshMeta("isochronesPending", refreshToken, selectedBuildingId, shouldFly)
+          );
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
@@ -506,13 +569,13 @@
         });
         if (shouldFly) {
           perfSpan(d, "selection:flySchedule", { branch: "isochronesPending" }, function () {
-            d.map.easeTo({
+            performSelectedBuildingEaseTo(d, building, {
               center: [building.lng, building.lat],
               zoom: Math.max(d.map.getZoom(), 16),
               duration: 1400,
               easing: easeInOutQuad,
               essential: true,
-            });
+            }, { branch: "isochronesPending" });
           });
         }
         scheduleSelectedBuildingDetailSync(refreshToken);
@@ -535,7 +598,10 @@
             var source = d.map.getSource(d.radiusSourceId);
             setRadiusSourceData(source, polygon);
         });
-        showSelectedBuildingSidebarShell(d, building);
+        showSelectedBuildingSidebarShell(d, building, {
+          preserveExistingDetail: d.getScoreMode() === "expanded",
+          reason: "amenitiesHouseSwitch",
+        });
       } else {
         perfSpan(d, "selection:radiusSource", { branch: "isochroneMissing" }, function () {
             var emptySource = d.map.getSource(d.radiusSourceId);
@@ -547,7 +613,9 @@
         d.setStreetLightsInRadiusIds(new Set());
         d.setLatestRadiusCounts({});
         perfSpan(d, "selection:pointSourceRefresh", { branch: "isochroneMissing" }, function () {
-          d.updateAmenitiesSource();
+          d.updateAmenitiesSource(
+            getPointSourceRefreshMeta("isochroneMissing", refreshToken, selectedBuildingId, shouldFly)
+          );
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
@@ -556,13 +624,13 @@
 
         if (shouldFly) {
           perfSpan(d, "selection:flySchedule", { branch: "isochroneMissing" }, function () {
-            d.map.easeTo({
+            performSelectedBuildingEaseTo(d, building, {
               center: [building.lng, building.lat],
               zoom: Math.max(d.map.getZoom(), 16),
               duration: 1400,
               easing: easeInOutQuad,
               essential: true,
-            });
+            }, { branch: "isochroneMissing" });
           });
         }
         return;
@@ -579,7 +647,9 @@
         if (!isCurrentSelectedBuildingRefreshToken(refreshToken)) return;
         perfSpan(d, "selection:pointSourceRefresh", { branch: "isochroneFound" }, function () {
           if (!isCurrentSelectedBuildingRefreshToken(refreshToken)) return;
-          d.updateAmenitiesSource();
+          d.updateAmenitiesSource(
+            getPointSourceRefreshMeta("isochroneFound", refreshToken, selectedBuildingId, shouldFly)
+          );
           d.updateTreesSource();
           d.updateStreetLightsSource();
         });
@@ -589,13 +659,13 @@
       requestAnimationFrameOrNow(d, applyRadius);
       if (shouldFly) {
         perfSpan(d, "selection:flySchedule", { branch: "isochroneFound" }, function () {
-          d.map.easeTo({
+          performSelectedBuildingEaseTo(d, building, {
             center: [building.lng, building.lat],
             zoom: isochroneFlyZoom,
             duration: 1400,
             easing: easeInOutQuad,
             essential: true,
-          });
+          }, { branch: "isochroneFound" });
         });
       }
     });
@@ -608,6 +678,7 @@
     if (d.getCurrentMode() !== "house") {
       infoPanel.style.display = "none";
       d.hideScoreSidebar({ restoreFocus: false });
+      invalidateSelectedBuildingCameraToken();
       return;
     }
     d.syncScoreSidebar();
@@ -622,6 +693,7 @@
       return;
     }
     invalidateSelectedBuildingRefreshToken();
+    invalidateSelectedBuildingCameraToken();
     d.setSelectedBuilding(null);
     setSelectedBuildingVectorState(null);
     d.setAmenitiesInRadiusIds(new Set());

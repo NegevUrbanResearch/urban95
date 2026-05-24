@@ -1,6 +1,8 @@
 (function () {
   function create(deps) {
     var validated = validateDeps(deps || null);
+    var perf = validated.perf || {};
+    var perfMark = typeof perf.mark === "function" ? perf.mark : function () {};
     var scoreSidebarPaddingActive = false;
     var scoreSidebarPaddingSnapshot = null;
     var scoreSidebarAppliedPadding = null;
@@ -48,17 +50,58 @@
           right: Math.round(width || 0),
         });
         if (scoreSidebarPaddingActive && isSamePadding(scoreSidebarAppliedPadding, nextPadding)) {
+          perfMark("scoreSidebarChrome:paddingUnchanged", function () {
+            return {
+              open: true,
+              width: Math.round(Number(width) || 0),
+              right: nextPadding.right,
+              mobile: isMobile,
+              forceResize: opts.forceResize === true,
+            };
+          });
           if (opts.forceResize) {
             validated.map.resize();
+            perfMark("scoreSidebarChrome:resize", function () {
+              return {
+                open: true,
+                right: nextPadding.right,
+                forceResize: true,
+              };
+            });
           }
           return;
         }
+        perfMark("scoreSidebarChrome:setPadding", function () {
+          return {
+            open: true,
+            width: Math.round(Number(width) || 0),
+            right: nextPadding.right,
+            mobile: isMobile,
+            forceResize: opts.forceResize === true,
+          };
+        });
         validated.map.setPadding(nextPadding);
         scoreSidebarAppliedPadding = nextPadding;
         validated.map.resize();
+        perfMark("scoreSidebarChrome:resize", function () {
+          return {
+            open: true,
+            right: nextPadding.right,
+            forceResize: opts.forceResize === true,
+          };
+        });
         return;
       }
 
+      perfMark("scoreSidebarChrome:setPadding", function () {
+        return {
+          open: false,
+          width: Math.round(Number(width) || 0),
+          right: 0,
+          mobile: isMobile,
+          forceResize: opts.forceResize === true,
+        };
+      });
       if (scoreSidebarPaddingActive && scoreSidebarPaddingSnapshot) {
         validated.map.setPadding(scoreSidebarPaddingSnapshot);
       }
@@ -66,6 +109,13 @@
       scoreSidebarPaddingSnapshot = null;
       scoreSidebarAppliedPadding = null;
       validated.map.resize();
+      perfMark("scoreSidebarChrome:resize", function () {
+        return {
+          open: false,
+          right: 0,
+          forceResize: opts.forceResize === true,
+        };
+      });
     }
 
     function restoreFocusAfterHide() {

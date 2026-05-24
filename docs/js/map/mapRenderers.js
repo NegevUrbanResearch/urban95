@@ -1,9 +1,13 @@
 (function () {
   var deps = null;
   var missingBuildingIdLogged = false;
+  var lastDeckRenderStateKey = null;
+  var visibleAmenityFeaturesStamp = 0;
 
   function configure(nextDeps) {
     deps = nextDeps || null;
+    lastDeckRenderStateKey = null;
+    visibleAmenityFeaturesStamp = 0;
   }
 
   function requireDeps() {
@@ -26,8 +30,89 @@
     return callback();
   }
 
+  function getAmenitiesUpdateMeta(meta) {
+    var updateMeta = meta || {};
+    return {
+      caller: updateMeta.caller || "direct",
+      reason: updateMeta.reason || "",
+      selectionTransactionId:
+        updateMeta.selectionTransactionId == null ? null : updateMeta.selectionTransactionId,
+      selectedBuildingId:
+        updateMeta.selectedBuildingId == null ? null : updateMeta.selectedBuildingId,
+      deferDeckRender: updateMeta.deferDeckRender === true,
+    };
+  }
+
+  function hasRadiusFilterActive(d) {
+    if (typeof d.getAmenitiesInRadiusIds !== "function") return false;
+    var ids = d.getAmenitiesInRadiusIds();
+    return !!(ids && typeof ids.size === "number" && ids.size > 0);
+  }
+
+  function getCanvasSizeSignature(d) {
+    if (!d.map || typeof d.map.getCanvas !== "function") return "0x0";
+    var canvas = d.map.getCanvas();
+    return [
+      canvas && Number.isFinite(canvas.width) ? canvas.width : 0,
+      canvas && Number.isFinite(canvas.height) ? canvas.height : 0,
+    ].join("x");
+  }
+
+  function getExactCameraSignature(d) {
+    var zoom = d.map && typeof d.map.getZoom === "function" ? d.map.getZoom() : 0;
+    var center = d.map && typeof d.map.getCenter === "function" ? d.map.getCenter() : null;
+    var bearing = d.map && typeof d.map.getBearing === "function" ? d.map.getBearing() : 0;
+    var pitch = d.map && typeof d.map.getPitch === "function" ? d.map.getPitch() : 0;
+    return [
+      Number(zoom).toPrecision(15),
+      Number(center && center.lng).toPrecision(15),
+      Number(center && center.lat).toPrecision(15),
+      Number(bearing).toPrecision(15),
+      Number(pitch).toPrecision(15),
+      getCanvasSizeSignature(d),
+    ].join("|");
+  }
+
+  function selectedAmenityTypesSignature(d) {
+    return Array.from(d.getSelectedAmenityTypes ? d.getSelectedAmenityTypes() : [])
+      .sort()
+      .join("|");
+  }
+
   function featureCount(data) {
     return data && Array.isArray(data.features) ? data.features.length : 0;
+  }
+
+  function setVisibleAmenityFeaturesState(d, features) {
+    visibleAmenityFeaturesStamp += 1;
+    d.setVisibleAmenityFeatures(features);
+  }
+
+  function getDeckRenderState(d) {
+    var togglePresent =
+      typeof d.getShowAmenityPointsTogglePresent === "function" && d.getShowAmenityPointsTogglePresent();
+    var toggleChecked =
+      !togglePresent ||
+      (typeof d.getShowAmenityPointsChecked === "function" && d.getShowAmenityPointsChecked());
+    var shouldRender =
+      d.getCurrentMode() === "house" &&
+      (d.getScoreMode() !== "expanded" || !togglePresent || toggleChecked) &&
+      d.map.getZoom() >= d.amenityClusterMinZoom;
+    var visibleFeatures = d.getVisibleAmenityFeatures();
+    return {
+      shouldRender: shouldRender,
+      visibleFeatures: visibleFeatures,
+      key: [
+        shouldRender ? "render" : "hidden",
+        d.getScoreMode(),
+        d.getCurrentMode(),
+        togglePresent ? "toggle" : "no-toggle",
+        toggleChecked ? "checked" : "unchecked",
+        selectedAmenityTypesSignature(d),
+        getExactCameraSignature(d),
+        String(visibleAmenityFeaturesStamp),
+      ].join("::"),
+    };
   }
 
   function getSelectedAmenityTypes() {
@@ -304,29 +389,59 @@
     }
   }
 
-  function updateAmenitiesSource() {
+  function updateAmenitiesSource(meta) {
     var d = requireDeps();
+    var updateMeta = getAmenitiesUpdateMeta(meta);
+    var finishUpdate = function (branch, visibleFeatures) {
+      perfCounter(d, "renderer:updateAmenitiesSource:end", function () {
+        return {
+          caller: updateMeta.caller,
+          reason: updateMeta.reason,
+          selectionTransactionId: updateMeta.selectionTransactionId,
+          selectedBuildingId: updateMeta.selectedBuildingId,
+          scoreMode: d.getScoreMode(),
+          mode: d.getCurrentMode(),
+          allFeatures: featureCount(d.getAllAmenitiesData()),
+          radiusFilterActive: hasRadiusFilterActive(d),
+          branch: branch,
+          visibleFeatures: visibleFeatures,
+        };
+      });
+    };
     perfCounter(d, "renderer:updateAmenitiesSource:start", function () {
       return {
+        caller: updateMeta.caller,
+        reason: updateMeta.reason,
+        selectionTransactionId: updateMeta.selectionTransactionId,
+        selectedBuildingId: updateMeta.selectedBuildingId,
         scoreMode: d.getScoreMode(),
         mode: d.getCurrentMode(),
         allFeatures: featureCount(d.getAllAmenitiesData()),
         selectedAmenityTypes: d.getSelectedAmenityTypes().size,
+        visibleFeatures: d.getVisibleAmenityFeatures().length,
+        radiusFilterActive: hasRadiusFilterActive(d),
       };
     });
     return d.urban95Perf.phase("updateAmenitiesSource", function () {
       var allAmenitiesData = d.getAllAmenitiesData();
-      if (!allAmenitiesData) return;
+      if (!allAmenitiesData) {
+        finishUpdate("missingData", d.getVisibleAmenityFeatures().length);
+        return;
+      }
 
       var source = d.map.getSource("amenities");
-      if (!source) return;
+      if (!source) {
+        finishUpdate("missingSource", d.getVisibleAmenityFeatures().length);
+        return;
+      }
 
       if (d.getScoreMode() === "weighted") {
         perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "weighted", features: 0 }, function () {
           source.setData({ type: "FeatureCollection", features: [] });
         });
-        d.setVisibleAmenityFeatures([]);
+        setVisibleAmenityFeaturesState(d, []);
         updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "weighted" });
+        finishUpdate("weighted", 0);
         return;
       }
 
@@ -335,8 +450,9 @@
         perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "noSelection", features: 0 }, function () {
           source.setData({ type: "FeatureCollection", features: [] });
         });
-        d.setVisibleAmenityFeatures([]);
+        setVisibleAmenityFeaturesState(d, []);
         updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "noSelection" });
+        finishUpdate("noSelection", 0);
         return;
       }
 
@@ -352,20 +468,30 @@
         perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "hidden", features: 0 }, function () {
           source.setData({ type: "FeatureCollection", features: [] });
         });
-        d.setVisibleAmenityFeatures([]);
+        setVisibleAmenityFeaturesState(d, []);
         updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "hidden" });
+        finishUpdate("hidden", 0);
         return;
       }
 
       var amenitiesInRadiusIds = d.getAmenitiesInRadiusIds();
-      var updatedFeatures = [];
-
-      allAmenitiesData.features.forEach(function (feature, index) {
-        var type = feature.properties.amenity_type;
-        if (!useAll && !selectedAmenityTypes.has(type)) return;
-        var inRadius = amenitiesInRadiusIds.has(index);
-        var newProps = Object.assign({}, feature.properties, { _inRadius: inRadius });
-        updatedFeatures.push(Object.assign({}, feature, { properties: newProps }));
+      var updatedFeatures = perfSpan(d, "renderer:updateAmenitiesSource:buildVisibleFeatures", function () {
+        return {
+          allFeatures: featureCount(allAmenitiesData),
+          selectedAmenityTypes: selectedAmenityTypes.size,
+          useAll: useAll,
+          radiusFilterActive: hasRadiusFilterActive(d),
+        };
+      }, function () {
+        var features = [];
+        allAmenitiesData.features.forEach(function (feature, index) {
+          var type = feature.properties.amenity_type;
+          if (!useAll && !selectedAmenityTypes.has(type)) return;
+          var inRadius = amenitiesInRadiusIds.has(index);
+          var newProps = Object.assign({}, feature.properties, { _inRadius: inRadius });
+          features.push(Object.assign({}, feature, { properties: newProps }));
+        });
+        return features;
       });
 
       perfSpan(d, "renderer:updateAmenitiesSource:setData", function () {
@@ -373,8 +499,22 @@
       }, function () {
         source.setData({ type: "FeatureCollection", features: updatedFeatures });
       });
-      d.setVisibleAmenityFeatures(updatedFeatures);
-      updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "visible" });
+      perfSpan(d, "renderer:updateAmenitiesSource:setVisibleFeatures", function () {
+        return { branch: "visible", features: updatedFeatures.length };
+      }, function () {
+        setVisibleAmenityFeaturesState(d, updatedFeatures);
+      });
+      perfSpan(d, "renderer:updateAmenitiesSource:updateDeck", function () {
+        return {
+          branch: "visible",
+          features: updatedFeatures.length,
+          deferred: updateMeta.deferDeckRender,
+        };
+      }, function () {
+        if (updateMeta.deferDeckRender) return;
+        updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "visible" });
+      });
+      finishUpdate("visible", updatedFeatures.length);
     });
   }
 
@@ -575,11 +715,15 @@
     );
   }
 
-  function buildAmenityIconAtlas(clusteredAmenities) {
-    var iconSize = 64;
-    var uniqueIcons = new Map();
+  function getAmenityIconKeySetSignature(clusteredAmenities) {
+    return Array.from(collectAmenityIconInfo(clusteredAmenities).keys()).sort().join("||");
+  }
 
-    clusteredAmenities.forEach(function (item) {
+  var lastAmenityIconAtlasCache = null;
+
+  function collectAmenityIconInfo(clusteredAmenities) {
+    var uniqueIcons = new Map();
+    (clusteredAmenities || []).forEach(function (item) {
       var key = getAmenityIconKey(item);
       item._iconKey = key;
       if (!uniqueIcons.has(key)) {
@@ -590,9 +734,45 @@
         });
       }
     });
+    return uniqueIcons;
+  }
+
+  function buildAmenityIconAtlas(clusteredAmenities) {
+    var d = requireDeps();
+    var iconSize = 64;
+    var uniqueIcons = collectAmenityIconInfo(clusteredAmenities);
+    var atlasKeySetSignature = Array.from(uniqueIcons.keys()).sort().join("||");
+
+    if (
+      lastAmenityIconAtlasCache &&
+      lastAmenityIconAtlasCache.keySetSignature === atlasKeySetSignature
+    ) {
+      perfCounter(d, "renderer:amenityIconAtlas:cacheHit", function () {
+        return {
+          keyCount: uniqueIcons.size,
+          keySetLength: atlasKeySetSignature.length,
+          keySetHash: stringHashSignature(atlasKeySetSignature),
+        };
+      });
+      return {
+        atlas: lastAmenityIconAtlasCache.atlas,
+        mapping: lastAmenityIconAtlasCache.mapping,
+      };
+    }
+
+    perfCounter(d, "renderer:amenityIconAtlas:cacheMiss", function () {
+      return {
+        keyCount: uniqueIcons.size,
+        keySetLength: atlasKeySetSignature.length,
+        keySetHash: stringHashSignature(atlasKeySetSignature),
+      };
+    });
 
     var iconCount = uniqueIcons.size;
-    if (iconCount === 0) return { atlas: null, mapping: {} };
+    if (iconCount === 0) {
+      lastAmenityIconAtlasCache = null;
+      return { atlas: null, mapping: {} };
+    }
 
     var cols = Math.ceil(Math.sqrt(iconCount));
     var rows = Math.ceil(iconCount / cols);
@@ -600,7 +780,10 @@
     atlas.width = cols * iconSize;
     atlas.height = rows * iconSize;
     var ctx = atlas.getContext("2d");
-    if (!ctx) return { atlas: null, mapping: {} };
+    if (!ctx) {
+      lastAmenityIconAtlasCache = null;
+      return { atlas: null, mapping: {} };
+    }
 
     var mapping = {};
     var index = 0;
@@ -621,7 +804,52 @@
       index += 1;
     });
 
+    lastAmenityIconAtlasCache = {
+      keySetSignature: atlasKeySetSignature,
+      atlas: atlas,
+      mapping: mapping,
+    };
+
     return { atlas: atlas, mapping: mapping };
+  }
+
+  function roundedPositionSignature(position) {
+    if (!position || position.length < 2) return "0,0";
+    return Number(position[0]).toPrecision(12) + "," + Number(position[1]).toPrecision(12);
+  }
+
+  function clusterTypeCountsSignature(typeCounts) {
+    return Object.keys(typeCounts || {})
+      .sort()
+      .map(function (key) {
+        return key + ":" + typeCounts[key];
+      })
+      .join(",");
+  }
+
+  function renderedClusterSignature(clusters) {
+    return (clusters || [])
+      .map(function (item) {
+        return [
+          roundedPositionSignature(item.position),
+          item.count,
+          item.amenityType || "",
+          item.inRadius ? "in" : "out",
+          item.isCluster ? "cluster" : "single",
+          clusterTypeCountsSignature(item.typeCounts),
+        ].join("/");
+      })
+      .sort()
+      .join("||");
+  }
+
+  function stringHashSignature(value) {
+    var hash = 2166136261;
+    for (var i = 0; i < value.length; i += 1) {
+      hash ^= value.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
   }
 
   function clusterVisibleAmenities(features) {
@@ -737,17 +965,15 @@
           scoreMode: d.getScoreMode(),
           mode: d.getCurrentMode(),
           visibleFeatures: d.getVisibleAmenityFeatures().length,
+          cameraSignature: getExactCameraSignature(d),
+          selectedAmenityTypesSignature: selectedAmenityTypesSignature(d),
         },
         meta || {}
       );
     });
     return d.urban95Perf.phase("updateDeckAmenityLayers", function () {
-      var toggleAllows =
-        d.getScoreMode() !== "expanded" || !d.getShowAmenityPointsTogglePresent() || d.getShowAmenityPointsChecked();
-      var shouldRender =
-        d.getCurrentMode() === "house" &&
-        toggleAllows &&
-        d.map.getZoom() >= d.amenityClusterMinZoom;
+      var deckRenderState = getDeckRenderState(d);
+      var shouldRender = deckRenderState.shouldRender;
 
       if (!shouldRender) {
         perfCounter(d, "renderer:deckAmenityLayers", function () {
@@ -758,6 +984,7 @@
         }
         d.setDeckHovering(false);
         hideTooltipAndCursor();
+        lastDeckRenderStateKey = deckRenderState.key;
         return;
       }
 
@@ -780,6 +1007,15 @@
       }, function () {
         return clusterVisibleAmenities(visibleFeatures);
       });
+      perfCounter(d, "renderer:amenityIconAtlas:keySet", function () {
+        var atlasKeySetSignature = getAmenityIconKeySetSignature(clusteredAmenities);
+        return {
+          clusters: clusteredAmenities.length,
+          keyCount: atlasKeySetSignature ? atlasKeySetSignature.split("||").length : 0,
+          keySetLength: atlasKeySetSignature.length,
+          keySetHash: stringHashSignature(atlasKeySetSignature),
+        };
+      });
       var iconAtlas = perfSpan(d, "renderer:buildAmenityIconAtlas", function () {
         return { clusters: clusteredAmenities.length };
       }, function () {
@@ -788,11 +1024,16 @@
       var atlas = iconAtlas.atlas;
       var mapping = iconAtlas.mapping;
       perfCounter(d, "renderer:deckAmenityLayers", function () {
+        var clusterSignature = renderedClusterSignature(clusteredAmenities);
         return {
           branch: "render",
           visibleFeatures: visibleFeatures.length,
           clusters: clusteredAmenities.length,
           iconAtlasCount: Object.keys(mapping).length,
+          cameraSignature: getExactCameraSignature(d),
+          clusterSignature: clusterSignature,
+          clusterSignatureLength: clusterSignature.length,
+          clusterSignatureHash: stringHashSignature(clusterSignature),
         };
       });
 
@@ -800,6 +1041,7 @@
         d.getDeckAmenityOverlay().setProps({ layers: [] });
         d.setDeckHovering(false);
         hideTooltipAndCursor();
+        lastDeckRenderStateKey = deckRenderState.key;
         return;
       }
 
@@ -943,14 +1185,48 @@
       }, function () {
         d.getDeckAmenityOverlay().setProps({ layers: [iconLayer, textLayer] });
       });
+      lastDeckRenderStateKey = deckRenderState.key;
     });
   }
 
   function scheduleDeckUpdate(reason) {
     var d = requireDeps();
-    clearTimeout(d.getDeckUpdateTimer());
+    var pendingTimer = d.getDeckUpdateTimer();
+    perfCounter(d, "renderer:scheduleDeckUpdate", function () {
+      return {
+        reason: reason || "",
+        scoreMode: d.getScoreMode(),
+        mode: d.getCurrentMode(),
+        visibleFeatures: d.getVisibleAmenityFeatures().length,
+        replacedPending: !!pendingTimer,
+      };
+    });
+    clearTimeout(pendingTimer);
     d.setDeckUpdateTimer(
       setTimeout(function () {
+        d.setDeckUpdateTimer(null);
+        var deckRenderState = getDeckRenderState(d);
+        perfCounter(d, "renderer:scheduleDeckUpdate:execute", function () {
+          return {
+            reason: reason || "",
+            scoreMode: d.getScoreMode(),
+            mode: d.getCurrentMode(),
+            visibleFeatures: d.getVisibleAmenityFeatures().length,
+          };
+        });
+        if (d.getDeckAmenityOverlay() && deckRenderState.key === lastDeckRenderStateKey) {
+          perfCounter(d, "renderer:scheduleDeckUpdate:skip", function () {
+            return {
+              reason: reason || "",
+              scoreMode: d.getScoreMode(),
+              mode: d.getCurrentMode(),
+              visibleFeatures: d.getVisibleAmenityFeatures().length,
+              cameraSignature: getExactCameraSignature(d),
+              selectedAmenityTypesSignature: selectedAmenityTypesSignature(d),
+            };
+          });
+          return;
+        }
         updateDeckAmenityLayers({ caller: "scheduleDeckUpdate", reason: reason || "" });
       }, 80)
     );

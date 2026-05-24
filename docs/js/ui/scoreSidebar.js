@@ -105,6 +105,13 @@
     return callback();
   }
 
+  function perfMark(name, meta) {
+    var perf = window.urban95Perf;
+    if (perf && typeof perf.mark === "function") {
+      perf.mark(name, meta);
+    }
+  }
+
   function getSelectedAmenityTypes(d) {
     if (!d) d = requireDeps();
     return typeof d.getSelectedAmenityTypes === "function" ? d.getSelectedAmenityTypes() : null;
@@ -663,20 +670,58 @@
     });
   }
 
-  function showScoreExplainSidebarShell(building) {
+  function showScoreExplainSidebarShell(building, options) {
     return perfSpan("scoreSidebar:showShell", null, function () {
-      void building;
       var d = requireDeps();
+      var opts = options || {};
       var root = d.bodyEl;
       var emptyEl = d.emptyEl;
-      if (root) {
+      var buildingId =
+        building && building.feature && building.feature.properties
+          ? building.feature.properties.building_id
+          : building && building.properties
+            ? building.properties.building_id
+            : null;
+      var sidebarWasOpen = isScoreExplainSidebarOpen();
+      var hasExistingDetail = !!(root && root.innerHTML);
+      var preserveExistingDetail =
+        opts.preserveExistingDetail === true &&
+        sidebarWasOpen &&
+        hasExistingDetail;
+      var shellMeta = function (extra) {
+        return Object.assign({
+          buildingId: buildingId,
+          scoreMode: d.getScoreMode(),
+          sidebarWasOpen: sidebarWasOpen,
+          hasExistingDetail: hasExistingDetail,
+          reason: opts.reason || "",
+          requested: opts.preserveExistingDetail === true,
+          preserved: preserveExistingDetail,
+        }, extra || {});
+      };
+      if (!preserveExistingDetail) {
+        perfMark("scoreSidebar:showShell:loadingVisible", function () {
+          return shellMeta({ visible: true });
+        });
+      }
+      if (!sidebarWasOpen || !hasExistingDetail) {
+        perfMark("scoreSidebar:showShell:firstOpenLoading", function () {
+          return shellMeta({ visible: !preserveExistingDetail });
+        });
+      }
+      perfMark("scoreSidebar:showShell:preserveExistingDetail", function () {
+        return shellMeta();
+      });
+      if (!preserveExistingDetail && root) {
         root.innerHTML = "";
       }
       if (emptyEl) {
-        emptyEl.hidden = false;
-        emptyEl.textContent = "Loading score details...";
+        emptyEl.hidden = preserveExistingDetail;
+        emptyEl.textContent = preserveExistingDetail ? "" : "Loading score details...";
       }
-      populateScoreExplainSidebarHeader(null, null);
+      if (!preserveExistingDetail) {
+        populateScoreExplainSidebarHeader(null, null);
+      }
       showScoreExplainSidebar();
     });
   }

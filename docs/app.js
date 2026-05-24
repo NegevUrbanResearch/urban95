@@ -270,6 +270,7 @@ const scoreSidebarChrome = Urban95ScoreSidebarChrome.create({
   map: map,
   document: document,
   matchMedia: window.matchMedia.bind(window),
+  perf: urban95Perf,
 });
 Urban95ScoreSidebar.configure({
   scoreModel: Urban95ScoreModel,
