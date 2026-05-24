@@ -5149,6 +5149,53 @@ test("runtime data warns when building score columns are incomplete", () => {
   assert.ok(warnings.some((message) => message.includes("score_weighted_sub_*")));
 });
 
+test("runtime building fallback does not request ignored plain GeoJSON", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const calls = [];
+  const loaders = browser.window.Urban95RuntimeData.createLoaders(
+    (url, options) => {
+      calls.push({ url, options: options || {} });
+      if (url === "./data/buildings_lookup.json") return Promise.resolve(null);
+      return Promise.resolve({ type: "FeatureCollection", features: [] });
+    },
+    { buildingsLookup: "./data/buildings_lookup.json" },
+    { buildings: "./data/buildings_accessibility.geojson" }
+  );
+
+  const loaded = await loaders.loadBuildingsRuntimeData();
+
+  assert.deepEqual(loaded, { type: "FeatureCollection", features: [] });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    { url: "./data/buildings_lookup.json", options: { required: false } },
+    { url: "./data/buildings_accessibility.geojson", options: { plainFallback: false } },
+  ]);
+});
+
+test("runtime building fallback is requested once when fallback gzip fails", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+
+  const calls = [];
+  const loaders = browser.window.Urban95RuntimeData.createLoaders(
+    (url, options) => {
+      calls.push({ url, options: options || {} });
+      if (url === "./data/buildings_lookup.json") return Promise.resolve(null);
+      return Promise.reject(new Error("missing gzip"));
+    },
+    { buildingsLookup: "./data/buildings_lookup.json" },
+    { buildings: "./data/buildings_accessibility.geojson" }
+  );
+
+  await assert.rejects(() => loaders.loadBuildingsRuntimeData(), /missing gzip/);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    { url: "./data/buildings_lookup.json", options: { required: false } },
+    { url: "./data/buildings_accessibility.geojson", options: { plainFallback: false } },
+  ]);
+});
+
 test("runtime point-data loader owns point source state and exposes loaded data", async () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/core/runtimeData.js", browser);

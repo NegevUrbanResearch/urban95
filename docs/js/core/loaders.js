@@ -35,6 +35,7 @@
   async function fetchJsonWithGzipFallback(url, options) {
     var opts = options || {};
     var required = opts.required !== false;
+    var allowPlainFallback = opts.plainFallback !== false;
     var loadStartedAt = performance.now();
     var loadMode = "plain";
     console.log("[Load] fetch start:", url);
@@ -66,6 +67,15 @@
         );
         return gzParsed;
       } catch (gzipErr) {
+        if (!allowPlainFallback) {
+          if (required) throw gzipErr;
+          console.warn(
+            "[Load] optional compressed fetch missing:",
+            gzipUrl,
+            "total=" + Math.round(performance.now() - loadStartedAt) + "ms"
+          );
+          return null;
+        }
         console.warn("Compressed fetch failed, falling back to plain file:", gzipUrl, gzipErr);
         loadMode = "plain-fallback";
       }

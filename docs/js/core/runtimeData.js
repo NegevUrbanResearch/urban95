@@ -150,8 +150,15 @@
   }
 
   function createLoaders(fetchJsonWithGzipFallback, urls, fallbackUrls) {
+    function loadFullBuildingsFallback() {
+      return fetchJsonWithGzipFallback(fallbackUrls.buildings, { plainFallback: false });
+    }
+
     function loadBuildingsRuntimeData() {
       return fetchJsonWithGzipFallback(urls.buildingsLookup, { required: false })
+        .catch(function () {
+          return null;
+        })
         .then(function (payload) {
           if (payload && Array.isArray(payload.features)) {
             var normalized = normalizeBuildingLookup(payload);
@@ -163,10 +170,7 @@
             }
             console.warn("[urban95] Building lookup was empty or invalid; falling back to full buildings GeoJSON.");
           }
-          return fetchJsonWithGzipFallback(fallbackUrls.buildings);
-        })
-        .catch(function () {
-          return fetchJsonWithGzipFallback(fallbackUrls.buildings);
+          return loadFullBuildingsFallback();
         });
     }
 
