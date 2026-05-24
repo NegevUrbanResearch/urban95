@@ -511,14 +511,17 @@ def main():
 
             amenity_col = f"num_amenities{sfx}"
             tree_col = f"num_trees{sfx}"
+            street_light_col = f"num_street_lights{sfx}"
             a_vals = pd.to_numeric(group[amenity_col], errors="coerce").fillna(0)
             t_vals = pd.to_numeric(group[tree_col], errors="coerce").fillna(0)
-            overall = a_vals + t_vals * 0.25
+            sl_vals = as_numeric_series(group, street_light_col, fallback=0.0)
+            overall = a_vals + t_vals * 0.25 + sl_vals * 0.25
 
             stats[f"avg_overall{sfx}"] = round(float(overall.mean()), 2)
             stats[f"med_overall{sfx}"] = round(float(overall.median()), 2)
             stats[f"avg_amenities{sfx}"] = round(float(a_vals.mean()), 2)
             stats[f"avg_trees{sfx}"] = round(float(t_vals.mean()), 2)
+            stats[f"avg_street_lights{sfx}"] = round(float(sl_vals.mean()), 2)
 
             # Coverage: % of buildings with at least 1 amenity
             stats[f"coverage{sfx}"] = round(float((a_vals > 0).mean() * 100), 1)
@@ -660,7 +663,7 @@ def main():
         })
 
     enriched_geojson = {"type": "FeatureCollection", "features": enriched_features}
-    with open(DOCS_DATA_DIR / "neighborhoods.geojson", "w") as f:
+    with open(DOCS_DATA_DIR / "neighborhoods.geojson", "w", encoding="utf-8") as f:
         json.dump(enriched_geojson, f, separators=(",", ":"), ensure_ascii=False)
     logging.info("  Wrote enriched neighborhoods.geojson (%d features)", len(enriched_features))
 
@@ -674,7 +677,7 @@ def main():
         buildings,
         surface_filter_types,
     )
-    with open(DOCS_DATA_DIR / "neighborhood_surface.geojson", "w") as f:
+    with open(DOCS_DATA_DIR / "neighborhood_surface.geojson", "w", encoding="utf-8") as f:
         json.dump(neighborhood_surface_geojson, f, separators=(",", ":"), ensure_ascii=False)
     logging.info(
         "  Wrote neighborhood_surface.geojson (%d features)",
@@ -682,7 +685,7 @@ def main():
     )
 
     charts_payload = {"inventory_clean": inv_clean, "inventory_legacy": inv_legacy}
-    with open(DOCS_DATA_DIR / "neighborhood_charts.json", "w") as f:
+    with open(DOCS_DATA_DIR / "neighborhood_charts.json", "w", encoding="utf-8") as f:
         json.dump(charts_payload, f, separators=(",", ":"), ensure_ascii=False)
     logging.info("  Wrote neighborhood_charts.json")
 
@@ -721,14 +724,17 @@ def main():
         sfx = f"_{minutes}min"
         a_col = f"num_amenities{sfx}"
         t_col = f"num_trees{sfx}"
+        sl_col = f"num_street_lights{sfx}"
         a_vals = pd.to_numeric(buildings[a_col], errors="coerce").fillna(0)
         t_vals = pd.to_numeric(buildings[t_col], errors="coerce").fillna(0)
-        overall = a_vals + t_vals * 0.25
+        sl_vals = as_numeric_series(buildings, sl_col, fallback=0.0)
+        overall = a_vals + t_vals * 0.25 + sl_vals * 0.25
 
         citywide[f"avg_overall{sfx}"] = round(float(overall.mean()), 2)
         citywide[f"med_overall{sfx}"] = round(float(overall.median()), 2)
         citywide[f"avg_amenities{sfx}"] = round(float(a_vals.mean()), 2)
         citywide[f"avg_trees{sfx}"] = round(float(t_vals.mean()), 2)
+        citywide[f"avg_street_lights{sfx}"] = round(float(sl_vals.mean()), 2)
         citywide[f"coverage{sfx}"] = round(float((a_vals > 0).mean() * 100), 1)
 
         # Histograms: match building score modes (same columns as house-mode choropleth)
@@ -856,7 +862,7 @@ def main():
         }
     citywide["type_comparisons"] = type_comparisons
 
-    with open(DOCS_DATA_DIR / "citywide_stats.json", "w") as f:
+    with open(DOCS_DATA_DIR / "citywide_stats.json", "w", encoding="utf-8") as f:
         json.dump(citywide, f, separators=(",", ":"), ensure_ascii=False)
     logging.info("  Wrote citywide_stats.json")
 
