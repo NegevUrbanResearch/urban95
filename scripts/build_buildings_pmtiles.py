@@ -715,7 +715,7 @@ def build_isochrones_lookup(input_path: Path, output_path: Path) -> dict[str, An
 
     try:
         source_path = resolve_json_source_path(input_path)
-        payload = load_feature_collection(input_path)
+        payload = load_feature_collection(source_path)
     except FileNotFoundError:
         logger.warning("Skipping isochrones_lookup; input file not found: %s", input_path.resolve())
         return manifest_entry(
