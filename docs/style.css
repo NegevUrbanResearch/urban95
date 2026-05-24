@@ -8,7 +8,7 @@ body {
 }
 
 :root {
-  --score-sidebar-width: min(420px, 38vw);
+  --score-sidebar-width: clamp(420px, 38vw, 520px);
   --score-sidebar-z: 15;
   --horizon-bar-h: 28px;
   --horizon-sub-bar-h: 20px;
@@ -1375,88 +1375,64 @@ body {
   font-size: calc(0.92rem * var(--sidebar-content-font, 1));
 }
 
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-  gap: 3px 6px;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .score-explain-section-h {
-  grid-column: 1 / -1;
-  margin: 4px 0 1px;
-  font-size: 10.5px;
-  line-height: 1.1;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-group {
-  min-width: 0;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.25rem;
-  min-height: 0;
-  padding: 2px 4px;
-  border-radius: 6px;
-  background: #f8fafc;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-bar-container {
-  display: none;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-label {
-  min-width: 0;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-icon {
-  width: 12px;
-  height: 12px;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-label-text,
-.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-score {
-  font-size: 10.5px;
-  line-height: 1.15;
-}
-
 .score-explain-sidebar-inner.is-chart-fit-tight .score-explain-sidebar-header {
-  padding-top: 8px;
-  padding-bottom: 10px;
+  padding: 6px 30px 8px 12px;
 }
 
 .score-explain-sidebar-inner.is-chart-fit-tight .score-explain-header-meta {
-  margin-top: 8px;
-  gap: 6px;
+  margin-top: 5px;
+  gap: 5px;
 }
 
-.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-sidebar-header {
-  padding-top: 6px;
-  padding-bottom: 7px;
+.score-explain-sidebar-inner.is-chart-fit-tight .score-explain-sidebar-body {
+  padding: 6px 12px 8px;
 }
 
-.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-header-meta {
-  margin-top: 4px;
-  gap: 4px;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-building-ctx {
-  display: none;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-hero-kicker {
+.score-explain-sidebar-inner.is-chart-fit-tight .score-explain-hero-kicker {
   margin-bottom: 2px;
   font-size: 10px;
+  line-height: 1.1;
 }
 
-.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-sidebar-hero-compact .percentile-value {
-  font-size: clamp(24px, 4vh, 32px);
+.score-explain-sidebar-inner.is-chart-fit-tight .score-explain-sidebar-hero-compact .percentile-value {
+  font-size: clamp(28px, 5.2vh, 36px);
+  line-height: 0.95;
 }
 
-.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-sidebar-hero-compact .percentile-meter {
+.score-explain-sidebar-inner.is-chart-fit-tight .score-explain-sidebar-hero-compact .percentile-value span {
+  font-size: 16px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-tight .score-explain-sidebar-hero-compact .percentile-meter {
   height: 7px;
   margin-top: 5px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-tight .score-explain-building-ctx {
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
+.score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-text {
+  gap: 1px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-id {
+  font-size: 12.5px;
+  line-height: 1.15;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-coords {
+  font-size: 11px;
+  line-height: 1.15;
 }
 
 .score-explain-sidebar .horizon-chart:not(.horizon-chart-expanded) .horizon-bar-container,

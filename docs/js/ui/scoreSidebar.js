@@ -435,19 +435,20 @@
       body.style.removeProperty("--sidebar-note-gap");
     }
     if (inner) {
-      inner.classList.remove("is-chart-fit-tight", "is-chart-fit-ultra");
+      inner.classList.remove("is-chart-fit-tight");
     }
   }
 
   function applyScoreExplainContentScale(body, inner, scale) {
     var s = Math.min(1, Math.max(0.34, scale));
+    var textScale = Math.max(0.74, s);
     var d = SCORE_EXPLAIN_CONTENT_DESIGN;
     body.style.setProperty("--sidebar-content-scale", String(s));
     body.style.setProperty("--sidebar-content-bar-h", Math.max(14, Math.round(d.bar * s)) + "px");
     body.style.setProperty("--sidebar-content-sub-bar-h", Math.max(10, Math.round(d.subBar * s)) + "px");
     body.style.setProperty("--sidebar-content-row-pad", Math.max(0.12, d.rowPad * s) + "rem");
     body.style.setProperty("--sidebar-content-sub-row-pad", Math.max(0.08, d.subRowPad * s) + "rem");
-    body.style.setProperty("--sidebar-content-font", String(s));
+    body.style.setProperty("--sidebar-content-font", String(textScale));
     body.style.setProperty("--sidebar-content-icon", Math.max(14, Math.round(d.icon * s)) + "px");
     body.style.setProperty("--sidebar-content-sub-icon", Math.max(12, Math.round(d.subIcon * s)) + "px");
     body.style.setProperty("--sidebar-content-group-gap", Math.max(0, Math.round(d.groupGap + 3 * s)) + "px");
@@ -463,7 +464,6 @@
     }
     body.classList.toggle("is-content-scaled", s < 1);
     inner.classList.toggle("is-chart-fit-tight", s < 0.9);
-    inner.classList.toggle("is-chart-fit-ultra", s < 0.76);
   }
 
   function outerBlockHeight(el) {

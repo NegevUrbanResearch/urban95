@@ -8227,6 +8227,21 @@ test("score sidebar chrome owns map padding and focus restoration", () => {
   assert.deepEqual(mapElement.focusCalls, []);
 });
 
+test("score sidebar always keeps the bar-based desktop breakdown instead of ultra compaction", () => {
+  const styleSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "style.css"), "utf8");
+  const sidebarSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "scoreSidebar.js"),
+    "utf8"
+  );
+
+  assert.match(styleSource, /--score-sidebar-width:\s*clamp\(420px,\s*38vw,\s*520px\);/);
+  assert.match(sidebarSource, /var textScale = Math\.max\(0\.74, s\);/);
+  assert.match(styleSource, /\.score-explain-sidebar-inner\.is-chart-fit-tight \.score-explain-sidebar-hero-compact \.percentile-value/);
+  assert.match(styleSource, /\.score-explain-sidebar-inner\.is-chart-fit-tight \.score-explain-building-ctx/);
+  assert.doesNotMatch(sidebarSource, /is-chart-fit-ultra/);
+  assert.doesNotMatch(styleSource, /is-chart-fit-ultra/);
+});
+
 test("score sidebar chrome does not reapply unchanged open padding during camera flight", () => {
   const mapCalls = [];
   const browser = createBrowserContext({
