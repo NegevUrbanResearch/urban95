@@ -3,8 +3,26 @@
   var missingBuildingIdLogged = false;
   var lastDeckRenderStateKey = null;
   var visibleAmenityFeaturesStamp = 0;
+  var pendingDeckIdleGeneration = 0;
+  var deckIdleFallbackTimer = null;
+  var deckIdleListenerCleanup = null;
+
+  function clearPendingDeckUpdateTimer(currentDeps) {
+    if (
+      !currentDeps ||
+      typeof currentDeps.getDeckUpdateTimer !== "function" ||
+      typeof currentDeps.setDeckUpdateTimer !== "function"
+    ) {
+      return;
+    }
+    var pendingTimer = currentDeps.getDeckUpdateTimer();
+    clearTimeout(pendingTimer);
+    currentDeps.setDeckUpdateTimer(null);
+  }
 
   function configure(nextDeps) {
+    clearPendingDeckUpdateTimer(deps);
+    cancelPendingDeckIdleWait();
     deps = nextDeps || null;
     lastDeckRenderStateKey = null;
     visibleAmenityFeaturesStamp = 0;
@@ -28,6 +46,66 @@
       return d.urban95Perf.span(name, meta, callback);
     }
     return callback();
+  }
+
+  function clearDeckIdleFallbackTimer() {
+    if (deckIdleFallbackTimer == null) return;
+    clearTimeout(deckIdleFallbackTimer);
+    deckIdleFallbackTimer = null;
+  }
+
+  function clearDeckIdleListenerCleanup() {
+    if (typeof deckIdleListenerCleanup === "function") {
+      deckIdleListenerCleanup();
+    }
+    deckIdleListenerCleanup = null;
+  }
+
+  function cancelPendingDeckIdleWait() {
+    pendingDeckIdleGeneration += 1;
+    clearDeckIdleFallbackTimer();
+    clearDeckIdleListenerCleanup();
+  }
+
+  function consumePendingDeckIdleWait(generation) {
+    if (pendingDeckIdleGeneration !== generation) return false;
+    pendingDeckIdleGeneration += 1;
+    clearDeckIdleFallbackTimer();
+    clearDeckIdleListenerCleanup();
+    return true;
+  }
+
+  function isCameraDeckUpdateReason(reason) {
+    return reason === "moveend" || reason === "zoomend";
+  }
+
+  function registerMapIdleOnce(map, callback) {
+    if (!map) return null;
+    var removeIdleListener = null;
+    if (typeof map.off === "function") {
+      removeIdleListener = function (handler) {
+        map.off("idle", handler);
+      };
+    } else if (typeof map.removeListener === "function") {
+      removeIdleListener = function (handler) {
+        map.removeListener("idle", handler);
+      };
+    }
+    if (typeof map.on === "function" && removeIdleListener) {
+      var idleHandler = function () {
+        removeIdleListener(idleHandler);
+        callback();
+      };
+      map.on("idle", idleHandler);
+      return function () {
+        removeIdleListener(idleHandler);
+      };
+    }
+    if (typeof map.once === "function") {
+      map.once("idle", callback);
+      return function () {};
+    }
+    return null;
   }
 
   function getAmenitiesUpdateMeta(meta) {
@@ -1189,45 +1267,100 @@
     });
   }
 
-  function scheduleDeckUpdate(reason) {
-    var d = requireDeps();
-    var pendingTimer = d.getDeckUpdateTimer();
-    perfCounter(d, "renderer:scheduleDeckUpdate", function () {
+  function executeScheduledDeckUpdate(d, reason, meta) {
+    var executeMeta = meta || {};
+    var deckRenderState = getDeckRenderState(d);
+    perfCounter(d, "renderer:scheduleDeckUpdate:execute", function () {
       return {
         reason: reason || "",
         scoreMode: d.getScoreMode(),
         mode: d.getCurrentMode(),
         visibleFeatures: d.getVisibleAmenityFeatures().length,
+        waitForIdle: executeMeta.waitForIdle === true,
+        idleWaited: executeMeta.idleWaited === true,
+        fallback: executeMeta.fallback === true,
+      };
+    });
+    if (d.getDeckAmenityOverlay() && deckRenderState.key === lastDeckRenderStateKey) {
+      perfCounter(d, "renderer:scheduleDeckUpdate:skip", function () {
+        return {
+          reason: reason || "",
+          scoreMode: d.getScoreMode(),
+          mode: d.getCurrentMode(),
+          visibleFeatures: d.getVisibleAmenityFeatures().length,
+          cameraSignature: getExactCameraSignature(d),
+          selectedAmenityTypesSignature: selectedAmenityTypesSignature(d),
+          waitForIdle: executeMeta.waitForIdle === true,
+          idleWaited: executeMeta.idleWaited === true,
+          fallback: executeMeta.fallback === true,
+        };
+      });
+      return;
+    }
+    updateDeckAmenityLayers({ caller: "scheduleDeckUpdate", reason: reason || "" });
+  }
+
+  function waitForDeckUpdateIdle(d, reason) {
+    var generation = pendingDeckIdleGeneration + 1;
+    pendingDeckIdleGeneration = generation;
+    clearDeckIdleFallbackTimer();
+    clearDeckIdleListenerCleanup();
+    deckIdleListenerCleanup = registerMapIdleOnce(d.map, function () {
+      if (!consumePendingDeckIdleWait(generation)) return;
+      executeScheduledDeckUpdate(d, reason, {
+        waitForIdle: true,
+        idleWaited: true,
+        fallback: false,
+      });
+    });
+    if (!deckIdleListenerCleanup) {
+      executeScheduledDeckUpdate(d, reason, {
+        waitForIdle: false,
+        idleWaited: false,
+        fallback: false,
+      });
+      return;
+    }
+    deckIdleFallbackTimer = setTimeout(function () {
+      if (!consumePendingDeckIdleWait(generation)) return;
+      executeScheduledDeckUpdate(d, reason, {
+        waitForIdle: true,
+        idleWaited: false,
+        fallback: true,
+      });
+    }, 160);
+  }
+
+  function scheduleDeckUpdate(reason) {
+    var d = requireDeps();
+    var pendingTimer = d.getDeckUpdateTimer();
+    var normalizedReason = reason || "";
+    var waitForIdle = isCameraDeckUpdateReason(normalizedReason);
+    perfCounter(d, "renderer:scheduleDeckUpdate", function () {
+      return {
+        reason: normalizedReason,
+        scoreMode: d.getScoreMode(),
+        mode: d.getCurrentMode(),
+        visibleFeatures: d.getVisibleAmenityFeatures().length,
         replacedPending: !!pendingTimer,
+        waitForIdle: waitForIdle,
       };
     });
     clearTimeout(pendingTimer);
+    d.setDeckUpdateTimer(null);
+    cancelPendingDeckIdleWait();
     d.setDeckUpdateTimer(
       setTimeout(function () {
         d.setDeckUpdateTimer(null);
-        var deckRenderState = getDeckRenderState(d);
-        perfCounter(d, "renderer:scheduleDeckUpdate:execute", function () {
-          return {
-            reason: reason || "",
-            scoreMode: d.getScoreMode(),
-            mode: d.getCurrentMode(),
-            visibleFeatures: d.getVisibleAmenityFeatures().length,
-          };
-        });
-        if (d.getDeckAmenityOverlay() && deckRenderState.key === lastDeckRenderStateKey) {
-          perfCounter(d, "renderer:scheduleDeckUpdate:skip", function () {
-            return {
-              reason: reason || "",
-              scoreMode: d.getScoreMode(),
-              mode: d.getCurrentMode(),
-              visibleFeatures: d.getVisibleAmenityFeatures().length,
-              cameraSignature: getExactCameraSignature(d),
-              selectedAmenityTypesSignature: selectedAmenityTypesSignature(d),
-            };
-          });
+        if (waitForIdle) {
+          waitForDeckUpdateIdle(d, normalizedReason);
           return;
         }
-        updateDeckAmenityLayers({ caller: "scheduleDeckUpdate", reason: reason || "" });
+        executeScheduledDeckUpdate(d, normalizedReason, {
+          waitForIdle: false,
+          idleWaited: false,
+          fallback: false,
+        });
       }, 80)
     );
   }

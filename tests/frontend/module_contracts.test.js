@@ -28,6 +28,31 @@ function requireScriptIndex(scripts, expectedPath) {
   return scriptIndex;
 }
 
+function runQueuedTimer(timers, timerOrder, predicate) {
+  for (let index = 0; index < timerOrder.length; index += 1) {
+    const timerId = timerOrder[index];
+    const timer = timers.get(timerId);
+    if (!timer) continue;
+    if (predicate && !predicate(timer, timerId)) continue;
+    timerOrder.splice(index, 1);
+    timers.delete(timerId);
+    timer.callback();
+    return { id: timerId, delay: timer.delay };
+  }
+  return null;
+}
+
+function findQueuedTimer(timers, timerOrder, predicate) {
+  for (let index = 0; index < timerOrder.length; index += 1) {
+    const timerId = timerOrder[index];
+    const timer = timers.get(timerId);
+    if (!timer) continue;
+    if (predicate && !predicate(timer, timerId)) continue;
+    return { id: timerId, delay: timer.delay };
+  }
+  return null;
+}
+
 function runCoreLogger(browserOverrides) {
   const browser = createBrowserContext(browserOverrides || {});
   runBrowserScript("docs/js/core/logger.js", browser);
@@ -2365,19 +2390,19 @@ test("special point render plan respects tree and light toggles in expanded mode
 });
 
 test("map renderers keep deck-update caller diagnostics on explicit, scheduled, and late deck-init paths", async () => {
-  let scheduledTimer = null;
-  let scheduledDelay = null;
+  const timers = new Map();
+  const timerOrder = [];
   let nextTimerId = 0;
+  let idleCallback = null;
   const browser = createBrowserContext({
     setTimeout(callback, delay) {
-      scheduledTimer = callback;
-      scheduledDelay = delay;
       nextTimerId += 1;
+      timers.set(nextTimerId, { callback, delay });
+      timerOrder.push(nextTimerId);
       return nextTimerId;
     },
-    clearTimeout() {
-      scheduledTimer = null;
-      scheduledDelay = null;
+    clearTimeout(timerId) {
+      timers.delete(timerId);
     },
   });
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
@@ -2432,6 +2457,9 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
       },
       addControl() {},
       on() {},
+      once(eventName, callback) {
+        if (eventName === "idle") idleCallback = callback;
+      },
     },
     tooltipEl: { style: {}, textContent: "" },
     treeLayerIds: [],
@@ -2546,9 +2574,15 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
   assert.equal(moveendScheduleCounter.meta.mode, "house");
   assert.equal(moveendScheduleCounter.meta.visibleFeatures, 1);
   assert.equal(moveendScheduleCounter.meta.replacedPending, false);
-  assert.equal(typeof scheduledTimer, "function");
-  assert.equal(scheduledDelay, 80);
-  scheduledTimer();
+  const firstTimer = runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80);
+  assert.ok(firstTimer != null);
+  assert.equal(firstTimer.delay, 80);
+  assert.equal(
+    counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    0
+  );
+  assert.equal(typeof idleCallback, "function");
+  idleCallback();
   assert.ok(
     counters.some(
       (entry) =>
@@ -2559,8 +2593,13 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
     )
   );
   browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
-  assert.equal(typeof scheduledTimer, "function");
-  scheduledTimer();
+  const secondTimer = runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80);
+  assert.ok(secondTimer != null);
+  assert.equal(
+    counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    1
+  );
+  idleCallback();
 
   const deckCounters = counters.filter(
     (entry) => entry.name === "renderer:updateDeckAmenityLayers:start"
@@ -3400,16 +3439,19 @@ test("map renderers rebuild amenity icon atlas when exact icon key set changes",
 });
 
 test("map renderers skip duplicate scheduled deck updates when render state is unchanged", () => {
-  let scheduledTimer = null;
+  const timers = new Map();
+  const timerOrder = [];
   let nextTimerId = 0;
+  let idleCallback = null;
   const browser = createBrowserContext({
-    setTimeout(callback) {
-      scheduledTimer = callback;
+    setTimeout(callback, delay) {
       nextTimerId += 1;
+      timers.set(nextTimerId, { callback, delay });
+      timerOrder.push(nextTimerId);
       return nextTimerId;
     },
-    clearTimeout() {
-      scheduledTimer = null;
+    clearTimeout(timerId) {
+      timers.delete(timerId);
     },
   });
   installFakeCanvas(browser.window.document);
@@ -3486,6 +3528,9 @@ test("map renderers skip duplicate scheduled deck updates when render state is u
       getPitch() {
         return 0;
       },
+      once(eventName, callback) {
+        if (eventName === "idle") idleCallback = callback;
+      },
     },
     tooltipEl: { style: {}, textContent: "" },
     getCurrentMode() {
@@ -3543,7 +3588,10 @@ test("map renderers skip duplicate scheduled deck updates when render state is u
   const initialClusterSpanCount = spans.filter((entry) => entry.name === "renderer:clusterVisibleAmenities").length;
 
   browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
-  scheduledTimer();
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  assert.equal(overlay.propsHistory.length, initialPropsCount);
+  assert.equal(typeof idleCallback, "function");
+  idleCallback();
 
   assert.equal(overlay.propsHistory.length, initialPropsCount);
   assert.equal(
@@ -3561,7 +3609,8 @@ test("map renderers skip duplicate scheduled deck updates when render state is u
 
   center = { lng: 34.791, lat: 31.251 };
   browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
-  scheduledTimer();
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  idleCallback();
   assert.equal(overlay.propsHistory.length, initialPropsCount + 1);
 
   allAmenitiesData = {
@@ -3585,8 +3634,947 @@ test("map renderers skip duplicate scheduled deck updates when render state is u
     deferDeckRender: true,
   });
   browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
-  scheduledTimer();
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  idleCallback();
   assert.equal(overlay.propsHistory.length, initialPropsCount + 2);
+});
+
+test("map renderers coalesce camera deck schedules until idle and keep non-camera schedules timer-driven", () => {
+  const timers = new Map();
+  const timerOrder = [];
+  let nextTimerId = 0;
+  const idleCallbacks = [];
+  const browser = createBrowserContext({
+    setTimeout(callback, delay) {
+      nextTimerId += 1;
+      timers.set(nextTimerId, { callback, delay });
+      timerOrder.push(nextTimerId);
+      return nextTimerId;
+    },
+    clearTimeout(timerId) {
+      timers.delete(timerId);
+    },
+  });
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  let visibleAmenityFeatures = [{ id: 1 }];
+  let deckUpdateTimer = null;
+  let deckAmenityOverlay = {
+    setProps() {},
+  };
+
+  browser.window.deck = makeDeckLayerConstructors([]);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getLayer() {
+        return null;
+      },
+      setLayoutProperty() {},
+      getSource() {
+        return { setData() {} };
+      },
+      getZoom() {
+        return 14;
+      },
+      getCanvas() {
+        return { style: {} };
+      },
+      addControl() {},
+      on() {},
+      once(eventName, callback) {
+        if (eventName === "idle") idleCallbacks.push(callback);
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    treeLayerIds: [],
+    streetLightLayerIds: [],
+    treesAndLightsLayerIds: [],
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks"];
+    },
+    getShowTreesChecked() {
+      return true;
+    },
+    getShowLightsChecked() {
+      return true;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    setVisibleAmenityFeatures(value) {
+      visibleAmenityFeatures = value;
+    },
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "parks" } }],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getTreesInRadiusIds() {
+      return new Set();
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getStreetLightsInRadiusIds() {
+      return new Set();
+    },
+    getDeckAmenityOverlay() {
+      return deckAmenityOverlay;
+    },
+    setDeckAmenityOverlay(value) {
+      deckAmenityOverlay = value;
+    },
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    ensureDeckGlLoaded() {
+      return Promise.resolve();
+    },
+    getDeckUpdateTimer() {
+      return deckUpdateTimer;
+    },
+    setDeckUpdateTimer(value) {
+      deckUpdateTimer = value;
+    },
+  });
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  assert.equal(
+    counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    0
+  );
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  assert.equal(
+    counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    0
+  );
+
+  assert.equal(idleCallbacks.length, 2);
+  idleCallbacks.shift()();
+  assert.equal(
+    counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    0
+  );
+  idleCallbacks.shift()();
+  const executeCounters = counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute");
+  assert.equal(executeCounters.length, 1);
+  assert.equal(executeCounters[0].meta.reason, "zoomend");
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("selection:settled");
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  const finalExecuteCounters = counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute");
+  assert.equal(finalExecuteCounters.length, 2);
+  assert.equal(finalExecuteCounters[1].meta.reason, "selection:settled");
+});
+
+test("map renderers fall back when idle never fires for camera deck schedules", () => {
+  const timers = new Map();
+  const timerOrder = [];
+  let nextTimerId = 0;
+  let idleCallback = null;
+  const browser = createBrowserContext({
+    setTimeout(callback, delay) {
+      nextTimerId += 1;
+      timers.set(nextTimerId, { callback, delay });
+      timerOrder.push(nextTimerId);
+      return nextTimerId;
+    },
+    clearTimeout(timerId) {
+      timers.delete(timerId);
+    },
+  });
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  let deckUpdateTimer = null;
+  let zoom = 16;
+  let center = { lng: 34.79, lat: 31.25 };
+  let visibleAmenityFeatures = [];
+  const overlay = {
+    propsHistory: [],
+    setProps(props) {
+      this.propsHistory.push(props);
+      this.props = props;
+    },
+  };
+  installFakeCanvas(browser.window.document);
+  browser.window.deck = makeDeckLayerConstructors([]);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getLayer() {
+        return null;
+      },
+      setLayoutProperty() {},
+      getSource() {
+        return { setData() {} };
+      },
+      getZoom() {
+        return zoom;
+      },
+      project(coordinates) {
+        return { x: coordinates[0] * 1000, y: coordinates[1] * 1000 };
+      },
+      getCanvas() {
+        return { width: 1440, height: 1100, style: {} };
+      },
+      getCenter() {
+        return center;
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+      addControl() {},
+      on() {},
+      once(eventName, callback) {
+        if (eventName === "idle") idleCallback = callback;
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    treeLayerIds: [],
+    streetLightLayerIds: [],
+    treesAndLightsLayerIds: [],
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks"];
+    },
+    getShowTreesChecked() {
+      return true;
+    },
+    getShowLightsChecked() {
+      return true;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getVisibleAmenityFeatures() {
+      return visibleAmenityFeatures;
+    },
+    setVisibleAmenityFeatures(value) {
+      visibleAmenityFeatures = value;
+    },
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "parks" } }],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getTreesInRadiusIds() {
+      return new Set();
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getStreetLightsInRadiusIds() {
+      return new Set();
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    setDeckAmenityOverlay() {},
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    getAmenityConfig() {
+      return { label: "Parks", color: "#2563eb" };
+    },
+    ensureDeckGlLoaded() {
+      return Promise.resolve();
+    },
+    getDeckUpdateTimer() {
+      return deckUpdateTimer;
+    },
+    setDeckUpdateTimer(value) {
+      deckUpdateTimer = value;
+    },
+  });
+
+  browser.window.Urban95MapRenderers.updateAmenitiesSource({ caller: "initial" });
+  const initialPropsCount = overlay.propsHistory.length;
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  const debounceTimer = runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80);
+  assert.ok(debounceTimer != null);
+  assert.equal(debounceTimer.delay, 80);
+  assert.equal(
+    counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    0
+  );
+
+  const fallbackTimer = runQueuedTimer(timers, timerOrder);
+  assert.ok(fallbackTimer != null);
+  assert.ok(fallbackTimer.delay > 0);
+  assert.equal(overlay.propsHistory.length, initialPropsCount);
+  const executeCounters = counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute");
+  assert.equal(executeCounters.length, 1);
+  assert.equal(executeCounters[0].meta.reason, "moveend");
+  assert.equal(executeCounters[0].meta.fallback, true);
+  const skipCounters = counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:skip");
+  assert.equal(skipCounters.length, 1);
+  assert.equal(skipCounters[0].meta.reason, "moveend");
+  assert.equal(skipCounters[0].meta.fallback, true);
+  idleCallback();
+  assert.equal(counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length, 1);
+  assert.equal(counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:skip").length, 1);
+  assert.equal(overlay.propsHistory.length, initialPropsCount);
+});
+
+test("map renderers reconfigure clears pending debounce timers from prior deps", () => {
+  const timers = new Map();
+  const timerOrder = [];
+  let nextTimerId = 0;
+  const browser = createBrowserContext({
+    setTimeout(callback, delay) {
+      nextTimerId += 1;
+      timers.set(nextTimerId, { callback, delay });
+      timerOrder.push(nextTimerId);
+      return nextTimerId;
+    },
+    clearTimeout(timerId) {
+      timers.delete(timerId);
+    },
+  });
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const firstCounters = [];
+  let firstDeckUpdateTimer = null;
+  const firstOverlay = {
+    setProps() {},
+  };
+  browser.window.deck = makeDeckLayerConstructors([]);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        firstCounters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getLayer() {
+        return null;
+      },
+      setLayoutProperty() {},
+      getSource() {
+        return { setData() {} };
+      },
+      getZoom() {
+        return 14;
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+      getCanvas() {
+        return { style: {} };
+      },
+      addControl() {},
+      on() {},
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    treeLayerIds: [],
+    streetLightLayerIds: [],
+    treesAndLightsLayerIds: [],
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getCurrentMode() {
+      return "house";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks"];
+    },
+    getShowTreesChecked() {
+      return true;
+    },
+    getShowLightsChecked() {
+      return true;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getVisibleAmenityFeatures() {
+      return [{ id: 1 }];
+    },
+    setVisibleAmenityFeatures() {},
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "parks" } }],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getTreesInRadiusIds() {
+      return new Set();
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getStreetLightsInRadiusIds() {
+      return new Set();
+    },
+    getDeckAmenityOverlay() {
+      return firstOverlay;
+    },
+    setDeckAmenityOverlay() {},
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    ensureDeckGlLoaded() {
+      return Promise.resolve();
+    },
+    getDeckUpdateTimer() {
+      return firstDeckUpdateTimer;
+    },
+    setDeckUpdateTimer(value) {
+      firstDeckUpdateTimer = value;
+    },
+  });
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("selection:settled");
+  const pendingDebounce = findQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80);
+  assert.ok(pendingDebounce != null);
+
+  const secondCounters = [];
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        secondCounters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getLayer() {
+        return null;
+      },
+      setLayoutProperty() {},
+      getSource() {
+        return { setData() {} };
+      },
+      getZoom() {
+        return 14;
+      },
+      getCanvas() {
+        return { style: {} };
+      },
+      addControl() {},
+      on() {},
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    treeLayerIds: [],
+    streetLightLayerIds: [],
+    treesAndLightsLayerIds: [],
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getCurrentMode() {
+      return "neighborhood";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks"];
+    },
+    getShowTreesChecked() {
+      return true;
+    },
+    getShowLightsChecked() {
+      return true;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getVisibleAmenityFeatures() {
+      return [];
+    },
+    setVisibleAmenityFeatures() {},
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "parks" } }],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getTreesInRadiusIds() {
+      return new Set();
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getStreetLightsInRadiusIds() {
+      return new Set();
+    },
+    getDeckAmenityOverlay() {
+      return firstOverlay;
+    },
+    setDeckAmenityOverlay() {},
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    ensureDeckGlLoaded() {
+      return Promise.resolve();
+    },
+    getDeckUpdateTimer() {
+      return null;
+    },
+    setDeckUpdateTimer() {},
+  });
+
+  const flushedOldDebounce = runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80);
+  assert.equal(flushedOldDebounce, null);
+  assert.equal(
+    firstCounters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    0
+  );
+  assert.equal(
+    secondCounters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute").length,
+    0
+  );
+});
+
+test("map renderers idle listener fallback unsubscribes when map.once is unavailable", () => {
+  const timers = new Map();
+  const timerOrder = [];
+  let nextTimerId = 0;
+  const idleListeners = new Set();
+  const browser = createBrowserContext({
+    setTimeout(callback, delay) {
+      nextTimerId += 1;
+      timers.set(nextTimerId, { callback, delay });
+      timerOrder.push(nextTimerId);
+      return nextTimerId;
+    },
+    clearTimeout(timerId) {
+      timers.delete(timerId);
+    },
+  });
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  let deckUpdateTimer = null;
+  const overlay = {
+    setProps() {},
+  };
+  browser.window.deck = makeDeckLayerConstructors([]);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getLayer() {
+        return null;
+      },
+      setLayoutProperty() {},
+      getSource() {
+        return { setData() {} };
+      },
+      getZoom() {
+        return 14;
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+      getCanvas() {
+        return { style: {} };
+      },
+      addControl() {},
+      on(eventName, callback) {
+        if (eventName === "idle") idleListeners.add(callback);
+      },
+      off(eventName, callback) {
+        if (eventName === "idle") idleListeners.delete(callback);
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    treeLayerIds: [],
+    streetLightLayerIds: [],
+    treesAndLightsLayerIds: [],
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getCurrentMode() {
+      return "neighborhood";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks"];
+    },
+    getShowTreesChecked() {
+      return true;
+    },
+    getShowLightsChecked() {
+      return true;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getVisibleAmenityFeatures() {
+      return [];
+    },
+    setVisibleAmenityFeatures() {},
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "parks" } }],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getTreesInRadiusIds() {
+      return new Set();
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getStreetLightsInRadiusIds() {
+      return new Set();
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    setDeckAmenityOverlay() {},
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    ensureDeckGlLoaded() {
+      return Promise.resolve();
+    },
+    getDeckUpdateTimer() {
+      return deckUpdateTimer;
+    },
+    setDeckUpdateTimer(value) {
+      deckUpdateTimer = value;
+    },
+  });
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  assert.equal(idleListeners.size, 1);
+  idleListeners.forEach((listener) => listener());
+  assert.equal(idleListeners.size, 0);
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  assert.equal(idleListeners.size, 1);
+});
+
+test("map renderers prefer unsubscribe-capable idle listeners over once for superseded camera schedules", () => {
+  const timers = new Map();
+  const timerOrder = [];
+  let nextTimerId = 0;
+  const idleListeners = new Set();
+  const browser = createBrowserContext({
+    setTimeout(callback, delay) {
+      nextTimerId += 1;
+      timers.set(nextTimerId, { callback, delay });
+      timerOrder.push(nextTimerId);
+      return nextTimerId;
+    },
+    clearTimeout(timerId) {
+      timers.delete(timerId);
+    },
+  });
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const counters = [];
+  let deckUpdateTimer = null;
+  const overlay = {
+    setProps() {},
+  };
+  browser.window.deck = makeDeckLayerConstructors([]);
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: {
+      counter(name, meta) {
+        counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
+      },
+      phase(_name, callback) {
+        return callback();
+      },
+      span(_name, _meta, callback) {
+        return callback();
+      },
+    },
+    map: {
+      getLayer() {
+        return null;
+      },
+      setLayoutProperty() {},
+      getSource() {
+        return { setData() {} };
+      },
+      getZoom() {
+        return 14;
+      },
+      getCenter() {
+        return { lng: 34.79, lat: 31.25 };
+      },
+      getBearing() {
+        return 0;
+      },
+      getPitch() {
+        return 0;
+      },
+      getCanvas() {
+        return { style: {} };
+      },
+      addControl() {},
+      once() {
+        throw new Error("idle registration should prefer on/off over once");
+      },
+      on(eventName, callback) {
+        if (eventName === "idle") idleListeners.add(callback);
+      },
+      off(eventName, callback) {
+        if (eventName === "idle") idleListeners.delete(callback);
+      },
+    },
+    tooltipEl: { style: {}, textContent: "" },
+    treeLayerIds: [],
+    streetLightLayerIds: [],
+    treesAndLightsLayerIds: [],
+    hasGeneratedArtifact() {
+      return false;
+    },
+    getCurrentMode() {
+      return "neighborhood";
+    },
+    getScoreMode() {
+      return "expanded";
+    },
+    urban95DetailPointsMinZoom: 13,
+    amenityClusterMinZoom: 13,
+    amenityClusterMaxCount: 9,
+    getSelectedAmenityTypes() {
+      return new Set(["parks"]);
+    },
+    getAllFilterTypes() {
+      return ["parks"];
+    },
+    getShowTreesChecked() {
+      return true;
+    },
+    getShowLightsChecked() {
+      return true;
+    },
+    getShowAmenityPointsTogglePresent() {
+      return true;
+    },
+    getShowAmenityPointsChecked() {
+      return true;
+    },
+    getVisibleAmenityFeatures() {
+      return [];
+    },
+    setVisibleAmenityFeatures() {},
+    getAllAmenitiesData() {
+      return {
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: { amenity_type: "parks" } }],
+      };
+    },
+    getAmenitiesInRadiusIds() {
+      return new Set([0]);
+    },
+    getAllTreesData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getTreesInRadiusIds() {
+      return new Set();
+    },
+    getAllStreetLightsData() {
+      return { type: "FeatureCollection", features: [] };
+    },
+    getStreetLightsInRadiusIds() {
+      return new Set();
+    },
+    getDeckAmenityOverlay() {
+      return overlay;
+    },
+    setDeckAmenityOverlay() {},
+    setDeckHovering() {},
+    getDeckHovering() {
+      return false;
+    },
+    ensureDeckGlLoaded() {
+      return Promise.resolve();
+    },
+    getDeckUpdateTimer() {
+      return deckUpdateTimer;
+    },
+    setDeckUpdateTimer(value) {
+      deckUpdateTimer = value;
+    },
+  });
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("moveend");
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  assert.equal(idleListeners.size, 1);
+
+  browser.window.Urban95MapRenderers.scheduleDeckUpdate("zoomend");
+  assert.ok(runQueuedTimer(timers, timerOrder, (timer) => timer.delay === 80));
+  assert.equal(idleListeners.size, 1);
+
+  idleListeners.forEach((listener) => listener());
+  const executeCounters = counters.filter((entry) => entry.name === "renderer:scheduleDeckUpdate:execute");
+  assert.equal(executeCounters.length, 1);
+  assert.equal(executeCounters[0].meta.reason, "zoomend");
 });
 
 test("map events register expected handlers and call injected dependencies", () => {
