@@ -9,6 +9,23 @@
     if (!maplibreglRef || typeof maplibreglRef.Map !== "function") {
       throw new Error("maplibregl.Map is required before mapShell.js creates the map");
     }
+    if (
+      typeof maplibreglRef.setRTLTextPlugin === "function" &&
+      !maplibreglRef.__urban95RtlTextPluginRequested
+    ) {
+      var rtlStatus =
+        typeof maplibreglRef.getRTLTextPluginStatus === "function"
+          ? maplibreglRef.getRTLTextPluginStatus()
+          : "unavailable";
+      if (rtlStatus !== "loaded" && rtlStatus !== "loading") {
+        maplibreglRef.__urban95RtlTextPluginRequested = true;
+        maplibreglRef.setRTLTextPlugin(
+          "https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js",
+          null,
+          true
+        );
+      }
+    }
     if (!opts.buildingsSource || !opts.buildingsFillLayer) {
       throw new Error("Urban95MapShell.createBaseMap requires building source and fill layer");
     }
@@ -53,6 +70,7 @@
             "neighborhood_surface",
             opts.neighborhoodSurfacePmtilesUrl
           ),
+          "neighborhood-labels": { type: "geojson", data: emptyFeatureCollection() },
         },
         layers: [
           { id: "osm", type: "raster", source: "osm" },

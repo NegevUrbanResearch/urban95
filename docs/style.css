@@ -1180,6 +1180,23 @@ body {
   }
 }
 
+@media (max-width: 768px) and (max-height: 560px) and (orientation: landscape) {
+  .score-explain-sidebar {
+    top: 0;
+    left: auto;
+    right: 0;
+    bottom: 0;
+    width: min(380px, 54vw);
+    max-height: none;
+    border-radius: 0;
+    transform: translateX(100%);
+  }
+
+  .score-explain-sidebar.is-open {
+    transform: translateX(0);
+  }
+}
+
 .score-explain-backdrop {
   display: none;
   position: fixed;
@@ -1358,6 +1375,52 @@ body {
   font-size: calc(0.92rem * var(--sidebar-content-font, 1));
 }
 
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 3px 6px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .score-explain-section-h {
+  grid-column: 1 / -1;
+  margin: 4px 0 1px;
+  font-size: 10.5px;
+  line-height: 1.1;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-group {
+  min-width: 0;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem;
+  min-height: 0;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-bar-container {
+  display: none;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-label {
+  min-width: 0;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-label-text,
+.score-explain-sidebar-inner.is-chart-fit-ultra .horizon-chart-expanded .horizon-score {
+  font-size: 10.5px;
+  line-height: 1.15;
+}
+
 .score-explain-sidebar-inner.is-chart-fit-tight .score-explain-sidebar-header {
   padding-top: 8px;
   padding-bottom: 10px;
@@ -1368,13 +1431,32 @@ body {
   gap: 6px;
 }
 
+.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-sidebar-header {
+  padding-top: 6px;
+  padding-bottom: 7px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-header-meta {
+  margin-top: 4px;
+  gap: 4px;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-building-ctx {
+  display: none;
+}
+
+.score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-hero-kicker {
+  margin-bottom: 2px;
+  font-size: 10px;
+}
+
 .score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-sidebar-hero-compact .percentile-value {
-  font-size: clamp(26px, 4.5vh, 38px);
+  font-size: clamp(24px, 4vh, 32px);
 }
 
 .score-explain-sidebar-inner.is-chart-fit-ultra .score-explain-sidebar-hero-compact .percentile-meter {
-  height: 10px;
-  margin-top: 8px;
+  height: 7px;
+  margin-top: 5px;
 }
 
 .score-explain-sidebar .horizon-chart:not(.horizon-chart-expanded) .horizon-bar-container,
@@ -1441,23 +1523,33 @@ body {
 }
 
 .score-explain-sidebar .score-explain-formula-fold {
-  font-size: 13px;
+  display: block;
+  padding: var(--sidebar-note-pad, 11px) var(--sidebar-note-gap, 12px);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #f8fbff;
+  font-size: var(--sidebar-note-font, 13px);
   color: #475569;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
+}
+
+.score-explain-sidebar .score-explain-formula-bottom {
+  margin-top: var(--sidebar-note-gap, 12px);
 }
 
 .score-explain-radius-note {
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--sidebar-note-gap, 12px);
   align-items: center;
-  margin-top: 12px;
-  padding: 11px 12px;
+  margin-top: var(--sidebar-note-gap, 12px);
+  padding: var(--sidebar-note-pad, 11px) var(--sidebar-note-gap, 12px);
   border: 1px solid #bfdbfe;
   border-radius: 8px;
   background: #eff6ff;
   color: #334155;
-  font-size: 12.5px;
+  font-size: var(--sidebar-note-font, 12.5px);
   line-height: 1.42;
   text-align: left;
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
@@ -1474,22 +1566,91 @@ body {
 }
 
 .score-explain-sidebar .score-explain-formula-fold summary {
-  font-size: 13px;
-  font-weight: 600;
-  color: #2563eb;
+  font-size: var(--sidebar-note-font, 13px);
+  font-weight: 800;
+  color: #1d4ed8;
   cursor: pointer;
 }
 
 .score-explain-sidebar .score-explain-formula-fold p {
-  margin: 8px 0 0;
-  font-size: 13px;
+  margin: calc(var(--sidebar-note-gap, 12px) * 0.66) 0 0;
+  font-size: var(--sidebar-note-font, 13px);
   line-height: 1.5;
   color: #64748b;
 }
 
+.score-explain-formula-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 6px;
+  align-items: center;
+  margin-top: calc(var(--sidebar-note-gap, 12px) * 0.72);
+}
+
+.formula-chip {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 3px 6px;
+  border: 1px solid #dbe4ef;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  font-size: max(10.5px, calc(var(--sidebar-note-font, 13px) * 0.9));
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.formula-chip b {
+  font-weight: 800;
+  line-height: 1;
+}
+
+.formula-chip-env {
+  border-color: rgba(22, 101, 52, 0.24);
+  color: #15803d;
+}
+
+.formula-chip-nature {
+  border-color: rgba(101, 163, 13, 0.26);
+  color: #65a30d;
+}
+
+.formula-chip-play {
+  border-color: rgba(234, 88, 12, 0.24);
+  color: #ea580c;
+}
+
+.formula-chip-safety {
+  border-color: rgba(37, 99, 235, 0.24);
+  color: #2563eb;
+}
+
+.formula-chip-family {
+  border-color: rgba(147, 51, 234, 0.24);
+  color: #9333ea;
+}
+
+.formula-plus {
+  color: #64748b;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.score-explain-formula-card {
+  padding: var(--sidebar-note-pad, 11px) var(--sidebar-note-gap, 12px);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #f8fbff;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
+}
+
 .score-explain-sidebar .score-explain-hero-note > p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--sidebar-note-font, 13px);
   line-height: 1.5;
   color: #64748b;
 }

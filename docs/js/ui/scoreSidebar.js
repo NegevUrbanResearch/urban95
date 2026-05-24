@@ -332,15 +332,7 @@
         '"></div></div>';
       heroHtml += "</div>";
       heroEl.innerHTML = heroHtml;
-
-      if (breakdown && breakdown.formulaLine) {
-        noteEl.innerHTML =
-          '<details class="score-explain-formula-fold"><summary>Urban95 equation</summary><p>' +
-          d.escapeHtml(breakdown.formulaLine) +
-          "</p></details>";
-      } else {
-        noteEl.innerHTML = "";
-      }
+      noteEl.innerHTML = "";
       return;
     }
 
@@ -370,12 +362,37 @@
     }
     expandedHeroHtml += "</div>";
     heroEl.innerHTML = expandedHeroHtml;
+    noteEl.textContent = "";
+  }
 
+  function renderScoreExplainSidebarFormula(breakdown) {
+    var d = requireDeps();
     if (breakdown && breakdown.formulaLine) {
-      noteEl.innerHTML = "<p>" + d.escapeHtml(breakdown.formulaLine) + "</p>";
-    } else {
-      noteEl.textContent = "";
+      if (d.getScoreMode() === "weighted") {
+        return (
+          '<details class="score-explain-formula-fold score-explain-formula-bottom"><summary>Score equation</summary>' +
+          '<div class="score-explain-formula-tiles" aria-label="' +
+          d.escapeHtml(breakdown.formulaLine) +
+          '">' +
+          '<span class="formula-chip formula-chip-env">20% <b>Environmental</b></span>' +
+          '<span class="formula-plus">+</span>' +
+          '<span class="formula-chip formula-chip-nature">15% <b>Nature</b></span>' +
+          '<span class="formula-plus">+</span>' +
+          '<span class="formula-chip formula-chip-play">15% <b>Play</b></span>' +
+          '<span class="formula-plus">+</span>' +
+          '<span class="formula-chip formula-chip-safety">25% <b>Safety</b></span>' +
+          '<span class="formula-plus">+</span>' +
+          '<span class="formula-chip formula-chip-family">25% <b>Family</b></span>' +
+          "</div></details>"
+        );
+      }
+      return (
+        '<div class="score-explain-hero-note score-explain-formula-bottom score-explain-formula-card"><p>' +
+        d.escapeHtml(breakdown.formulaLine) +
+        "</p></div>"
+      );
     }
+    return "";
   }
 
   function renderScoreExplainSidebar(breakdown, metrics, ctx) {
@@ -389,13 +406,13 @@
       if (!breakdown || !Array.isArray(breakdown.weightedCategories) || breakdown.weightedCategories.length === 0) {
         return unavailable;
       }
-      return renderScoreExplainSidebarWeighted(breakdown.weightedCategories);
+      return renderScoreExplainSidebarWeighted(breakdown.weightedCategories) + renderScoreExplainSidebarFormula(breakdown);
     }
 
     if (!breakdown || !Array.isArray(breakdown.rows) || breakdown.rows.length === 0) {
       return unavailable;
     }
-    return renderScoreExplainSidebarExpanded(breakdown.rows);
+    return renderScoreExplainSidebarExpanded(breakdown.rows) + renderScoreExplainSidebarFormula(breakdown);
   }
 
   function resetScoreExplainSidebarFit(body, inner) {
@@ -413,6 +430,9 @@
       body.style.removeProperty("--sidebar-content-group-gap");
       body.style.removeProperty("--sidebar-content-subs-gap");
       body.style.removeProperty("--sidebar-fit-label-col");
+      body.style.removeProperty("--sidebar-note-pad");
+      body.style.removeProperty("--sidebar-note-font");
+      body.style.removeProperty("--sidebar-note-gap");
     }
     if (inner) {
       inner.classList.remove("is-chart-fit-tight", "is-chart-fit-ultra");
@@ -420,7 +440,7 @@
   }
 
   function applyScoreExplainContentScale(body, inner, scale) {
-    var s = Math.min(1, Math.max(0.48, scale));
+    var s = Math.min(1, Math.max(0.34, scale));
     var d = SCORE_EXPLAIN_CONTENT_DESIGN;
     body.style.setProperty("--sidebar-content-scale", String(s));
     body.style.setProperty("--sidebar-content-bar-h", Math.max(14, Math.round(d.bar * s)) + "px");
@@ -432,6 +452,9 @@
     body.style.setProperty("--sidebar-content-sub-icon", Math.max(12, Math.round(d.subIcon * s)) + "px");
     body.style.setProperty("--sidebar-content-group-gap", Math.max(0, Math.round(d.groupGap + 3 * s)) + "px");
     body.style.setProperty("--sidebar-content-subs-gap", Math.max(0.08, d.subsGap * s) + "rem");
+    body.style.setProperty("--sidebar-note-pad", Math.max(6, Math.round(11 * s)) + "px");
+    body.style.setProperty("--sidebar-note-font", Math.max(10.5, 12.5 * s) + "px");
+    body.style.setProperty("--sidebar-note-gap", Math.max(6, Math.round(12 * s)) + "px");
     if (s < 1) {
       var labelRem = parseFloat(d.labelCol);
       body.style.setProperty("--sidebar-fit-label-col", Math.max(8.5, labelRem * s) + "rem");
@@ -441,6 +464,16 @@
     body.classList.toggle("is-content-scaled", s < 1);
     inner.classList.toggle("is-chart-fit-tight", s < 0.9);
     inner.classList.toggle("is-chart-fit-ultra", s < 0.76);
+  }
+
+  function outerBlockHeight(el) {
+    if (!el) return 0;
+    var style = getComputedStyle(el);
+    return (
+      el.scrollHeight +
+      parseFloat(style.marginTop || "0") +
+      parseFloat(style.marginBottom || "0")
+    );
   }
 
   function fitScoreExplainSidebarToViewport() {
@@ -454,20 +487,27 @@
 
     resetScoreExplainSidebarFit(body, inner);
 
-    var emptyEl = d.emptyEl;
-    var reserved = header.offsetHeight;
-    if (emptyEl && !emptyEl.hidden) reserved += emptyEl.offsetHeight;
-    var bodyStyle = getComputedStyle(body);
-    reserved += parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+    function availableBodyHeight() {
+      var emptyEl = d.emptyEl;
+      var reserved = header.offsetHeight;
+      if (emptyEl && !emptyEl.hidden) reserved += emptyEl.offsetHeight;
+      var bodyStyle = getComputedStyle(body);
+      reserved += parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+      return Math.max(80, inner.clientHeight - reserved);
+    }
 
-    var available = Math.max(80, inner.clientHeight - reserved);
+    var available = availableBodyHeight();
     body.style.maxHeight = available + "px";
 
     var chart = body.querySelector(".horizon-chart");
     if (!chart) return;
 
     function contentHeight() {
-      return body.scrollHeight;
+      var total = chart.scrollHeight;
+      Array.prototype.forEach.call(body.children, function (child) {
+        if (child !== chart) total += outerBlockHeight(child);
+      });
+      return total;
     }
 
     var needed = contentHeight();
@@ -477,11 +517,15 @@
 
     var scale = (available / needed) * 0.98;
     applyScoreExplainContentScale(body, inner, scale);
+    available = availableBodyHeight();
+    body.style.maxHeight = available + "px";
 
     needed = contentHeight();
     if (needed > available) {
       scale = scale * (available / needed) * 0.98;
       applyScoreExplainContentScale(body, inner, scale);
+      available = availableBodyHeight();
+      body.style.maxHeight = available + "px";
     }
 
     body.classList.toggle("is-chart-roomy", contentHeight() < available * 0.92);

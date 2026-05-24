@@ -185,6 +185,79 @@
       return token === modeTransitionGeneration;
     }
 
+    function emptyFeatureCollection() {
+      return { type: "FeatureCollection", features: [] };
+    }
+
+    function neighborhoodLabelPoint(feature) {
+      if (!feature || !feature.geometry || !window.turf) return null;
+      if (typeof window.turf.centerOfMass === "function") {
+        try {
+          var center = window.turf.centerOfMass(feature);
+          if (
+            center &&
+            center.geometry &&
+            typeof window.turf.booleanPointInPolygon === "function" &&
+            window.turf.booleanPointInPolygon(center, feature)
+          ) {
+            return center;
+          }
+        } catch (error) {
+          logger.debug(function () {
+            return ["[Neighborhood] Center label point failed", error && error.message ? error.message : error];
+          });
+        }
+      }
+      if (typeof window.turf.pointOnFeature === "function") {
+        try {
+          return window.turf.pointOnFeature(feature);
+        } catch (error) {
+          logger.debug(function () {
+            return ["[Neighborhood] Inside label point failed", error && error.message ? error.message : error];
+          });
+        }
+      }
+      try {
+        if (typeof window.turf.center === "function") {
+          return window.turf.center(feature);
+        }
+      } catch (error) {
+        logger.debug(function () {
+          return ["[Neighborhood] Label point fallback failed", error && error.message ? error.message : error];
+        });
+      }
+      return null;
+    }
+
+    function buildNeighborhoodLabelSourceData(neighborhoodsData) {
+      if (!neighborhoodsData || !Array.isArray(neighborhoodsData.features)) {
+        return emptyFeatureCollection();
+      }
+      return {
+        type: "FeatureCollection",
+        features: neighborhoodsData.features
+          .map(function (feature, index) {
+            var point = neighborhoodLabelPoint(feature);
+            if (!point || !point.geometry) return null;
+            return {
+              type: "Feature",
+              properties: {
+                label_id: index,
+                Name: feature.properties && feature.properties.Name ? feature.properties.Name : "",
+              },
+              geometry: point.geometry,
+            };
+          })
+          .filter(Boolean),
+      };
+    }
+
+    function updateNeighborhoodLabelSource(neighborhoodsData) {
+      var labelSource = map.getSource("neighborhood-labels");
+      if (!labelSource || typeof labelSource.setData !== "function") return;
+      labelSource.setData(buildNeighborhoodLabelSourceData(neighborhoodsData));
+    }
+
     function addNeighborhoodLayers() {
       if (map.getLayer("neighborhoods-fill")) return;
       logger.debug(function () {
@@ -240,6 +313,29 @@
           source: "neighborhoods",
           paint: { "line-color": "#1e3a5f", "line-width": 2.5, "line-opacity": 0.9 },
           layout: { visibility: "none" },
+        });
+        map.addLayer({
+          id: "neighborhoods-label",
+          type: "symbol",
+          source: "neighborhood-labels",
+          layout: {
+            visibility: "none",
+            "text-field": ["coalesce", ["get", "Name"], ""],
+            "text-font": ["Noto Sans Regular"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 9, 12, 12, 15, 15, 19],
+            "text-anchor": "center",
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+            "text-padding": 8,
+            "text-max-width": 9,
+          },
+          paint: {
+            "text-color": "#102033",
+            "text-halo-color": "#ffffff",
+            "text-halo-width": 2.4,
+            "text-halo-blur": 0.35,
+            "text-opacity": ["interpolate", ["linear"], ["zoom"], 8, 0.85, 10, 0.95, 14, 1],
+          },
         });
       });
     }
@@ -364,6 +460,7 @@
                 src.setData(data);
               });
             }
+            updateNeighborhoodLabelSource(data);
             if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
             addNeighborhoodLayers();
             perfSpan("enterNeighborhoodMode:updateNeighborhoodColors", null, function () {
@@ -428,6 +525,7 @@
             if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
             var src = map.getSource("neighborhoods");
             if (src) src.setData(data);
+            updateNeighborhoodLabelSource(data);
             if (!isCurrentModeToken(token) || getCurrentMode() !== "citywide") return;
             addNeighborhoodLayers();
             mapRenderers.updateNeighborhoodColors();
