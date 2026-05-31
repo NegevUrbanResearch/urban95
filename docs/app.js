@@ -4,6 +4,7 @@ const {
   ICONS_BASE,
   BUILDINGS_URL,
   ROADS_URL,
+  EDUCATION_URL,
   POPULATION_GRID_URL,
   PARKS_URL,
   TREES_URL,
@@ -156,8 +157,16 @@ const radiusToggle = document.getElementById("radius-toggle");
 const showTreesToggle = document.getElementById("show-trees-toggle");
 const showLightsToggle = document.getElementById("show-lights-toggle");
 const showAmenityPointsToggle = document.getElementById("show-amenity-points-toggle");
+const showSchoolsToggle = document.getElementById("show-schools-toggle");
+const layersBtn = document.getElementById("layers-btn");
+const layersPopup = document.getElementById("layers-popup");
+const layersBackdrop = document.getElementById("layers-backdrop");
+const layersBtnMeta = document.getElementById("layers-btn-meta");
+const layersSelectAllBtn = document.getElementById("layers-select-all");
+const layersDeselectAllBtn = document.getElementById("layers-deselect-all");
 const urban95PointToggles = document.getElementById("urban95-point-toggles");
 const amenityPointsToggleWrap = document.getElementById("amenity-points-toggle-wrap");
+const schoolPointsToggleWrap = document.getElementById("school-points-toggle-wrap");
 const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
 const showRoadsToggle = document.getElementById("show-roads-toggle");
 const showKidsPopulationToggle = document.getElementById("show-kids-population-toggle");
@@ -336,6 +345,8 @@ const ROAD_LAYER_IDS = [
   "roads-labels-major",
   "roads-labels-local",
 ];
+const SCHOOLS_SOURCE_ID = "schools";
+const SCHOOLS_LAYER_ID = "schools-points";
 const KIDS_POPULATION_SOURCE_ID = "kids-population-grid";
 const KIDS_POPULATION_LAYER_ID = "kids-population-grid-fill";
 const KIDS_AGE_0_4_KEY = "גיל0_4";
@@ -345,6 +356,7 @@ const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
 const AMENITY_CLUSTER_MAX_COUNT = 50;
 const URBAN95_DETAIL_POINTS_MIN_ZOOM = Urban95Config.detailPointsMinZoom || 15;
+const SCHOOLS_DETAIL_POINTS_MIN_ZOOM = Math.max(0, URBAN95_DETAIL_POINTS_MIN_ZOOM - 1);
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
                       window.matchMedia("(max-width: 480px)").matches;
 let allAmenityTypes = [];
@@ -372,6 +384,7 @@ let _deckUpdateTimer = null;
 let _deckHovering = false;
 let _lastDeckClickTime = 0;
 let buildingCentroidGridIndex = new Map();
+let schoolsHoverBound = false;
 const pointDataLoader = createPointDataLoader({
   urls: {
     trees: TREES_URL,
@@ -754,7 +767,11 @@ const modeController = Urban95ModeController.create({
     turf: turf,
   },
 });
-const switchMode = modeController.switchMode;
+function switchMode(mode) {
+  const result = modeController.switchMode(mode);
+  applySchoolsLayerVisibility();
+  return result;
+}
 const applyHouseModeHexBackground = modeController.applyHouseModeHexBackground;
 const addNeighborhoodLayers = modeController.addNeighborhoodLayers;
 Urban95Dashboards.configure({
@@ -1027,6 +1044,10 @@ const controlActions = Urban95ControlActions.create({
     },
   },
 });
+function handlePointVisibilityChanged() {
+  controlActions.onPointVisibilityChanged();
+  applySchoolsLayerVisibility();
+}
 controlsBinding = Urban95Controls.bind({
   elements: {
     filterBtn: filterBtn,
@@ -1036,15 +1057,26 @@ controlsBinding = Urban95Controls.bind({
     filterBackdrop: filterBackdrop,
     amenityFilterSection: amenityFilterSection,
     radiusSection: radiusSection,
+    pointsVisibilitySection: pointsVisibilitySectionEl,
     radiusToggle: radiusToggle,
     scoreModelToggle: scoreModelToggle,
     modeToggle: modeToggle,
     modeHint: modeHint,
     showTreesToggle: showTreesToggle,
     showLightsToggle: showLightsToggle,
+    showSchoolsToggle: showSchoolsToggle,
     showAmenityPointsToggle: showAmenityPointsToggle,
+    showRoadsToggle: showRoadsToggle,
+    showKidsPopulationToggle: showKidsPopulationToggle,
+    layersBtn: layersBtn,
+    layersPopup: layersPopup,
+    layersBackdrop: layersBackdrop,
+    layersBtnMeta: layersBtnMeta,
+    layersSelectAllBtn: layersSelectAllBtn,
+    layersDeselectAllBtn: layersDeselectAllBtn,
     showHeatmapToggle: showHeatmapToggle,
     urban95PointToggles: urban95PointToggles,
+    schoolPointsToggleWrap: schoolPointsToggleWrap,
     amenityPointsToggleWrap: amenityPointsToggleWrap,
   },
   scoreModel: Urban95ScoreModel,
@@ -1089,12 +1121,19 @@ controlsBinding = Urban95Controls.bind({
     onScoreModeChanged: controlActions.onScoreModeChanged,
     onWalkMinutesChanged: controlActions.onWalkMinutesChanged,
     onModeToggleRequested: controlActions.onModeToggleRequested,
-    onPointVisibilityChanged: controlActions.onPointVisibilityChanged,
+    onPointVisibilityChanged: handlePointVisibilityChanged,
     onHeatmapVisibilityChanged: controlActions.onHeatmapVisibilityChanged,
     onEscape: controlActions.onEscape,
     clearDerivedCaches: controlActions.clearDerivedCaches,
   },
 });
+if (scoreModelToggle) {
+  scoreModelToggle.addEventListener("change", function (e) {
+    const input = e && e.target;
+    if (!input || input.name !== "score-model") return;
+    applySchoolsLayerVisibility();
+  });
+}
 Urban95AppStartupBridge.bindStartup({
   map: map,
   startup: Urban95Startup,
@@ -1299,6 +1338,102 @@ async function loadKidsPopulationGridLayer() {
     console.error("Failed to load kids population grid:", err);
   }
 }
+function ensureSchoolsLayer() {
+  if (!map.getSource(SCHOOLS_SOURCE_ID)) {
+    map.addSource(SCHOOLS_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(SCHOOLS_LAYER_ID)) {
+    const beforeLayerId = map.getLayer("selected-building-outline")
+      ? "selected-building-outline"
+      : undefined;
+    map.addLayer(
+      {
+        id: SCHOOLS_LAYER_ID,
+        type: "symbol",
+        source: SCHOOLS_SOURCE_ID,
+        minzoom: SCHOOLS_DETAIL_POINTS_MIN_ZOOM,
+        layout: {
+          "icon-image": "town-hall",
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 1.1, 14, 1.45, 18, 2],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          visibility: "none",
+        },
+        paint: {
+          "icon-color": "#dc2626",
+          "icon-opacity": 0.95,
+        },
+      },
+      beforeLayerId
+    );
+  }
+}
+function applySchoolsLayerVisibility() {
+  if (!map.getLayer(SCHOOLS_LAYER_ID)) return;
+  const isUrban95 = getScoreModeState() === "weighted";
+  const visible =
+    !!showSchoolsToggle &&
+    showSchoolsToggle.checked &&
+    isUrban95 &&
+    currentMode === "house" &&
+    map.getZoom() >= SCHOOLS_DETAIL_POINTS_MIN_ZOOM;
+  map.setLayoutProperty(SCHOOLS_LAYER_ID, "visibility", visible ? "visible" : "none");
+}
+async function loadSchoolsLayer() {
+  try {
+    const schools = await fetchJsonWithGzipFallback(EDUCATION_URL, { required: false });
+    ensureSchoolsLayer();
+    const source = map.getSource(SCHOOLS_SOURCE_ID);
+    if (!source) return;
+    source.setData(
+      schools && schools.type === "FeatureCollection"
+        ? schools
+        : { type: "FeatureCollection", features: [] }
+    );
+    bindSchoolsHover();
+    applySchoolsLayerVisibility();
+  } catch (err) {
+    console.error("Failed to load schools layer:", err);
+  }
+}
+function getSchoolHoverName(properties) {
+  if (!properties) return "School";
+  return (
+    properties.Institutio ||
+    properties.institution ||
+    properties.name ||
+    properties.NAME ||
+    properties.school_name ||
+    properties.oldName ||
+    "School"
+  );
+}
+function decodeLikelyMojibakeUtf8(value) {
+  const text = String(value || "");
+  if (!text || text.indexOf("×") === -1) return text;
+  try {
+    const bytes = Uint8Array.from(Array.from(text, function (char) {
+      return char.charCodeAt(0) & 0xff;
+    }));
+    const decoded = new TextDecoder("utf-8").decode(bytes);
+    return decoded && decoded.indexOf("�") === -1 ? decoded : text;
+  } catch (_error) {
+    return text;
+  }
+}
+function bindSchoolsHover() {
+  if (schoolsHoverBound || !map.getLayer(SCHOOLS_LAYER_ID)) return;
+  Urban95MapRenderers.bindPointHoverLayer(SCHOOLS_LAYER_ID, function (feature) {
+    const props = (feature && feature.properties) || {};
+    const name = decodeLikelyMojibakeUtf8(getSchoolHoverName(props));
+    const type = decodeLikelyMojibakeUtf8(props.type || "");
+    return type ? name + "\n" + type : name;
+  });
+  schoolsHoverBound = true;
+}
 function applyRoadSymbologyVisibility() {
   const visibility = showRoadsToggle && showRoadsToggle.checked ? "visible" : "none";
   ROAD_LAYER_IDS.forEach(function (layerId) {
@@ -1315,4 +1450,5 @@ if (showKidsPopulationToggle) {
   showKidsPopulationToggle.addEventListener("change", applyKidsPopulationVisibility);
 }
 map.on("load", loadKidsPopulationGridLayer);
+map.on("load", loadSchoolsLayer);
 Urban95InfoModal.bind({ infoModal: document.getElementById("info-modal"), infoBtn: document.getElementById("info-btn"), modalClose: document.getElementById("modal-close"), modalStart: document.getElementById("modal-start"), modalTabs: document.querySelectorAll(".modal-tab"), tabContents: document.querySelectorAll(".modal-tab-content") });

@@ -73,7 +73,9 @@
     );
 
     var popupJustOpened = false;
+    var layersPopupJustOpened = false;
     var handledByTouch = false;
+    var layersHandledByTouch = false;
     var AMENITY_TYPE_CONFIG = scoreModel.AMENITY_TYPE_CONFIG || {};
     var DEFAULT_CONFIG = scoreModel.DEFAULT_CONFIG || { color: "#6b7280" };
     var WEIGHTED_CATEGORY_COMPONENTS = scoreModel.WEIGHTED_CATEGORY_COMPONENTS || [];
@@ -125,6 +127,9 @@
         closeFilterPopup();
         forceAllAmenityTypesSelected();
       }
+      if (state.currentMode !== "house") {
+        closeLayersPopup();
+      }
     }
 
     function updateShowPointsToggleLabel() {
@@ -132,9 +137,100 @@
       if (elements.urban95PointToggles) {
         elements.urban95PointToggles.style.display = state.currentMode === "house" ? "" : "none";
       }
+      if (elements.schoolPointsToggleWrap) {
+        elements.schoolPointsToggleWrap.style.display = state.scoreMode === "weighted" ? "" : "none";
+      }
       if (elements.amenityPointsToggleWrap) {
         elements.amenityPointsToggleWrap.style.display = state.scoreMode === "expanded" ? "" : "none";
       }
+      updateLayersButtonMeta();
+    }
+
+    function getLayerToggleInputs() {
+      if (!elements.pointsVisibilitySection) return [];
+      return Array.from(
+        elements.pointsVisibilitySection.querySelectorAll('input[type="checkbox"]')
+      );
+    }
+
+    function isLayerToggleVisible(input) {
+      if (!input || !input.isConnected) return false;
+      if (elements.pointsVisibilitySection && elements.pointsVisibilitySection.style.display === "none") {
+        return false;
+      }
+      var togglesContainer = input.closest("#urban95-point-toggles");
+      if (togglesContainer && togglesContainer.style.display === "none") {
+        return false;
+      }
+      var host = input.closest(".toggle") || input;
+      if (host.style && host.style.display === "none") {
+        return false;
+      }
+      return true;
+    }
+
+    function countVisibleLayerOptions() {
+      return getLayerToggleInputs().filter(isLayerToggleVisible).length;
+    }
+
+    function countEnabledLayerOptions() {
+      return getLayerToggleInputs().filter(function (input) {
+        return isLayerToggleVisible(input) && input.checked;
+      }).length;
+    }
+
+    function updateLayersButtonMeta() {
+      if (!elements.layersBtnMeta) return;
+      var visibleCount = countVisibleLayerOptions();
+      var enabledCount = countEnabledLayerOptions();
+      elements.layersBtnMeta.textContent = enabledCount + " of " + visibleCount + " enabled";
+    }
+
+    function openLayersPopup() {
+      if (!elements.layersPopup || !elements.layersBtn) return;
+      elements.layersPopup.classList.add("show");
+      elements.layersBtn.classList.add("open");
+      elements.layersBtn.setAttribute("aria-expanded", "true");
+      if (config.isTouchDevice && elements.layersBackdrop) {
+        elements.layersBackdrop.classList.add("show");
+      }
+      layersPopupJustOpened = true;
+      setTimeout(function () {
+        layersPopupJustOpened = false;
+      }, 100);
+    }
+
+    function closeLayersPopup() {
+      if (elements.layersPopup) {
+        elements.layersPopup.classList.remove("show");
+      }
+      if (elements.layersBtn) {
+        elements.layersBtn.classList.remove("open");
+        elements.layersBtn.setAttribute("aria-expanded", "false");
+      }
+      if (elements.layersBackdrop) {
+        elements.layersBackdrop.classList.remove("show");
+      }
+    }
+
+    function toggleLayersPopup() {
+      if (!elements.layersPopup) return;
+      if (elements.layersPopup.classList.contains("show")) {
+        closeLayersPopup();
+      } else {
+        openLayersPopup();
+      }
+    }
+
+    function setAllLayerToggles(nextChecked) {
+      getLayerToggleInputs().forEach(function (input) {
+        if (!isLayerToggleVisible(input)) return;
+        if (input.disabled) return;
+        if (input.checked === nextChecked) return;
+        input.checked = nextChecked;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      updateLayersButtonMeta();
     }
 
     function describeTypeMix(typeCounts) {
@@ -450,20 +546,85 @@
       });
     }
 
+    if (elements.layersBackdrop) {
+      elements.layersBackdrop.addEventListener("click", closeLayersPopup);
+      elements.layersBackdrop.addEventListener("touchstart", function (e) {
+        e.preventDefault();
+        closeLayersPopup();
+      });
+    }
+
+    if (elements.layersBtn) {
+      elements.layersBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (layersHandledByTouch) {
+          layersHandledByTouch = false;
+          return;
+        }
+        toggleLayersPopup();
+      });
+
+      elements.layersBtn.addEventListener("touchend", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        layersHandledByTouch = true;
+        toggleLayersPopup();
+        setTimeout(function () {
+          layersHandledByTouch = false;
+        }, 300);
+      });
+    }
+
+    if (elements.layersPopup) {
+      elements.layersPopup.addEventListener("click", function (e) {
+        e.stopPropagation();
+      });
+      elements.layersPopup.addEventListener("touchstart", function (e) {
+        e.stopPropagation();
+      });
+    }
+
+    if (elements.layersSelectAllBtn) {
+      elements.layersSelectAllBtn.addEventListener("click", function () {
+        setAllLayerToggles(true);
+      });
+    }
+
+    if (elements.layersDeselectAllBtn) {
+      elements.layersDeselectAllBtn.addEventListener("click", function () {
+        setAllLayerToggles(false);
+      });
+    }
+
     document.addEventListener("click", function (e) {
-      if (popupJustOpened || !elements.filterPopup || !elements.filterBtn) return;
       if (
+        !popupJustOpened &&
+        elements.filterPopup &&
+        elements.filterBtn &&
         !elements.filterPopup.contains(e.target) &&
         e.target !== elements.filterBtn &&
         !elements.filterBtn.contains(e.target)
       ) {
         closeFilterPopup();
       }
+      if (
+        !layersPopupJustOpened &&
+        elements.layersPopup &&
+        elements.layersBtn &&
+        !elements.layersPopup.contains(e.target) &&
+        e.target !== elements.layersBtn &&
+        !elements.layersBtn.contains(e.target)
+      ) {
+        closeLayersPopup();
+      }
     });
 
     document.addEventListener("touchstart", function (e) {
-      if (popupJustOpened || !elements.filterPopup || !elements.filterBtn) return;
       if (
+        !popupJustOpened &&
+        elements.filterPopup &&
+        elements.filterBtn &&
         !elements.filterPopup.contains(e.target) &&
         e.target !== elements.filterBtn &&
         !elements.filterBtn.contains(e.target) &&
@@ -471,35 +632,78 @@
       ) {
         closeFilterPopup();
       }
+      if (
+        !layersPopupJustOpened &&
+        elements.layersPopup &&
+        elements.layersBtn &&
+        !elements.layersPopup.contains(e.target) &&
+        e.target !== elements.layersBtn &&
+        !elements.layersBtn.contains(e.target) &&
+        e.target !== elements.layersBackdrop
+      ) {
+        closeLayersPopup();
+      }
     });
 
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
       closeFilterPopup();
+      closeLayersPopup();
       onEscape(e);
     });
 
     if (elements.showTreesToggle) {
       elements.showTreesToggle.addEventListener("change", function () {
         onPointVisibilityChanged();
+        updateLayersButtonMeta();
       });
     }
 
     if (elements.showLightsToggle) {
       elements.showLightsToggle.addEventListener("change", function () {
         onPointVisibilityChanged();
+        updateLayersButtonMeta();
       });
     }
 
     if (elements.showAmenityPointsToggle) {
       elements.showAmenityPointsToggle.addEventListener("change", function () {
         onPointVisibilityChanged();
+        updateLayersButtonMeta();
+      });
+    }
+
+    if (elements.showSchoolsToggle) {
+      elements.showSchoolsToggle.addEventListener("change", function () {
+        onPointVisibilityChanged();
+        updateLayersButtonMeta();
       });
     }
 
     if (elements.showHeatmapToggle) {
       elements.showHeatmapToggle.addEventListener("change", function () {
         onHeatmapVisibilityChanged(!!this.checked);
+        updateLayersButtonMeta();
+      });
+    }
+
+    if (elements.showKidsPopulationToggle) {
+      elements.showKidsPopulationToggle.addEventListener("change", function () {
+        updateLayersButtonMeta();
+      });
+    }
+
+    if (elements.showRoadsToggle) {
+      elements.showRoadsToggle.addEventListener("change", function () {
+        updateLayersButtonMeta();
+      });
+    }
+
+    if (elements.pointsVisibilitySection) {
+      elements.pointsVisibilitySection.addEventListener("change", function (e) {
+        if (e && e.target && e.target.matches('input[type="checkbox"]')) {
+          updateLayersButtonMeta();
+        }
       });
     }
 
@@ -551,6 +755,7 @@
     syncFilterUiForScoreMode();
     updateFilterLabel();
     updateShowPointsToggleLabel();
+    updateLayersButtonMeta();
 
     return {
       getScoreModeLabel: getScoreModeLabel,

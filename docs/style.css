@@ -424,6 +424,136 @@ body {
   padding-bottom: 0;
 }
 
+.layers-control {
+  position: relative;
+}
+
+.layers-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #1f2937;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.layers-btn:hover {
+  border-color: #93c5fd;
+  background: #f1f5f9;
+}
+
+.layers-btn.open {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.layers-btn-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.layers-btn-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.layers-btn-meta {
+  margin-top: 1px;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.layers-btn svg {
+  color: #9ca3af;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.layers-btn.open svg {
+  transform: rotate(180deg);
+}
+
+.layers-popup {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 220;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14), 0 3px 8px rgba(15, 23, 42, 0.08);
+}
+
+.layers-popup.show {
+  display: block;
+}
+
+.layers-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.layers-popup-header strong {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+}
+
+.layers-popup-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.layers-action-btn {
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.layers-action-btn:hover {
+  background: #dbeafe;
+  border-color: #bfdbfe;
+}
+
+.layers-grid {
+  margin-bottom: 0;
+}
+
+.layers-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.25);
+  z-index: 9;
+}
+
+.layers-backdrop.show {
+  display: block;
+}
+
 .detail-point-toggles {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2736,6 +2866,36 @@ body {
     min-width: 0;
   }
 
+  #points-visibility-section {
+    border-top: 1px solid #f3f4f6;
+    padding: 8px 12px 10px;
+  }
+
+  #points-visibility-section .section-title {
+    display: none;
+  }
+
+  .layers-btn {
+    height: 40px;
+    min-height: 40px;
+    border-radius: 10px;
+    padding: 0 12px;
+    border: none;
+    background: #f5f5f5;
+  }
+
+  .layers-btn:active {
+    background: #ebebeb;
+  }
+
+  .layers-btn-title {
+    font-size: 13px;
+  }
+
+  .layers-btn-meta {
+    font-size: 10.5px;
+  }
+
   #amenity-filter-section {
     flex: 1.2;
   }
@@ -2870,6 +3030,64 @@ body {
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
     z-index: 200;
     overflow: hidden;
+  }
+
+  .layers-popup {
+    display: none;
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 16px 16px 0 0;
+    padding: 0;
+    border: none;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+    z-index: 220;
+    max-height: 72vh;
+    overflow: hidden;
+  }
+
+  .layers-popup.show {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .layers-popup::before {
+    content: "";
+    display: block;
+    flex-shrink: 0;
+    width: 40px;
+    height: 4px;
+    background: #d1d5db;
+    border-radius: 2px;
+    margin: 12px auto 10px;
+  }
+
+  .layers-popup-header {
+    padding: 0 16px 10px;
+    margin-bottom: 0;
+  }
+
+  .layers-popup-actions {
+    gap: 8px;
+  }
+
+  .layers-action-btn {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  .layers-grid {
+    padding: 8px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    row-gap: 6px;
+  }
+
+  .layers-backdrop {
+    z-index: 9;
   }
 
   .filter-popup.show {

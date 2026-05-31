@@ -88,39 +88,64 @@
       </div>
 
       <div class="section" id="points-visibility-section">
-        <div class="detail-point-toggles" id="urban95-point-toggles">
-          <label class="toggle toggle-with-icon">
-            <input type="checkbox" id="show-trees-toggle" checked />
-            <span class="toggle-slider"></span>
-            <span class="toggle-icon" aria-hidden="true"><img src="./icons/park-alt1.svg" alt="" /></span>
-            <span class="toggle-label">Trees</span>
-          </label>
-          <label class="toggle toggle-with-icon">
-            <input type="checkbox" id="show-lights-toggle" />
-            <span class="toggle-slider"></span>
-            <span class="toggle-icon" aria-hidden="true"><img src="./icons/lighthouse.svg" alt="" /></span>
-            <span class="toggle-label">Lights</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="show-heatmap-toggle" checked />
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Heatmap</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="show-kids-population-toggle" />
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Pop. Kids</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="show-roads-toggle" />
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Roads</span>
-          </label>
-          <label class="toggle" id="amenity-points-toggle-wrap">
-            <input type="checkbox" id="show-amenity-points-toggle" checked />
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Amenities</span>
-          </label>
+        <div class="section-title">Layers</div>
+        <div class="layers-control">
+          <button id="layers-btn" class="layers-btn" type="button" aria-expanded="false" aria-controls="layers-popup">
+            <span class="layers-btn-text">
+              <span class="layers-btn-title">Layer controls</span>
+              <span class="layers-btn-meta" id="layers-btn-meta">2 of 6 enabled</span>
+            </span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
+          </button>
+          <div id="layers-popup" class="layers-popup" role="dialog" aria-label="Layer controls">
+            <div class="layers-popup-header">
+              <strong>Map Layers</strong>
+              <div class="layers-popup-actions">
+                <button type="button" id="layers-select-all" class="layers-action-btn">Select all</button>
+                <button type="button" id="layers-deselect-all" class="layers-action-btn">Deselect all</button>
+              </div>
+            </div>
+            <div class="detail-point-toggles layers-grid" id="urban95-point-toggles">
+              <label class="toggle toggle-with-icon">
+                <input type="checkbox" id="show-trees-toggle" checked />
+                <span class="toggle-slider"></span>
+                <span class="toggle-icon" aria-hidden="true"><img src="./icons/park-alt1.svg" alt="" /></span>
+                <span class="toggle-label">Trees</span>
+              </label>
+              <label class="toggle toggle-with-icon">
+                <input type="checkbox" id="show-lights-toggle" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-icon" aria-hidden="true"><img src="./icons/lighthouse.svg" alt="" /></span>
+                <span class="toggle-label">Lights</span>
+              </label>
+              <label class="toggle toggle-with-icon" id="school-points-toggle-wrap">
+                <input type="checkbox" id="show-schools-toggle" checked />
+                <span class="toggle-slider"></span>
+                <span class="toggle-icon" aria-hidden="true"><img src="./icons/town-hall.svg" alt="" /></span>
+                <span class="toggle-label">Schools</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="show-heatmap-toggle" checked />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Heatmap</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="show-kids-population-toggle" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Pop. Kids</span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="show-roads-toggle" />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Roads</span>
+              </label>
+              <label class="toggle" id="amenity-points-toggle-wrap">
+                <input type="checkbox" id="show-amenity-points-toggle" checked />
+                <span class="toggle-slider"></span>
+                <span class="toggle-label">Amenities</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -191,6 +216,7 @@
     <div id="tooltip"></div>
 
     <div id="filter-backdrop" class="filter-backdrop"></div>
+    <div id="layers-backdrop" class="layers-backdrop"></div>
 
     <div id="neighborhood-modal" class="modal">
       <div class="modal-content citywide-content">
