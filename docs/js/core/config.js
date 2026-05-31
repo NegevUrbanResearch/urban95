@@ -6,6 +6,7 @@
     buildings: BASE + "/buildings_accessibility.geojson",
     roads: BASE + "/roads.geojson",
     parks: BASE + "/parks.geojson",
+    populationGrid: BASE + "/population-grid.geojson",
     trees: BASE + "/trees.geojson",
     streetLights: BASE + "/street_lights.geojson",
     amenitiesClean: BASE + "/amenities_new.geojson",

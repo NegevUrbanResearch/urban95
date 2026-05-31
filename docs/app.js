@@ -4,6 +4,7 @@ const {
   ICONS_BASE,
   BUILDINGS_URL,
   ROADS_URL,
+  POPULATION_GRID_URL,
   PARKS_URL,
   TREES_URL,
   STREET_LIGHTS_URL,
@@ -159,6 +160,7 @@ const urban95PointToggles = document.getElementById("urban95-point-toggles");
 const amenityPointsToggleWrap = document.getElementById("amenity-points-toggle-wrap");
 const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
 const showRoadsToggle = document.getElementById("show-roads-toggle");
+const showKidsPopulationToggle = document.getElementById("show-kids-population-toggle");
 const scoreModelToggle = document.getElementById("score-model-toggle");
 const modeToggle = document.getElementById("mode-toggle");
 const modeHint = document.getElementById("mode-hint");
@@ -334,6 +336,10 @@ const ROAD_LAYER_IDS = [
   "roads-labels-major",
   "roads-labels-local",
 ];
+const KIDS_POPULATION_SOURCE_ID = "kids-population-grid";
+const KIDS_POPULATION_LAYER_ID = "kids-population-grid-fill";
+const KIDS_AGE_0_4_KEY = "גיל0_4";
+const KIDS_AGE_5_9_KEY = "גיל5_9";
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
@@ -1176,6 +1182,123 @@ Urban95MapEvents.bind({
   getScoreMode: getScoreModeState,
   formatArea: formatArea,
 });
+function safeNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+function getKids0To9Count(props) {
+  const p = props || {};
+  const kids0to4 = safeNumber(p[KIDS_AGE_0_4_KEY]) || 0;
+  const kids5to9 = safeNumber(p[KIDS_AGE_5_9_KEY]) || 0;
+  return kids0to4 + kids5to9;
+}
+function normalizeKidsPopulationGrid(rawFeatureCollection) {
+  const features = (rawFeatureCollection && rawFeatureCollection.features) || [];
+  const normalized = [];
+  let maxKids = 0;
+  features.forEach(function (feature) {
+    const geometry = feature && feature.geometry ? feature.geometry : null;
+    if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return;
+    const props = feature && feature.properties ? feature.properties : {};
+    const kids0to9 = getKids0To9Count(props);
+    if (!Number.isFinite(kids0to9)) return;
+    const safeKids0to9 = Math.max(0, kids0to9);
+    if (safeKids0to9 > maxKids) maxKids = safeKids0to9;
+    normalized.push({
+      type: "Feature",
+      properties: {
+        kids_0_9: safeKids0to9,
+      },
+      geometry: geometry,
+    });
+  });
+  return {
+    featureCollection: {
+      type: "FeatureCollection",
+      features: normalized,
+    },
+    maxKids: maxKids,
+  };
+}
+function kidsPopulationFillColorExpression(maxKids) {
+  const maxValue = Number.isFinite(maxKids) && maxKids > 0 ? maxKids : 1;
+  return [
+    "interpolate",
+    ["linear"],
+    ["coalesce", ["to-number", ["get", "kids_0_9"]], 0],
+    0, "#bfdbfe",
+    maxValue * 0.15, "#93c5fd",
+    maxValue * 0.35, "#60a5fa",
+    maxValue * 0.6, "#2563eb",
+    maxValue, "#1e3a8a",
+  ];
+}
+function kidsPopulationFillOpacityExpression(maxKids) {
+  const maxValue = Number.isFinite(maxKids) && maxKids > 0 ? maxKids : 1;
+  return [
+    "interpolate",
+    ["linear"],
+    ["coalesce", ["to-number", ["get", "kids_0_9"]], 0],
+    0, 0.28,
+    maxValue * 0.1, 0.38,
+    maxValue * 0.4, 0.58,
+    maxValue, 0.82,
+  ];
+}
+function ensureKidsPopulationLayer() {
+  if (!map.getSource(KIDS_POPULATION_SOURCE_ID)) {
+    map.addSource(KIDS_POPULATION_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) {
+    map.addLayer(
+      {
+        id: KIDS_POPULATION_LAYER_ID,
+        type: "fill",
+        source: KIDS_POPULATION_SOURCE_ID,
+        layout: {
+          visibility: "none",
+        },
+        paint: {
+          "fill-color": "#60a5fa",
+          "fill-opacity": 0.5,
+          "fill-outline-color": "rgba(59, 130, 246, 0.45)",
+        },
+      },
+      "selected-building-outline"
+    );
+  }
+}
+function applyKidsPopulationVisibility() {
+  if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) return;
+  const visible = showKidsPopulationToggle && showKidsPopulationToggle.checked;
+  map.setLayoutProperty(KIDS_POPULATION_LAYER_ID, "visibility", visible ? "visible" : "none");
+}
+async function loadKidsPopulationGridLayer() {
+  try {
+    const raw = await fetchJsonWithGzipFallback(POPULATION_GRID_URL, { required: false });
+    ensureKidsPopulationLayer();
+    const source = map.getSource(KIDS_POPULATION_SOURCE_ID);
+    if (!source || !raw) return;
+    const normalized = normalizeKidsPopulationGrid(raw);
+    source.setData(normalized.featureCollection);
+    map.setPaintProperty(
+      KIDS_POPULATION_LAYER_ID,
+      "fill-color",
+      kidsPopulationFillColorExpression(normalized.maxKids)
+    );
+    map.setPaintProperty(
+      KIDS_POPULATION_LAYER_ID,
+      "fill-opacity",
+      kidsPopulationFillOpacityExpression(normalized.maxKids)
+    );
+    applyKidsPopulationVisibility();
+  } catch (err) {
+    console.error("Failed to load kids population grid:", err);
+  }
+}
 function applyRoadSymbologyVisibility() {
   const visibility = showRoadsToggle && showRoadsToggle.checked ? "visible" : "none";
   ROAD_LAYER_IDS.forEach(function (layerId) {
@@ -1188,4 +1311,8 @@ if (showRoadsToggle) {
   showRoadsToggle.addEventListener("change", applyRoadSymbologyVisibility);
   map.on("load", applyRoadSymbologyVisibility);
 }
+if (showKidsPopulationToggle) {
+  showKidsPopulationToggle.addEventListener("change", applyKidsPopulationVisibility);
+}
+map.on("load", loadKidsPopulationGridLayer);
 Urban95InfoModal.bind({ infoModal: document.getElementById("info-modal"), infoBtn: document.getElementById("info-btn"), modalClose: document.getElementById("modal-close"), modalStart: document.getElementById("modal-start"), modalTabs: document.querySelectorAll(".modal-tab"), tabContents: document.querySelectorAll(".modal-tab-content") });
