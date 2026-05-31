@@ -3,6 +3,7 @@ const {
   GENERATED_ARTIFACTS,
   ICONS_BASE,
   BUILDINGS_URL,
+  ROADS_URL,
   PARKS_URL,
   TREES_URL,
   STREET_LIGHTS_URL,
@@ -131,6 +132,7 @@ const map = createBaseMap({
   maplibregl: maplibregl,
   hasGeneratedArtifact: hasGeneratedArtifact,
   vectorSourceOrGeojson: vectorSourceOrGeojson,
+  roadsUrl: ROADS_URL,
   buildingsMapSourceId: BUILDINGS_MAP_SOURCE_ID,
   buildingsSource: _urban95BuildingsSource,
   buildingsFillLayer: _urban95BuildingsFillLayer,
@@ -156,6 +158,7 @@ const showAmenityPointsToggle = document.getElementById("show-amenity-points-tog
 const urban95PointToggles = document.getElementById("urban95-point-toggles");
 const amenityPointsToggleWrap = document.getElementById("amenity-points-toggle-wrap");
 const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
+const showRoadsToggle = document.getElementById("show-roads-toggle");
 const scoreModelToggle = document.getElementById("score-model-toggle");
 const modeToggle = document.getElementById("mode-toggle");
 const modeHint = document.getElementById("mode-hint");
@@ -325,6 +328,12 @@ Urban95ScoreSidebar.configure({
 const TREE_LAYER_IDS = ["tree-icons", "tree-icons-vector"];
 const STREET_LIGHT_LAYER_IDS = ["street-light-icons", "street-light-icons-vector"];
 const TREES_AND_LIGHTS_LAYER_IDS = TREE_LAYER_IDS.concat(STREET_LIGHT_LAYER_IDS);
+const ROAD_LAYER_IDS = [
+  "roads-casing",
+  "roads-fill",
+  "roads-labels-major",
+  "roads-labels-local",
+];
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
@@ -1167,4 +1176,16 @@ Urban95MapEvents.bind({
   getScoreMode: getScoreModeState,
   formatArea: formatArea,
 });
+function applyRoadSymbologyVisibility() {
+  const visibility = showRoadsToggle && showRoadsToggle.checked ? "visible" : "none";
+  ROAD_LAYER_IDS.forEach(function (layerId) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", visibility);
+    }
+  });
+}
+if (showRoadsToggle) {
+  showRoadsToggle.addEventListener("change", applyRoadSymbologyVisibility);
+  map.on("load", applyRoadSymbologyVisibility);
+}
 Urban95InfoModal.bind({ infoModal: document.getElementById("info-modal"), infoBtn: document.getElementById("info-btn"), modalClose: document.getElementById("modal-close"), modalStart: document.getElementById("modal-start"), modalTabs: document.querySelectorAll(".modal-tab"), tabContents: document.querySelectorAll(".modal-tab-content") });

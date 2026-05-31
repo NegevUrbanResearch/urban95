@@ -59,15 +59,15 @@
       ["linear"],
       ["coalesce", ["feature-state", stateKey], 0],
       0,
-      "#ef4444",
+      "#dc2626",
       25,
-      "#f97316",
+      "#ea580c",
       50,
-      "#eab308",
+      "#ca8a04",
       75,
-      "#84cc16",
+      "#65a30d",
       100,
-      "#22c55e",
+      "#16a34a",
     ];
   }
 
@@ -106,7 +106,7 @@
       paint: {
         "fill-color": fillColorExpression,
         "fill-opacity": 1,
-        "fill-outline-color": "#d4d4d8",
+        "fill-outline-color": "#f8fafc",
       },
     };
     if (sourceLayer) {

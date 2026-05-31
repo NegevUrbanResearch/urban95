@@ -9,6 +9,7 @@ var GENERATED_URLS =
 var MAP_CONTRACTS = requireNamespaceMember(Urban95Config, "Urban95Config", "mapContracts", "object");
 var ICONS_BASE = requireNamespaceMember(Urban95Config, "Urban95Config", "ICONS_BASE");
 var BUILDINGS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "buildings");
+var ROADS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "roads");
 var BUILDINGS_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "buildingsLookup");
 var PARKS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "parks");
 var TREES_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "trees");
@@ -345,6 +346,7 @@ window.Urban95AppDependencies = {
   MAP_CONTRACTS: MAP_CONTRACTS,
   ICONS_BASE: ICONS_BASE,
   BUILDINGS_URL: BUILDINGS_URL,
+  ROADS_URL: ROADS_URL,
   BUILDINGS_LOOKUP_URL: BUILDINGS_LOOKUP_URL,
   PARKS_URL: PARKS_URL,
   TREES_URL: TREES_URL,
