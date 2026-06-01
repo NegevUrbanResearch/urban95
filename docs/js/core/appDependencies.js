@@ -12,6 +12,7 @@ var BUILDINGS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "buil
 var ROADS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "roads");
 var EDUCATION_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "education");
 var POPULATION_GRID_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "populationGrid");
+var SOCIOECONOMIC_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "socioeconomic");
 var BUILDINGS_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "buildingsLookup");
 var PARKS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "parks");
 var TREES_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "trees");
@@ -351,6 +352,7 @@ window.Urban95AppDependencies = {
   ROADS_URL: ROADS_URL,
   EDUCATION_URL: EDUCATION_URL,
   POPULATION_GRID_URL: POPULATION_GRID_URL,
+  SOCIOECONOMIC_URL: SOCIOECONOMIC_URL,
   BUILDINGS_LOOKUP_URL: BUILDINGS_LOOKUP_URL,
   PARKS_URL: PARKS_URL,
   TREES_URL: TREES_URL,

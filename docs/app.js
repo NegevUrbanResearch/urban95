@@ -6,6 +6,7 @@ const {
   ROADS_URL,
   EDUCATION_URL,
   POPULATION_GRID_URL,
+  SOCIOECONOMIC_URL,
   PARKS_URL,
   TREES_URL,
   STREET_LIGHTS_URL,
@@ -170,6 +171,7 @@ const schoolPointsToggleWrap = document.getElementById("school-points-toggle-wra
 const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
 const showRoadsToggle = document.getElementById("show-roads-toggle");
 const showKidsPopulationToggle = document.getElementById("show-kids-population-toggle");
+const showSocioeconomicToggle = document.getElementById("show-socioeconomic-toggle");
 const scoreModelToggle = document.getElementById("score-model-toggle");
 const modeToggle = document.getElementById("mode-toggle");
 const modeHint = document.getElementById("mode-hint");
@@ -349,6 +351,10 @@ const SCHOOLS_SOURCE_ID = "schools";
 const SCHOOLS_LAYER_ID = "schools-points";
 const KIDS_POPULATION_SOURCE_ID = "kids-population-grid";
 const KIDS_POPULATION_LAYER_ID = "kids-population-grid-fill";
+const SOCIOECONOMIC_SOURCE_ID = "socioeconomic-statareas";
+const SOCIOECONOMIC_FILL_LAYER_ID = "socioeconomic-statareas-fill";
+const SOCIOECONOMIC_OUTLINE_LAYER_ID = "socioeconomic-statareas-outline";
+const SOCIOECONOMIC_LABEL_LAYER_ID = "socioeconomic-statareas-labels";
 const KIDS_AGE_0_4_KEY = "גיל0_4";
 const KIDS_AGE_5_9_KEY = "גיל5_9";
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
@@ -1338,6 +1344,166 @@ async function loadKidsPopulationGridLayer() {
     console.error("Failed to load kids population grid:", err);
   }
 }
+function normalizeSocioeconomicLayer(rawFeatureCollection) {
+  const features = (rawFeatureCollection && rawFeatureCollection.features) || [];
+  const normalized = [];
+  features.forEach(function (feature) {
+    const geometry = feature && feature.geometry ? feature.geometry : null;
+    if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return;
+    const properties = Object.assign({}, (feature && feature.properties) || {});
+    const rawIndex = safeNumber(properties.socio_index != null ? properties.socio_index : properties.index_value);
+    if (!Number.isFinite(rawIndex)) return;
+    properties.socio_index = rawIndex;
+    const rawCluster = safeNumber(
+      properties.socio_cluster != null ? properties.socio_cluster : properties.cluster_2021
+    );
+    if (Number.isFinite(rawCluster)) properties.socio_cluster = Math.round(rawCluster);
+    const rawRank = safeNumber(properties.socio_rank != null ? properties.socio_rank : properties.rank_2021);
+    if (Number.isFinite(rawRank)) properties.socio_rank = Math.round(rawRank);
+    normalized.push({
+      type: "Feature",
+      properties: properties,
+      geometry: geometry,
+    });
+  });
+  return {
+    featureCollection: {
+      type: "FeatureCollection",
+      features: normalized,
+    },
+  };
+}
+function ensureSocioeconomicLayer() {
+  if (!map.getSource(SOCIOECONOMIC_SOURCE_ID)) {
+    map.addSource(SOCIOECONOMIC_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(SOCIOECONOMIC_FILL_LAYER_ID)) {
+    const beforeLayerId = map.getLayer("selected-building-outline")
+      ? "selected-building-outline"
+      : undefined;
+    map.addLayer(
+      {
+        id: SOCIOECONOMIC_FILL_LAYER_ID,
+        type: "fill",
+        source: SOCIOECONOMIC_SOURCE_ID,
+        layout: {
+          visibility: "none",
+        },
+        paint: {
+          "fill-color": "rgba(0, 0, 0, 0)",
+          "fill-opacity": 0,
+        },
+      },
+      beforeLayerId
+    );
+  }
+  if (!map.getLayer(SOCIOECONOMIC_OUTLINE_LAYER_ID)) {
+    map.addLayer({
+      id: SOCIOECONOMIC_OUTLINE_LAYER_ID,
+      type: "line",
+      source: SOCIOECONOMIC_SOURCE_ID,
+      layout: {
+        visibility: "none",
+      },
+      paint: {
+        "line-color": "rgba(68, 64, 60, 0.7)",
+        "line-width": 0.9,
+      },
+    });
+  }
+  if (!map.getLayer(SOCIOECONOMIC_LABEL_LAYER_ID)) {
+    map.addLayer({
+      id: SOCIOECONOMIC_LABEL_LAYER_ID,
+      type: "symbol",
+      source: SOCIOECONOMIC_SOURCE_ID,
+      minzoom: 12,
+      layout: {
+        visibility: "none",
+        "text-field": [
+          "case",
+          ["has", "socio_cluster"],
+          ["concat", "Cluster ", ["to-string", ["get", "socio_cluster"]]],
+          ["has", "cluster_2021"],
+          ["concat", "Cluster ", ["to-string", ["round", ["to-number", ["get", "cluster_2021"]]]]],
+          "",
+        ],
+        "text-size": 11,
+        "text-font": ["Noto Sans Regular"],
+      },
+      paint: {
+        "text-color": "#1f2937",
+        "text-halo-color": "rgba(255, 255, 255, 0.85)",
+        "text-halo-width": 1.2,
+      },
+    });
+  }
+}
+function applySocioeconomicVisibility() {
+  const visible = showSocioeconomicToggle && showSocioeconomicToggle.checked;
+  const nextVisibility = visible ? "visible" : "none";
+  [
+    SOCIOECONOMIC_FILL_LAYER_ID,
+    SOCIOECONOMIC_OUTLINE_LAYER_ID,
+    SOCIOECONOMIC_LABEL_LAYER_ID,
+  ].forEach(function (layerId) {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility", nextVisibility);
+    }
+  });
+}
+function formatSocioeconomicTooltip(feature) {
+  const properties = (feature && feature.properties) || {};
+  const indexValue = safeNumber(
+    properties.socio_index != null ? properties.socio_index : properties.index_value
+  );
+  const clusterValue = safeNumber(
+    properties.socio_cluster != null ? properties.socio_cluster : properties.cluster_2021
+  );
+  const rankValue = safeNumber(properties.socio_rank != null ? properties.socio_rank : properties.rank_2021);
+  const areaCode = properties.yishuv_stat || properties.stat_area || null;
+  const lines = [];
+  if (areaCode) lines.push("Stat area: " + areaCode);
+  if (Number.isFinite(clusterValue)) lines.push("Cluster: " + Math.round(clusterValue));
+  if (Number.isFinite(indexValue)) lines.push("Socioeconomic index: " + indexValue.toFixed(3));
+  if (Number.isFinite(rankValue)) lines.push("National rank: " + Math.round(rankValue));
+  return lines.join("\n");
+}
+function bindSocioeconomicHover() {
+  if (!map.getLayer(SOCIOECONOMIC_FILL_LAYER_ID)) return;
+  map.on("mouseenter", SOCIOECONOMIC_FILL_LAYER_ID, function () {
+    map.getCanvas().style.cursor = "pointer";
+  });
+  map.on("mousemove", SOCIOECONOMIC_FILL_LAYER_ID, function (e) {
+    if (!e || !e.features || !e.features[0] || !e.point) return;
+    const label = formatSocioeconomicTooltip(e.features[0]);
+    if (!label) return;
+    tooltip.textContent = label;
+    tooltip.style.display = "block";
+    tooltip.style.left = e.point.x + 12 + "px";
+    tooltip.style.top = e.point.y + 12 + "px";
+  });
+  map.on("mouseleave", SOCIOECONOMIC_FILL_LAYER_ID, function () {
+    map.getCanvas().style.cursor = "";
+    tooltip.style.display = "none";
+  });
+}
+async function loadSocioeconomicLayer() {
+  try {
+    const raw = await fetchJsonWithGzipFallback(SOCIOECONOMIC_URL, { required: false });
+    ensureSocioeconomicLayer();
+    const source = map.getSource(SOCIOECONOMIC_SOURCE_ID);
+    if (!source || !raw) return;
+    const normalized = normalizeSocioeconomicLayer(raw);
+    source.setData(normalized.featureCollection);
+    bindSocioeconomicHover();
+    applySocioeconomicVisibility();
+  } catch (err) {
+    console.error("Failed to load socioeconomic layer:", err);
+  }
+}
 function ensureSchoolsLayer() {
   if (!map.getSource(SCHOOLS_SOURCE_ID)) {
     map.addSource(SCHOOLS_SOURCE_ID, {
@@ -1449,6 +1615,10 @@ if (showRoadsToggle) {
 if (showKidsPopulationToggle) {
   showKidsPopulationToggle.addEventListener("change", applyKidsPopulationVisibility);
 }
+if (showSocioeconomicToggle) {
+  showSocioeconomicToggle.addEventListener("change", applySocioeconomicVisibility);
+}
 map.on("load", loadKidsPopulationGridLayer);
+map.on("load", loadSocioeconomicLayer);
 map.on("load", loadSchoolsLayer);
 Urban95InfoModal.bind({ infoModal: document.getElementById("info-modal"), infoBtn: document.getElementById("info-btn"), modalClose: document.getElementById("modal-close"), modalStart: document.getElementById("modal-start"), modalTabs: document.querySelectorAll(".modal-tab"), tabContents: document.querySelectorAll(".modal-tab-content") });

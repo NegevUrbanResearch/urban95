@@ -8,6 +8,7 @@
     parks: BASE + "/parks.geojson",
     education: BASE + "/education.geojson",
     populationGrid: BASE + "/population-grid.geojson",
+    socioeconomic: BASE + "/Beersheva_socioeconomic_statareas2023.geojson",
     trees: BASE + "/trees.geojson",
     streetLights: BASE + "/street_lights.geojson",
     amenitiesClean: BASE + "/amenities_new.geojson",
