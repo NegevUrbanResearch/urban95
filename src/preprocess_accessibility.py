@@ -70,6 +70,7 @@ BUILDING_DROP_COLUMNS = [
 
 # Amenity types to exclude from output (invalid or useless)
 EXCLUDED_AMENITY_TYPES = {"none", "other", "private_establishment"}
+EXCLUDED_NON_RESIDENTIAL_NEIGHBORHOODS = {"עמק שרה", "אזור התעשייה"}
 
 # Geometry simplification tolerance in meters (for web output)
 # Higher values = smaller files but less detailed shapes
@@ -657,6 +658,53 @@ def compute_building_accessibility(
         logging.info("Residential only (מגורים): %d of %d buildings", len(buildings), _n)
         if len(buildings) == 0:
             raise ValueError("No buildings left after filtering Used == מגורים")
+
+    neighborhoods_candidates = [
+        DATA_DIR / "neighborhoods.geojson",
+        FILTERED_DIR / "neighborhoods.geojson",
+        DOCS_DATA_DIR / "neighborhoods.geojson",
+    ]
+    neighborhoods_path = first_existing_path(neighborhoods_candidates)
+    if neighborhoods_path is None:
+        logging.warning(
+            "Skipping non-residential neighborhood exclusion (neighborhoods.geojson not found)."
+        )
+    else:
+        neighborhoods = load_layer(neighborhoods_path, target_crs=crs_metric)
+        if "Name" not in neighborhoods.columns:
+            logging.warning(
+                "Skipping non-residential neighborhood exclusion (%s has no Name column).",
+                neighborhoods_path,
+            )
+        else:
+            excluded_neighborhoods = neighborhoods[
+                neighborhoods["Name"].astype(str).str.strip().isin(EXCLUDED_NON_RESIDENTIAL_NEIGHBORHOODS)
+            ].copy()
+            if excluded_neighborhoods.empty:
+                logging.warning(
+                    "Skipping non-residential neighborhood exclusion (target names not found in %s).",
+                    neighborhoods_path,
+                )
+            else:
+                centroids = gpd.GeoDataFrame(
+                    {"_building_index": buildings.index},
+                    geometry=buildings.geometry.centroid,
+                    crs=buildings.crs,
+                )
+                joined = gpd.sjoin(
+                    centroids,
+                    excluded_neighborhoods[["geometry"]],
+                    predicate="within",
+                    how="left",
+                )
+                mask = joined["index_right"].isna().to_numpy()
+                dropped = int((~mask).sum())
+                buildings = buildings.iloc[mask].copy()
+                logging.info(
+                    "Excluded %d buildings in non-residential neighborhoods: %s",
+                    dropped,
+                    ", ".join(sorted(EXCLUDED_NON_RESIDENTIAL_NEIGHBORHOODS)),
+                )
 
     amenities_legacy = gpd.GeoDataFrame()
     if legacy_amenities_path is not None and legacy_amenities_path.is_file():

@@ -9,14 +9,14 @@ window.URBAN95_GENERATED_ARTIFACTS = {
     "output": "./data/buildings_lookup.json",
     "source_layer": "buildings_lookup",
     "gzip_output": "./data/buildings_lookup.json.gz",
-    "gzip_bytes": 3838068
+    "gzip_bytes": 3830788
   },
   "isochrones_lookup": {
     "status": "built",
     "output": "./data/isochrones_lookup.json",
     "source_layer": "isochrones_lookup",
     "gzip_output": "./data/isochrones_lookup.json.gz",
-    "gzip_bytes": 4976405
+    "gzip_bytes": 4972285
   },
   "neighborhood_surface": {
     "status": "built",
@@ -28,7 +28,7 @@ window.URBAN95_GENERATED_ARTIFACTS = {
     "output": "./data/points_lookup.json",
     "source_layer": "points_lookup",
     "gzip_output": "./data/points_lookup.json.gz",
-    "gzip_bytes": 675896
+    "gzip_bytes": 676253
   },
   "roads": {
     "status": "built",

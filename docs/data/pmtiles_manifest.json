@@ -3,21 +3,21 @@
   "entries": [
     {
       "name": "buildings",
-      "input": "docs/data/buildings_accessibility.geojson.gz",
+      "input": "docs/data/buildings_accessibility.geojson",
       "output": "docs/data/buildings_accessibility.pmtiles",
       "source_layer": "buildings",
       "status": "built",
-      "bytes": 43652457
+      "bytes": 41949265
     },
     {
       "name": "buildings_lookup",
-      "input": "docs/data/buildings_accessibility.geojson.gz",
+      "input": "docs/data/buildings_accessibility.geojson",
       "output": "docs/data/buildings_lookup.json",
       "source_layer": "buildings_lookup",
       "status": "built",
-      "bytes": 77027399,
-      "records": 20441,
-      "gzip_bytes": 3838068
+      "bytes": 77001177,
+      "records": 20431,
+      "gzip_bytes": 3830788
     },
     {
       "name": "isochrones_lookup",
@@ -25,9 +25,9 @@
       "output": "docs/data/isochrones_lookup.json",
       "source_layer": "isochrones_lookup",
       "status": "built",
-      "bytes": 31218096,
-      "records": 61323,
-      "gzip_bytes": 4976405
+      "bytes": 31198419,
+      "records": 61293,
+      "gzip_bytes": 4972285
     },
     {
       "name": "neighborhood_surface",
@@ -35,7 +35,7 @@
       "output": "docs/data/neighborhood_surface.pmtiles",
       "source_layer": "neighborhood_surface",
       "status": "built",
-      "bytes": 26771800
+      "bytes": 23733178
     },
     {
       "name": "points_lookup",
@@ -43,12 +43,12 @@
       "output": "docs/data/points_lookup.json",
       "source_layer": "points_lookup",
       "status": "built",
-      "bytes": 6443142,
-      "records": 101367,
-      "gzip_bytes": 675896,
+      "bytes": 6477284,
+      "records": 101891,
+      "gzip_bytes": 676253,
       "source_counts": {
         "amenities_clean": 1206,
-        "amenities_legacy": 10215,
+        "amenities_legacy": 10739,
         "trees": 60328,
         "street_lights": 29618
       }
