@@ -39,6 +39,7 @@
     var map = requireObject(deps.map, "deps.map");
     var selection = requireObject(deps.selection, "deps.selection");
     var dashboards = requireObject(deps.dashboards, "deps.dashboards");
+    var neighborhoodSidebar = requireObject(deps.neighborhoodSidebar, "deps.neighborhoodSidebar");
     var mapRenderers = requireObject(deps.mapRenderers, "deps.mapRenderers");
     var pointDataLoader = requireObject(deps.pointDataLoader, "deps.pointDataLoader");
     var perf = deps.perf || window.urban95Perf || {};
@@ -58,8 +59,8 @@
     });
     requireMethod(selection, "deps.selection", "findClosestBuilding");
     requireMethod(selection, "deps.selection", "selectBuilding");
+    requireMethod(neighborhoodSidebar, "deps.neighborhoodSidebar", "show");
     [
-      "showNeighborhoodModal",
       "getNeighborhoodFeatureAtPoint",
       "showNeighborhoodAreaTooltip",
     ].forEach(function (methodName) {
@@ -195,14 +196,14 @@
       if (getCurrentMode() !== "neighborhood") return;
       var feature = e.features && e.features.length > 0 ? e.features[0] : null;
       if (!feature) return;
-      dashboards.showNeighborhoodModal(feature);
+      neighborhoodSidebar.show(feature);
     });
 
     map.on("click", "neighborhoods-surface", function (e) {
       if (getCurrentMode() !== "neighborhood") return;
       var neighborhoodFeature = dashboards.getNeighborhoodFeatureAtPoint(e.point);
       if (!neighborhoodFeature) return;
-      dashboards.showNeighborhoodModal(neighborhoodFeature);
+      neighborhoodSidebar.show(neighborhoodFeature);
     });
 
     map.on("mouseenter", "neighborhoods-fill", function () {

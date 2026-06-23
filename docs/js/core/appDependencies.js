@@ -224,6 +224,14 @@ requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "show", "func
 requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "hide", "function");
 requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "sync", "function");
 requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "isOpen", "function");
+var Urban95SidebarChromeBindings = requireNamespace(window, "Urban95SidebarChromeBindings");
+var Urban95NeighborhoodPanelRender = requireNamespace(window, "Urban95NeighborhoodPanelRender");
+var Urban95NeighborhoodSidebar = requireNamespace(window, "Urban95NeighborhoodSidebar");
+requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "configure", "function");
+requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "show", "function");
+requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "sync", "function");
+requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "hide", "function");
+requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "isOpen", "function");
 var Urban95InfoModal = requireNamespace(window, "Urban95InfoModal");
 requireNamespaceMember(Urban95InfoModal, "Urban95InfoModal", "bind", "function");
 var Urban95Dashboards = requireNamespace(window, "Urban95Dashboards");
@@ -238,12 +246,6 @@ requireNamespaceMember(
   Urban95Dashboards,
   "Urban95Dashboards",
   "updateCitywideModalTitle",
-  "function"
-);
-requireNamespaceMember(
-  Urban95Dashboards,
-  "Urban95Dashboards",
-  "hideNeighborhoodModal",
   "function"
 );
 requireNamespaceMember(
@@ -285,7 +287,6 @@ requireNamespaceMember(
   "function"
 );
 requireNamespaceMember(Urban95Dashboards, "Urban95Dashboards", "showCitywideModal", "function");
-requireNamespaceMember(Urban95Dashboards, "Urban95Dashboards", "showNeighborhoodModal", "function");
 var Urban95ModeController = requireNamespace(window, "Urban95ModeController");
 requireNamespaceMember(Urban95ModeController, "Urban95ModeController", "create", "function");
 var Urban95MapEvents = requireNamespace(window, "Urban95MapEvents");

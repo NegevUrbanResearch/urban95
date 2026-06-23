@@ -2,7 +2,6 @@
   var deps = null;
   var dashboardChromeBound = false;
   var modalRenderState = {
-    neighborhood: { generation: 0 },
     citywide: { generation: 0 },
   };
 
@@ -23,12 +22,8 @@
     setNeighborhoodChartsPayload: "function",
     getCitywideStats: "function",
     setCitywideStats: "function",
-    getSelectedNeighborhood: "function",
-    setSelectedNeighborhood: "function",
     getCitywideCharts: "function",
     setCitywideCharts: "function",
-    getNeighborhoodCharts: "function",
-    setNeighborhoodCharts: "function",
     getAmenityConfig: "function",
     getNeighborhoodPercentileKey: "function",
     getNeighborhoodSurfaceScorePropertyKey: "function",
@@ -50,11 +45,6 @@
     tooltipEl: "object",
     switchMode: "function",
     requestAnimationFrame: "function",
-    neighborhoodModal: "object",
-    neighborhoodModalClose: "object",
-    neighborhoodModalTitle: "object",
-    neighborhoodModalSubtitle: "object",
-    neighborhoodModalBody: "object",
     citywideModal: "object",
     citywideClose: "object",
     citywideTitle: "object",
@@ -245,251 +235,6 @@
         console.error("Failed to load citywide stats:", err);
         return null;
       });
-  }
-
-  function showNeighborhoodModal(feature) {
-    var d = requireDeps();
-    if (!feature || !feature.properties) return;
-    d.setSelectedNeighborhood(feature);
-    var renderToken = bumpModalRenderToken("neighborhood");
-    var props = feature.properties;
-    var scoreMinutes = d.getScoreMinutes();
-    var sfx = "_" + scoreMinutes + "min";
-    var isWeighted = d.getScoreMode() === "weighted";
-
-    if (isWeighted) {
-      loadCitywideStats().then(function () {
-        if (modalRenderState.neighborhood.generation !== renderToken) return;
-        var citywideStats = d.getCitywideStats();
-        var selectedCategoryLabel = d.getSelectedWeightedCategoryLabel();
-        var avgScore = d.getWeightedAverageValueFromSource(props, sfx);
-        var cityAvgScore = d.getCitywideWeightedAverageScore(citywideStats, sfx);
-        d.neighborhoodModalTitle.textContent = props.Name || "Unknown";
-        d.neighborhoodModalSubtitle.textContent =
-          d.formatMetricNumber(avgScore) + "/100 \u2022 " + selectedCategoryLabel;
-
-        var body = d.neighborhoodModalBody;
-        destroyCharts("getNeighborhoodCharts");
-
-        var html = "";
-        html += '<div class="cw-summary">';
-        html += '<div class="cw-stat-card"><div class="cw-stat-value">' + (props.building_count || 0) + '</div><div class="cw-stat-label">Buildings</div></div>';
-        html += '<div class="cw-stat-card"><div class="cw-stat-value">' + d.formatMetricNumber(avgScore) + '</div><div class="cw-stat-label">Neighborhood avg (' + selectedCategoryLabel + ')</div></div>';
-        html += '<div class="cw-stat-card"><div class="cw-stat-value">' + d.formatMetricNumber(cityAvgScore) + '</div><div class="cw-stat-label">City avg (' + selectedCategoryLabel + ')</div></div>';
-        html += '<div class="cw-stat-card"><div class="cw-stat-value">' + (props["coverage_weighted" + sfx] || 0) + '%</div><div class="cw-stat-label">Coverage</div></div>';
-        html += "</div>";
-
-        var selectedStem = d.getSelectedWeightedCategoryStem();
-        if (!selectedStem) {
-          var highlights = d.weightedCategoryHighlightsFromSource(props, sfx);
-          html += '<div class="cw-section">';
-          html += '<div class="cw-section-title">Urban95 category highlights</div>';
-          html += '<div class="u95-highlight-grid">';
-          highlights.forEach(function (item) {
-            html += '<div class="u95-highlight-card">';
-            html += '<div class="u95-highlight-name">' + item.label + "</div>";
-            html += '<div class="u95-highlight-score">' + d.formatMetricNumber(item.score) + "</div>";
-            html += '<div class="u95-highlight-meta">' + Math.round(item.weight * 100) + '% weight</div>';
-            html += "</div>";
-          });
-          html += '</div></div>';
-        }
-
-        html += '<div class="cw-section">';
-        html += '<div class="cw-section-title">Building score distribution (citywide)</div>';
-        html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Histogram of Urban95 scores across all buildings</p>';
-        html += '<div class="cw-chart-container"><canvas id="hood-score-hist"></canvas></div>';
-        html += '</div>';
-
-        html += '<div class="cw-section">';
-        html += '<div class="cw-section-title">Subcategory score comparison</div>';
-        html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Horizontal bars = neighborhood average, dashed marker = city average</p>';
-        html += '<div class="u95-compare-container" id="hood-subcategory-compare-list"></div>';
-        html += '</div>';
-
-        body.innerHTML = html;
-        d.neighborhoodModal.classList.add("show");
-        d.ensureChartJsLoaded()
-          .then(function () {
-            d.requestAnimationFrame(function () {
-              if (!isModalRenderCurrent("neighborhood", renderToken, d.neighborhoodModal)) return;
-              renderNeighborhoodCharts({
-                weighted: true,
-                sfx: sfx,
-                neighborhoodProps: props,
-              });
-            });
-          })
-          .catch(function (err) {
-            console.error("Failed to load Chart.js:", err);
-          });
-      });
-      return;
-    }
-
-    loadNeighborhoodChartsPayload().then(function (invPayload) {
-      if (modalRenderState.neighborhood.generation !== renderToken) return;
-      var invLegacy = (invPayload.inventory_legacy && invPayload.inventory_legacy[props.Name]) || {};
-      var pct = props[d.getNeighborhoodPercentileKey(sfx)] || 0;
-
-      d.neighborhoodModalTitle.textContent = props.Name || "Unknown";
-      d.neighborhoodModalSubtitle.textContent =
-        pct + d.getOrdinalSuffix(pct) + " percentile \u2022 " + scoreMinutes + "-min walk \u2022 " + d.getScoreModeLabel();
-
-      var body = d.neighborhoodModalBody;
-      destroyCharts("getNeighborhoodCharts");
-
-      var html = "";
-      html += '<div class="cw-summary">';
-      html += '<div class="cw-stat-card"><div class="cw-stat-value">' + (props.building_count || 0) + '</div><div class="cw-stat-label">Buildings</div></div>';
-      html += '<div class="cw-stat-card"><div class="cw-stat-value">' + pct + '%</div><div class="cw-stat-label">Citywide percentile</div></div>';
-      html += '<div class="cw-stat-card"><div class="cw-stat-value">' + (props["coverage" + sfx] || 0) + '%</div><div class="cw-stat-label">Coverage</div></div>';
-      html += "</div>";
-      html += '<div class="cw-section">';
-      html += '<div class="cw-section-title">Amenity breakdown</div>';
-      html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px 0">Point counts in this area (legacy taxonomy)</p>';
-      html += '<div class="cw-chart-container cw-pie-chart"><canvas id="hood-amenity-pie"></canvas></div>';
-      html += "</div>";
-
-      var barSlices = pieSlicesFromInventoryCounts(invLegacy);
-      if (barSlices.values.length > 0) {
-        html += '<div class="cw-section">';
-        html += '<div class="cw-section-title">Counts by type</div>';
-        html += '<div class="cw-chart-container" style="height:' + Math.max(200, barSlices.values.length * 28) + 'px"><canvas id="hood-type-bar"></canvas></div>';
-        html += "</div>";
-      }
-
-      body.innerHTML = html;
-      d.neighborhoodModal.classList.add("show");
-      d.ensureChartJsLoaded()
-        .then(function () {
-          d.requestAnimationFrame(function () {
-            if (!isModalRenderCurrent("neighborhood", renderToken, d.neighborhoodModal)) return;
-            renderNeighborhoodCharts({ weighted: false, invObj: invLegacy });
-          });
-        })
-        .catch(function (err) {
-          console.error("Failed to load Chart.js:", err);
-        });
-    });
-  }
-
-  function hideNeighborhoodModal() {
-    var d = requireDeps();
-    bumpModalRenderToken("neighborhood");
-    var modal = d.neighborhoodModal;
-    if (modal) modal.classList.remove("show");
-    destroyCharts("getNeighborhoodCharts");
-  }
-
-  function renderNeighborhoodCharts(context) {
-    var d = requireDeps();
-    var citywideStats = d.getCitywideStats();
-    var neighborhoodCharts = d.getNeighborhoodCharts();
-    if (typeof Chart === "undefined") return;
-    Chart.defaults.font.family = "Inter, system-ui, sans-serif";
-
-    if (context && context.weighted) {
-      var sfx = context.sfx;
-      var neighborhoodProps = context.neighborhoodProps || {};
-      var selectedStem = d.getSelectedWeightedCategoryStem();
-      var histCanvas = d.neighborhoodModalBody.querySelector("#hood-score-hist");
-      if (histCanvas) {
-        var dist =
-          !selectedStem && citywideStats && citywideStats["distribution_weighted" + sfx]
-            ? citywideStats["distribution_weighted" + sfx]
-            : d.buildHistogramDistributionFromScores(d.collectBuildingScores(), 10);
-        var labels = dist.edges.slice(0, -1).map(function (edge, index) {
-          return edge + "-" + dist.edges[index + 1];
-        });
-        var breakpoints = [0, 25, 50, 75, 100];
-        neighborhoodCharts.push(
-          new Chart(histCanvas, {
-            type: "bar",
-            data: {
-              labels: labels,
-              datasets: [
-                {
-                  data: dist.counts,
-                  backgroundColor: dist.edges.slice(0, -1).map(function (edge, index) {
-                    var midpoint = (edge + dist.edges[index + 1]) / 2;
-                    return d.getColorForValue(midpoint, breakpoints);
-                  }),
-                  borderRadius: 3,
-                },
-              ],
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: {
-                x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 9 } } },
-                y: { grid: { color: "#f3f4f6" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Buildings", font: { size: 11 } } },
-              },
-            },
-          })
-        );
-      }
-
-      var subList = d.neighborhoodModalBody.querySelector("#hood-subcategory-compare-list");
-      if (subList && citywideStats) {
-        var rows = d.weightedSubcategoryComparisonRows(neighborhoodProps, citywideStats, sfx);
-        d.renderWeightedSubcategoryComparisonList(subList, rows);
-      }
-      d.setNeighborhoodCharts(neighborhoodCharts);
-      return;
-    }
-
-    var invObj = (context && context.invObj) || {};
-    var pieCanvas = d.neighborhoodModalBody.querySelector("#hood-amenity-pie");
-    var pie = pieSlicesFromInventoryCounts(invObj);
-    if (pieCanvas && pie.values.length > 0) {
-      neighborhoodCharts.push(
-        new Chart(pieCanvas, {
-          type: "doughnut",
-          data: {
-            labels: pie.labels,
-            datasets: [{ data: pie.values, backgroundColor: pie.colors, borderWidth: 2, borderColor: "#fff" }],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { position: "right", labels: { boxWidth: 12, padding: 10, font: { size: 11 } } },
-            },
-          },
-        })
-      );
-    }
-
-    var barCanvas = d.neighborhoodModalBody.querySelector("#hood-type-bar");
-    if (barCanvas && pie.values.length > 0) {
-      neighborhoodCharts.push(
-        new Chart(barCanvas, {
-          type: "bar",
-          data: {
-            labels: pie.labels,
-            datasets: [{ data: pie.values, backgroundColor: pie.colors, borderRadius: 3 }],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: "y",
-            plugins: { legend: { display: false } },
-            scales: {
-              x: {
-                grid: { color: "#f3f4f6" },
-                ticks: { font: { size: 10 } },
-                title: { display: true, text: "Points in neighborhood", font: { size: 11 } },
-              },
-              y: { grid: { display: false }, ticks: { font: { size: 10 } } },
-            },
-          },
-        })
-      );
-    }
-    d.setNeighborhoodCharts(neighborhoodCharts);
   }
 
   function getNeighborhoodFeatureAtPoint(point) {
@@ -819,8 +564,6 @@
 
     var citywideClose = deps.citywideClose;
     var citywideModal = deps.citywideModal;
-    var neighborhoodModalClose = deps.neighborhoodModalClose;
-    var neighborhoodModal = deps.neighborhoodModal;
 
     if (citywideClose) {
       citywideClose.addEventListener("click", function () {
@@ -836,14 +579,6 @@
         }
       });
     }
-    if (neighborhoodModalClose) {
-      neighborhoodModalClose.addEventListener("click", hideNeighborhoodModal);
-    }
-    if (neighborhoodModal) {
-      neighborhoodModal.addEventListener("click", function (event) {
-        if (event.target === this) hideNeighborhoodModal();
-      });
-    }
   }
 
   window.Urban95Dashboards = {
@@ -854,9 +589,6 @@
     loadNeighborhoodSurfaceData: loadNeighborhoodSurfaceData,
     getNeighborhoodHexSurfaceOpacityExpression: getNeighborhoodHexSurfaceOpacityExpression,
     loadCitywideStats: loadCitywideStats,
-    showNeighborhoodModal: showNeighborhoodModal,
-    hideNeighborhoodModal: hideNeighborhoodModal,
-    renderNeighborhoodCharts: renderNeighborhoodCharts,
     getNeighborhoodFeatureAtPoint: getNeighborhoodFeatureAtPoint,
     showNeighborhoodAreaTooltip: showNeighborhoodAreaTooltip,
     showCitywideModal: showCitywideModal,

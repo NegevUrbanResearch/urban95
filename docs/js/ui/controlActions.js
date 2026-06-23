@@ -26,6 +26,7 @@
     var selection = deps.selection || {};
     var dashboards = deps.dashboards || {};
     var scoreSidebar = deps.scoreSidebar || {};
+    var neighborhoodSidebar = deps.neighborhoodSidebar || {};
     var modeController = deps.modeController || {};
     var map = deps.map || {};
     var ui = deps.ui || {};
@@ -37,7 +38,6 @@
         : typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
           ? window.requestAnimationFrame.bind(window)
           : null;
-    var getNeighborhoodModal = ui.getNeighborhoodModal;
     var getCitywideModal = ui.getCitywideModal;
 
     [
@@ -68,17 +68,18 @@
       ["selection.selectBuilding", selection.selectBuilding],
       ["selection.updateRadiusInfo", selection.updateRadiusInfo],
       ["selection.clearRadiusSelection", selection.clearRadiusSelection],
-      ["dashboards.showNeighborhoodModal", dashboards.showNeighborhoodModal],
       ["dashboards.renderCitywideModal", dashboards.renderCitywideModal],
       ["dashboards.updateCitywideModalTitle", dashboards.updateCitywideModalTitle],
-      ["dashboards.hideNeighborhoodModal", dashboards.hideNeighborhoodModal],
       ["dashboards.hideCitywideModal", dashboards.hideCitywideModal],
       ["scoreSidebar.isOpen", scoreSidebar.isOpen],
       ["scoreSidebar.hide", scoreSidebar.hide],
+      ["neighborhoodSidebar.show", neighborhoodSidebar.show],
+      ["neighborhoodSidebar.sync", neighborhoodSidebar.sync],
+      ["neighborhoodSidebar.hide", neighborhoodSidebar.hide],
+      ["neighborhoodSidebar.isOpen", neighborhoodSidebar.isOpen],
       ["modeController.switchMode", modeController.switchMode],
       ["map.getLayer", map.getLayer],
       ["map.setLayoutProperty", map.setLayoutProperty],
-      ["ui.getNeighborhoodModal", ui.getNeighborhoodModal],
       ["ui.getCitywideModal", ui.getCitywideModal],
     ].forEach(function (entry) {
       requireFunction(entry[1], entry[0]);
@@ -135,14 +136,11 @@
 
       if (state.getCurrentMode() === "neighborhood") {
         renderers.updateNeighborhoodColors();
-        var neighborhoodModal = getNeighborhoodModal();
         if (
-          neighborhoodModal &&
-          neighborhoodModal.classList &&
-          neighborhoodModal.classList.contains("show") &&
+          neighborhoodSidebar.isOpen() &&
           state.getSelectedNeighborhood()
         ) {
-          dashboards.showNeighborhoodModal(state.getSelectedNeighborhood());
+          neighborhoodSidebar.sync(state.getSelectedNeighborhood());
         }
       } else if (state.getCurrentMode() === "citywide") {
         renderers.updateNeighborhoodColors();
@@ -203,14 +201,11 @@
             perfSpan("scoreModelToggle:updateNeighborhoodColors", flowMeta, function () {
               renderers.updateNeighborhoodColors();
             });
-            var neighborhoodModal = getNeighborhoodModal();
             if (
-              neighborhoodModal &&
-              neighborhoodModal.classList &&
-              neighborhoodModal.classList.contains("show") &&
+              neighborhoodSidebar.isOpen() &&
               state.getSelectedNeighborhood()
             ) {
-              dashboards.showNeighborhoodModal(state.getSelectedNeighborhood());
+              neighborhoodSidebar.sync(state.getSelectedNeighborhood());
             }
           }
         });
@@ -244,14 +239,11 @@
         perfSpan("walkMinutesToggle:updateNeighborhoodColors", flowMeta, function () {
           renderers.updateNeighborhoodColors();
         });
-        var neighborhoodModal = getNeighborhoodModal();
         if (
-          state.getSelectedNeighborhood() &&
-          neighborhoodModal &&
-          neighborhoodModal.classList &&
-          neighborhoodModal.classList.contains("show")
+          neighborhoodSidebar.isOpen() &&
+          state.getSelectedNeighborhood()
         ) {
-          dashboards.showNeighborhoodModal(state.getSelectedNeighborhood());
+          neighborhoodSidebar.sync(state.getSelectedNeighborhood());
         }
       }
 
@@ -287,10 +279,16 @@
         return;
       }
 
+      if (neighborhoodSidebar.isOpen()) {
+        neighborhoodSidebar.hide();
+        if (event && typeof event.stopPropagation === "function") {
+          event.stopPropagation();
+        }
+        return;
+      }
+
       if (state.getCurrentMode() === "house") {
         selection.clearRadiusSelection();
-      } else if (state.getCurrentMode() === "neighborhood") {
-        dashboards.hideNeighborhoodModal();
       } else if (state.getCurrentMode() === "citywide") {
         dashboards.hideCitywideModal();
         modeController.switchMode("house");

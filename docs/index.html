@@ -88,8 +88,8 @@
       </div>
 
       <div class="section" id="points-visibility-section">
-        <div class="section-title">Layers</div>
-        <div class="layers-control">
+        <div class="section-title" id="points-visibility-section-title">Layers</div>
+        <div class="layers-control" id="points-visibility-layers-control">
           <button id="layers-btn" class="layers-btn" type="button" aria-expanded="false" aria-controls="layers-popup">
             <span class="layers-btn-text">
               <span class="layers-btn-title">Layer controls</span>
@@ -222,23 +222,31 @@
       <button type="button" id="score-explain-backdrop" class="score-explain-backdrop" aria-label="Close score breakdown" hidden></button>
     </aside>
 
+    <aside
+      id="neighborhood-sidebar"
+      class="score-explain-sidebar neighborhood-sidebar"
+      aria-label="Neighborhood details"
+      aria-hidden="true"
+    >
+      <div class="score-explain-sidebar-inner neighborhood-sidebar-inner">
+        <header class="score-explain-sidebar-header neighborhood-sidebar-header">
+          <button type="button" id="neighborhood-sidebar-close"
+            class="score-explain-sidebar-close" aria-label="Close neighborhood details">&times;</button>
+          <p class="score-explain-eyebrow" id="neighborhood-sidebar-eyebrow" hidden>Neighborhood</p>
+          <div class="score-explain-hero-metrics" id="neighborhood-sidebar-hero"></div>
+          <div class="score-explain-header-meta" id="neighborhood-sidebar-meta"></div>
+        </header>
+        <p id="neighborhood-sidebar-empty" class="score-explain-empty" hidden></p>
+        <div id="neighborhood-sidebar-body" class="score-explain-sidebar-body neighborhood-sidebar-body" tabindex="-1"></div>
+      </div>
+      <button type="button" id="neighborhood-sidebar-backdrop" class="score-explain-backdrop"
+        aria-label="Close neighborhood details" hidden></button>
+    </aside>
+
     <div id="tooltip"></div>
 
     <div id="filter-backdrop" class="filter-backdrop"></div>
     <div id="layers-backdrop" class="layers-backdrop"></div>
-
-    <div id="neighborhood-modal" class="modal">
-      <div class="modal-content citywide-content">
-        <button id="neighborhood-modal-close" class="modal-close">&times;</button>
-        <div class="modal-header">
-          <div class="modal-title">
-            <h2 id="neighborhood-modal-title">Neighborhood</h2>
-            <p id="neighborhood-modal-subtitle">Accessibility details</p>
-          </div>
-        </div>
-        <div id="neighborhood-modal-body" class="citywide-body"></div>
-      </div>
-    </div>
 
     <div id="citywide-modal" class="modal">
       <div class="modal-content citywide-content">
@@ -390,6 +398,7 @@
     <script src="./js/scoring/scoreContext.js"></script>
     <script src="./js/scoring/scoreExplain.js"></script>
     <script src="./js/ui/scoreSidebarChrome.js"></script>
+    <script src="./js/ui/sidebarChromeBindings.js"></script>
     <script src="./js/ui/amenityMode.js"></script>
     <script src="./js/ui/controlActions.js"></script>
     <script src="./js/map/mapLayers.js"></script>
@@ -401,6 +410,8 @@
     <script src="./js/ui/controls.js"></script>
     <script src="./js/ui/scoreSidebar.js"></script>
     <script src="./js/ui/infoModal.js"></script>
+    <script src="./js/ui/neighborhoodPanelRender.js"></script>
+    <script src="./js/ui/neighborhoodSidebar.js"></script>
     <script src="./js/ui/dashboards.js"></script>
     <script src="./js/map/modeController.js"></script>
     <script src="./js/map/mapEvents.js"></script>

@@ -71,19 +71,23 @@
     var dashboards = requireObject(integrations.dashboards, "deps.integrations.dashboards");
     var mapRenderers = requireObject(integrations.mapRenderers, "deps.integrations.mapRenderers");
     var selection = requireObject(integrations.selection, "deps.integrations.selection");
+    var neighborhoodSidebar = requireObject(
+      integrations.neighborhoodSidebar,
+      "deps.integrations.neighborhoodSidebar"
+    );
     [
       "getNeighborhoodHexSurfaceOpacityExpression",
       "loadNeighborhoodSurfaceData",
       "loadNeighborhoods",
       "loadNeighborhoodChartsPayload",
       "loadCitywideStats",
-      "hideNeighborhoodModal",
       "hideCitywideModal",
       "renderCitywideModal",
       "showCitywideModal",
     ].forEach(function (methodName) {
       requireMethod(dashboards, "deps.integrations.dashboards", methodName);
     });
+    requireMethod(neighborhoodSidebar, "deps.integrations.neighborhoodSidebar", "hide");
     [
       "applyShowPointsToggle",
       "updateDeckAmenityLayers",
@@ -103,6 +107,14 @@
     var pointsVisibilitySection = requireStyleElement(
       ui.pointsVisibilitySection,
       "deps.ui.pointsVisibilitySection"
+    );
+    var pointsVisibilityLayersControl = requireStyleElement(
+      ui.pointsVisibilityLayersControl,
+      "deps.ui.pointsVisibilityLayersControl"
+    );
+    var pointsVisibilitySectionTitle = requireStyleElement(
+      ui.pointsVisibilitySectionTitle,
+      "deps.ui.pointsVisibilitySectionTitle"
     );
     var legendSection = requireStyleElement(ui.legendSection, "deps.ui.legendSection");
     var radiusInfo = requireStyleElement(ui.radiusInfo, "deps.ui.radiusInfo");
@@ -366,17 +378,29 @@
         });
     }
 
+    function setPointsVisibilityForMode(mode) {
+      var showLayers = mode === "house";
+      pointsVisibilitySection.style.display = "";
+      pointsVisibilitySection.classList.toggle("is-basemap-only", !showLayers);
+      if (pointsVisibilityLayersControl) {
+        pointsVisibilityLayersControl.style.display = showLayers ? "" : "none";
+      }
+      if (pointsVisibilitySectionTitle) {
+        pointsVisibilitySectionTitle.style.display = showLayers ? "" : "none";
+      }
+    }
+
     function setControlsForMode(mode) {
       if (mode === "house") {
-        pointsVisibilitySection.style.display = "";
+        setPointsVisibilityForMode(mode);
         legendSection.style.display = "";
         if (modeHint) modeHint.textContent = "Click map to analyze nearest building";
       } else if (mode === "neighborhood") {
-        pointsVisibilitySection.style.display = "none";
+        setPointsVisibilityForMode(mode);
         legendSection.style.display = "";
         if (modeHint) modeHint.textContent = "Click a neighborhood for details";
       } else {
-        pointsVisibilitySection.style.display = "none";
+        setPointsVisibilityForMode(mode);
         legendSection.style.display = "none";
         if (modeHint) modeHint.textContent = "";
       }
@@ -579,7 +603,7 @@
         }
         if (prevMode === "neighborhood") {
           exitNeighborhoodMode();
-          dashboards.hideNeighborhoodModal();
+          neighborhoodSidebar.hide({ restoreFocus: false });
           setSelectedNeighborhood(null);
         }
         if (prevMode === "citywide") {

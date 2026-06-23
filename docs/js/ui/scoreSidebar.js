@@ -1,8 +1,7 @@
 (function () {
   var deps = null;
-  var globalBindingsAttached = false;
+  var sidebarChrome = null;
   var scoreExplainFitRaf = 0;
-  var previousFocusedElement = null;
 
   var REQUIRED_DEPENDENCY_TYPES = {
     getScoreMode: "function",
@@ -61,7 +60,21 @@
 
   function configure(nextDeps) {
     deps = validateDeps(nextDeps || null);
-    bindGlobalSidebarChrome();
+    sidebarChrome = Urban95SidebarChromeBindings.create({
+      sidebarEl: deps.sidebarEl,
+      backdropEl: deps.backdropEl,
+      closeButtonEl: deps.closeButtonEl,
+      bodyEl: deps.bodyEl,
+      bodyOpenClass: "score-explain-open",
+      onClose: function () {
+        hideScoreExplainSidebar();
+      },
+      setSidebarPadding: deps.setSidebarPadding,
+      getSidebarWidth: getSidebarWidth,
+      restoreFocusAfterHide: deps.restoreFocusAfterHide,
+      onResizeWhileOpen: scheduleFitScoreExplainSidebar,
+    });
+    sidebarChrome.bindGlobalHandlers();
   }
 
   function validateDeps(nextDeps) {
@@ -121,20 +134,6 @@
     var d = requireDeps();
     if (!d.sidebarEl || typeof d.sidebarEl.getBoundingClientRect !== "function") return 400;
     return d.sidebarEl.getBoundingClientRect().width || 400;
-  }
-
-  function captureSidebarFocusOrigin(sidebarEl) {
-    var activeEl = document.activeElement;
-    if (
-      activeEl &&
-      activeEl !== document.body &&
-      activeEl !== sidebarEl &&
-      (!sidebarEl || typeof sidebarEl.contains !== "function" || !sidebarEl.contains(activeEl))
-    ) {
-      previousFocusedElement = activeEl;
-      return;
-    }
-    previousFocusedElement = null;
   }
 
   function renderUrban95ReferenceRadiusNote() {
@@ -563,85 +562,24 @@
   }
 
   function isScoreExplainSidebarOpen() {
+    if (sidebarChrome) return sidebarChrome.isOpen();
     var el = deps && deps.sidebarEl ? deps.sidebarEl : null;
     return !!(el && el.classList.contains("is-open"));
   }
 
-  function setScoreExplainMapPadding(open, options) {
-    var d = requireDeps();
-    if (open) {
-      d.setSidebarPadding(true, getSidebarWidth(), options);
-      return;
-    }
-    d.setSidebarPadding(false, 0);
-  }
-
-  function syncScoreExplainBackdrop() {
-    var d = requireDeps();
-    var backdrop = d.backdropEl;
-    if (!backdrop) return;
-    if (!isScoreExplainSidebarOpen()) {
-      backdrop.hidden = true;
-      return;
-    }
-    var isMobile = window.matchMedia("(max-width: 768px)").matches;
-    backdrop.hidden = !isMobile;
-  }
-
-  function focusMapContainerAfterSidebar() {
-    var d = requireDeps();
-    var target = previousFocusedElement;
-    previousFocusedElement = null;
-    if (target && typeof target.focus === "function") {
-      try {
-        target.focus({ preventScroll: true });
-        return;
-      } catch (_err) {
-        // Fall through to the app-owned fallback when the prior focus target is gone.
-      }
-    }
-    d.restoreFocusAfterHide();
-  }
-
   function showScoreExplainSidebar() {
-    var d = requireDeps();
+    requireDeps();
     return perfSpan("scoreSidebar:show", null, function () {
-    var el = d.sidebarEl;
-    if (!el) return;
-    var wasOpen = el.classList.contains("is-open");
-    if (!wasOpen) captureSidebarFocusOrigin(el);
-    el.classList.add("is-open");
-    el.removeAttribute("aria-hidden");
-    if (document.body && document.body.classList) {
-      document.body.classList.add("score-explain-open");
-    }
-    setScoreExplainMapPadding(true);
-    syncScoreExplainBackdrop();
-    scheduleFitScoreExplainSidebar();
-    if (!wasOpen && d.closeButtonEl) {
-      d.closeButtonEl.focus({ preventScroll: true });
-    }
+      if (!sidebarChrome) return;
+      sidebarChrome.open();
+      scheduleFitScoreExplainSidebar();
     });
   }
 
   function hideScoreExplainSidebar(options) {
-    var d = requireDeps();
     if (!isScoreExplainSidebarOpen()) return;
-    var el = d.sidebarEl;
-    var restoreFocus = !options || options.restoreFocus !== false;
-    if (!el) return;
-    el.classList.remove("is-open");
-    el.setAttribute("aria-hidden", "true");
-    if (document.body && document.body.classList) {
-      document.body.classList.remove("score-explain-open");
-    }
-    setScoreExplainMapPadding(false);
-    syncScoreExplainBackdrop();
-    if (restoreFocus) {
-      focusMapContainerAfterSidebar();
-    } else {
-      previousFocusedElement = null;
-    }
+    if (!sidebarChrome) return;
+    sidebarChrome.close(options);
   }
 
   function syncScoreExplainSidebar() {
@@ -770,34 +708,6 @@
     });
   }
 
-  function bindGlobalSidebarChrome() {
-    if (globalBindingsAttached || !deps) return;
-    globalBindingsAttached = true;
-
-    var closeBtn = deps.closeButtonEl;
-    var backdrop = deps.backdropEl;
-    var body = deps.bodyEl;
-
-    if (closeBtn) closeBtn.addEventListener("click", hideScoreExplainSidebar);
-    if (backdrop) backdrop.addEventListener("click", hideScoreExplainSidebar);
-    if (body) {
-      body.addEventListener(
-        "wheel",
-        function (e) {
-          if (isScoreExplainSidebarOpen()) e.preventDefault();
-        },
-        { passive: false }
-      );
-    }
-    window.addEventListener("resize", function () {
-      if (isScoreExplainSidebarOpen()) {
-        setScoreExplainMapPadding(true, { forceResize: true });
-        syncScoreExplainBackdrop();
-        scheduleFitScoreExplainSidebar();
-      }
-    });
-  }
-
   window.Urban95ScoreSidebar = {
     configure: configure,
     render: renderScoreExplainSidebar,
@@ -817,9 +727,6 @@
     scheduleFitScoreExplainSidebar: scheduleFitScoreExplainSidebar,
     bindScoreExplainSidebarInteractions: bindScoreExplainSidebarInteractions,
     isScoreExplainSidebarOpen: isScoreExplainSidebarOpen,
-    setScoreExplainMapPadding: setScoreExplainMapPadding,
-    syncScoreExplainBackdrop: syncScoreExplainBackdrop,
-    focusMapContainerAfterSidebar: focusMapContainerAfterSidebar,
     showScoreExplainSidebar: showScoreExplainSidebar,
     showScoreExplainSidebarShell: showScoreExplainSidebarShell,
     hideScoreExplainSidebar: hideScoreExplainSidebar,
