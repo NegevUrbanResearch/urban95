@@ -428,6 +428,10 @@ body {
   position: relative;
 }
 
+.basemap-toggle {
+  margin-top: 8px;
+}
+
 .layers-btn {
   width: 100%;
   display: flex;

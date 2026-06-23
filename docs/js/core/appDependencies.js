@@ -167,6 +167,8 @@ var Urban95MapLayers = requireNamespace(window, "Urban95MapLayers");
 var Urban95MapShell = requireNamespace(window, "Urban95MapShell");
 var createBaseMap =
   requireNamespaceMember(Urban95MapShell, "Urban95MapShell", "createBaseMap", "function");
+var applyBasemap =
+  requireNamespaceMember(Urban95MapShell, "Urban95MapShell", "applyBasemap", "function");
 var Urban95NeighborhoodScores = requireNamespace(window, "Urban95NeighborhoodScores");
 requireNamespaceMember(
   Urban95NeighborhoodScores,
@@ -414,6 +416,7 @@ window.Urban95AppDependencies = {
   Urban95MapLayers: Urban95MapLayers,
   Urban95MapShell: Urban95MapShell,
   createBaseMap: createBaseMap,
+  applyBasemap: applyBasemap,
   Urban95NeighborhoodScores: Urban95NeighborhoodScores,
   resolveBuildingContracts: resolveBuildingContracts,
   createPmtilesProtocol: createPmtilesProtocol,

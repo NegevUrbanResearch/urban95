@@ -60,6 +60,7 @@ const {
   Urban95ControlActions,
   Urban95IconLoader,
   createBaseMap,
+  applyBasemap,
   Urban95NeighborhoodScores,
   resolveBuildingContracts,
   createPmtilesProtocol,
@@ -165,6 +166,7 @@ const layersBackdrop = document.getElementById("layers-backdrop");
 const layersBtnMeta = document.getElementById("layers-btn-meta");
 const layersSelectAllBtn = document.getElementById("layers-select-all");
 const layersDeselectAllBtn = document.getElementById("layers-deselect-all");
+const basemapToggle = document.getElementById("basemap-toggle");
 const urban95PointToggles = document.getElementById("urban95-point-toggles");
 const amenityPointsToggleWrap = document.getElementById("amenity-points-toggle-wrap");
 const schoolPointsToggleWrap = document.getElementById("school-points-toggle-wrap");
@@ -1080,6 +1082,7 @@ controlsBinding = Urban95Controls.bind({
     layersBtnMeta: layersBtnMeta,
     layersSelectAllBtn: layersSelectAllBtn,
     layersDeselectAllBtn: layersDeselectAllBtn,
+    basemapToggle: basemapToggle,
     showHeatmapToggle: showHeatmapToggle,
     urban95PointToggles: urban95PointToggles,
     schoolPointsToggleWrap: schoolPointsToggleWrap,
@@ -1130,6 +1133,9 @@ controlsBinding = Urban95Controls.bind({
     onPointVisibilityChanged: handlePointVisibilityChanged,
     onHeatmapVisibilityChanged: controlActions.onHeatmapVisibilityChanged,
     onEscape: controlActions.onEscape,
+    onBasemapChanged: function (basemap) {
+      applyBasemap(map, basemap);
+    },
     clearDerivedCaches: controlActions.clearDerivedCaches,
   },
 });

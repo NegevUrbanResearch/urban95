@@ -67,6 +67,8 @@
       "callbacks.onHeatmapVisibilityChanged"
     );
     var onEscape = requireFunction(callbacks.onEscape, "callbacks.onEscape");
+    var onBasemapChanged =
+      typeof callbacks.onBasemapChanged === "function" ? callbacks.onBasemapChanged : null;
     var clearDerivedCaches = requireFunction(
       callbacks.clearDerivedCaches,
       "callbacks.clearDerivedCaches"
@@ -741,6 +743,21 @@
         });
         btn.classList.add("active");
         onWalkMinutesChanged(minutes);
+      });
+    }
+
+    if (elements.basemapToggle) {
+      elements.basemapToggle.addEventListener("click", function (e) {
+        var btn = e.target.closest(".radius-opt");
+        if (!btn) return;
+        var basemap = btn.dataset.basemap;
+        if (basemap !== "street" && basemap !== "satellite") return;
+
+        elements.basemapToggle.querySelectorAll(".radius-opt").forEach(function (item) {
+          item.classList.remove("active");
+        });
+        btn.classList.add("active");
+        if (onBasemapChanged) onBasemapChanged(basemap);
       });
     }
 

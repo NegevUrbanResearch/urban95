@@ -291,6 +291,28 @@
     ];
   }
 
+  var BASEMAP_STREET_LAYER_ID = "osm";
+  var BASEMAP_SATELLITE_LAYER_ID = "satellite";
+
+  function applyBasemap(map, basemap) {
+    if (!map || typeof map.getLayer !== "function") return;
+    var useSatellite = basemap === "satellite";
+    if (map.getLayer(BASEMAP_STREET_LAYER_ID)) {
+      map.setLayoutProperty(
+        BASEMAP_STREET_LAYER_ID,
+        "visibility",
+        useSatellite ? "none" : "visible"
+      );
+    }
+    if (map.getLayer(BASEMAP_SATELLITE_LAYER_ID)) {
+      map.setLayoutProperty(
+        BASEMAP_SATELLITE_LAYER_ID,
+        "visibility",
+        useSatellite ? "visible" : "none"
+      );
+    }
+  }
+
   function createBaseMap(options) {
     var opts = options || {};
     var maplibreglRef = opts.maplibregl;
@@ -344,6 +366,16 @@
             tileSize: 256,
             attribution: "© OpenStreetMap © CARTO",
           },
+          satellite: {
+            type: "raster",
+            tiles: [
+              "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            ],
+            tileSize: 256,
+            // Beer Sheva imagery is native to ~z18; higher levels return Esri placeholder tiles.
+            maxzoom: 18,
+            attribution: "© Esri",
+          },
           [opts.buildingsMapSourceId || "buildings"]: opts.buildingsSource,
           roads: {
             type: "geojson",
@@ -365,7 +397,13 @@
           "neighborhood-labels": { type: "geojson", data: emptyFeatureCollection() },
         },
         layers: [
-          { id: "osm", type: "raster", source: "osm" },
+          { id: BASEMAP_STREET_LAYER_ID, type: "raster", source: "osm" },
+          {
+            id: BASEMAP_SATELLITE_LAYER_ID,
+            type: "raster",
+            source: "satellite",
+            layout: { visibility: "none" },
+          },
         ].concat(
           createRoadPaintLayers(),
           [
@@ -426,5 +464,6 @@
 
   window.Urban95MapShell = {
     createBaseMap: createBaseMap,
+    applyBasemap: applyBasemap,
   };
 })();
