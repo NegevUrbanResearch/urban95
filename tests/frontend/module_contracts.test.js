@@ -8320,7 +8320,7 @@ test("score sidebar always keeps the bar-based desktop breakdown instead of ultr
     "utf8"
   );
 
-  assert.match(styleSource, /--score-sidebar-width:\s*clamp\(420px,\s*38vw,\s*520px\);/);
+  assert.match(styleSource, /--score-sidebar-width:\s*clamp\(340px,\s*30vw,\s*440px\);/);
   assert.match(sidebarSource, /var textScale = Math\.max\(0\.74, s\);/);
   assert.match(styleSource, /\.score-explain-sidebar-inner\.is-chart-fit-tight \.score-explain-sidebar-hero-compact \.percentile-value/);
   assert.match(styleSource, /\.score-explain-sidebar-inner\.is-chart-fit-tight \.score-explain-building-ctx/);

@@ -8,7 +8,7 @@ body {
 }
 
 :root {
-  --score-sidebar-width: clamp(420px, 38vw, 520px);
+  --score-sidebar-width: clamp(300px, 26vw, 380px);
   --neighborhood-sidebar-width: var(--score-sidebar-width);
   --score-sidebar-z: 15;
   --horizon-bar-h: 28px;
@@ -1116,10 +1116,10 @@ body.desktop-only-blocked {
 
 .score-explain-building-ctx {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   margin: 0;
-  padding: 12px 14px;
+  padding: 8px 14px;
   background: #fff;
   border: 1px solid #dbeafe;
   border-radius: 12px;
@@ -1130,7 +1130,7 @@ body.desktop-only-blocked {
   flex-shrink: 0;
   width: 10px;
   height: 10px;
-  margin-top: 5px;
+  margin-top: 0;
   border-radius: 50%;
   background: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
@@ -1139,9 +1139,18 @@ body.desktop-only-blocked {
 
 .building-ctx-text {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.35rem;
   min-width: 0;
+}
+
+.building-ctx-coords::before {
+  content: "·";
+  margin-inline: 0 0.35rem;
+  color: #94a3b8;
+  font-weight: 600;
 }
 
 .building-ctx-id {
@@ -1377,12 +1386,10 @@ body.desktop-only-blocked {
 
 .horizon-group.is-filter-highlight > .horizon-row {
   background: color-mix(in srgb, var(--filter-highlight-color, #2563eb) 10%, #fff);
-  box-shadow: inset 3px 0 0 var(--filter-highlight-color, #2563eb);
 }
 
 .horizon-chart-expanded .horizon-group.is-filter-highlight > .horizon-row {
   background: #eff6ff;
-  box-shadow: inset 3px 0 0 #2563eb;
 }
 
 @media (max-width: 768px) {
@@ -1497,12 +1504,14 @@ body.desktop-only-blocked {
 }
 
 #neighborhood-sidebar-meta .building-ctx-text {
-  align-items: flex-end;
-  text-align: right;
+  flex: 1;
+  direction: rtl;
+  align-items: baseline;
+  justify-content: flex-start;
+  text-align: start;
 }
 
 #neighborhood-sidebar-meta .building-ctx-id {
-  direction: rtl;
   unicode-bidi: plaintext;
 }
 
@@ -1511,7 +1520,6 @@ body.desktop-only-blocked {
   color: #64748b;
   direction: ltr;
   unicode-bidi: isolate;
-  text-align: right;
 }
 
 .score-explain-sidebar-hero-compact {
@@ -1682,12 +1690,12 @@ body.desktop-only-blocked {
 .score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-dot {
   width: 7px;
   height: 7px;
-  margin-top: 4px;
+  margin-top: 0;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
 .score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-text {
-  gap: 1px;
+  gap: 0 0.25rem;
 }
 
 .score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-id {
