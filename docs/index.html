@@ -16,6 +16,36 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <div
+      id="desktop-only-overlay"
+      class="desktop-only-overlay"
+      hidden
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="desktop-only-title"
+    >
+      <div class="desktop-only-card">
+        <div class="desktop-only-header">
+          <div class="desktop-only-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+              <path d="M8 21h8"></path>
+              <path d="M12 17v4"></path>
+            </svg>
+          </div>
+          <div class="desktop-only-heading">
+            <h1 id="desktop-only-title">Cities for Children</h1>
+          </div>
+        </div>
+        <div class="desktop-only-body">
+          <p class="desktop-only-copy">
+            Please open this site on a laptop or desktop browser to explore the interactive map.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <div id="loading-screen">
       <div class="loading-content">
         <div class="loading-spinner"></div>
@@ -380,6 +410,7 @@
       </div>
     </div>
 
+    <script src="./js/core/desktopOnlyGate.js"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <script src="https://unpkg.com/pmtiles@4.4.1/dist/pmtiles.js"></script>
     <script src="./data/pmtiles_manifest.js"></script>

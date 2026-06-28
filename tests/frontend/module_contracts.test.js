@@ -143,6 +143,11 @@ test("index loads core frontend modules before app.js", () => {
   assert.ok(startupIndex < appStateIndex);
   assert.ok(appStateIndex < appIndex);
   assert.ok(requireScriptIndex(scripts, "./js/core/perfPanel.js") < appIndex);
+  const desktopOnlyGateIndex = requireScriptIndex(scripts, "./js/core/desktopOnlyGate.js");
+  assert.ok(desktopOnlyGateIndex < appIndex);
+  const mapLibreIndex = scripts.findIndex((scriptPath) => scriptPath.includes("maplibre-gl"));
+  assert.notEqual(mapLibreIndex, -1);
+  assert.ok(desktopOnlyGateIndex < mapLibreIndex);
   const scoreContextIndex = requireScriptIndex(scripts, "./js/scoring/scoreContext.js");
   const scoreExplainIndex = requireScriptIndex(scripts, "./js/scoring/scoreExplain.js");
   const scoreSidebarChromeIndex = requireScriptIndex(scripts, "./js/ui/scoreSidebarChrome.js");
@@ -9589,5 +9594,141 @@ test("app.js fails fast when a required Urban95Selection member has the wrong ty
   assert.throws(
     () => runAppScript(browser),
     /Urban95Selection\.clearRadiusSelection must be a function before docs\/app\.js/
+  );
+});
+
+function createDesktopOnlyGateDocument() {
+  const overlay = {
+    hidden: true,
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+    getAttribute(name) {
+      return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
+    },
+  };
+  const loadingScreen = {
+    classList: {
+      classes: new Set(),
+      add(className) {
+        this.classes.add(className);
+      },
+      contains(className) {
+        return this.classes.has(className);
+      },
+    },
+  };
+  const body = {
+    classList: {
+      classes: new Set(),
+      add(className) {
+        this.classes.add(className);
+      },
+      remove(className) {
+        this.classes.delete(className);
+      },
+    },
+  };
+  const byId = {
+    "desktop-only-overlay": overlay,
+    "loading-screen": loadingScreen,
+  };
+  return {
+    body,
+    readyState: "complete",
+    getElementById(id) {
+      return byId[id] || null;
+    },
+  };
+}
+
+function runDesktopOnlyGateModule(overrides) {
+  const browser = createBrowserContext(overrides || {});
+  runBrowserScript("docs/js/core/desktopOnlyGate.js", browser);
+  return browser.window.Urban95DesktopOnlyGate;
+}
+
+test("index includes desktop-only overlay markup", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "index.html"), "utf8");
+  assert.match(html, /id="desktop-only-overlay"/);
+  assert.match(html, /id="desktop-only-title"/);
+  assert.match(
+    html,
+    /Please open this site on a laptop or desktop browser to explore the interactive map\./
+  );
+});
+
+test("desktopOnlyGate exports viewport gate helpers", () => {
+  const gate = runDesktopOnlyGateModule({
+    document: createDesktopOnlyGateDocument(),
+    matchMedia(query) {
+      return { matches: query === "(max-width: 768px)", addEventListener() {} };
+    },
+  });
+
+  assert.equal(gate.MOBILE_QUERY, "(max-width: 768px)");
+  assert.equal(typeof gate.hasBypass, "function");
+  assert.equal(typeof gate.isMobileViewport, "function");
+  assert.equal(typeof gate.shouldBlock, "function");
+  assert.equal(typeof gate.apply, "function");
+  assert.equal(typeof gate.bind, "function");
+});
+
+test("desktopOnlyGate blocks mobile viewports and hides the loading screen", () => {
+  const documentRef = createDesktopOnlyGateDocument();
+  const gate = runDesktopOnlyGateModule({
+    document: documentRef,
+    matchMedia(query) {
+      return { matches: query === "(max-width: 768px)", addEventListener() {} };
+    },
+  });
+
+  const mobileResult = gate.apply({
+    document: documentRef,
+    matchMedia(query) {
+      return { matches: query === "(max-width: 768px)" };
+    },
+  });
+
+  assert.equal(mobileResult.blocked, true);
+  assert.equal(documentRef.getElementById("desktop-only-overlay").hidden, false);
+  assert.equal(documentRef.getElementById("desktop-only-overlay").getAttribute("aria-hidden"), "false");
+  assert.ok(documentRef.body.classList.classes.has("desktop-only-blocked"));
+  assert.ok(documentRef.getElementById("loading-screen").classList.classes.has("hidden"));
+
+  const desktopResult = gate.apply({
+    document: documentRef,
+    matchMedia() {
+      return { matches: false };
+    },
+  });
+
+  assert.equal(desktopResult.blocked, false);
+  assert.equal(documentRef.getElementById("desktop-only-overlay").hidden, true);
+  assert.equal(documentRef.getElementById("desktop-only-overlay").getAttribute("aria-hidden"), "true");
+  assert.equal(documentRef.body.classList.classes.has("desktop-only-blocked"), false);
+});
+
+test("desktopOnlyGate supports ?desktop bypass for testing", () => {
+  const documentRef = createDesktopOnlyGateDocument();
+  const gate = runDesktopOnlyGateModule({
+    document: documentRef,
+    location: { search: "?desktop=1" },
+    matchMedia() {
+      return { matches: true };
+    },
+  });
+
+  assert.equal(gate.hasBypass({ search: "?desktop=1" }), true);
+  assert.equal(
+    gate.apply({
+      document: documentRef,
+      location: { search: "?desktop=1" },
+      matchMedia() {
+        return { matches: true };
+      },
+    }).blocked,
+    false
   );
 });
