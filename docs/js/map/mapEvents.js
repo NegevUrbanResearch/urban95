@@ -150,6 +150,37 @@
       if (!getDeckHovering()) map.getCanvas().style.cursor = "";
     });
 
+    map.on("mousemove", "urban-nature-fill", function (e) {
+      if (getDeckHovering()) {
+        map.getCanvas().style.cursor = "";
+        tooltip.style.display = "none";
+        return;
+      }
+      if (!e || !e.features || !e.features[0] || !e.features[0].properties || !e.point) return;
+      map.getCanvas().style.cursor = "pointer";
+      var properties = e.features[0].properties;
+      var lines = [];
+      var name = properties.name || "Urban nature area";
+      lines.push(name);
+
+      if (properties.area != null) {
+        lines.push("Area: " + formatArea(properties.area));
+      }
+      if (properties.classification) {
+        lines.push(String(properties.classification));
+      }
+
+      tooltip.textContent = lines.join("\n");
+      tooltip.style.display = "block";
+      tooltip.style.left = e.point.x + 12 + "px";
+      tooltip.style.top = e.point.y + 12 + "px";
+    });
+
+    map.on("mouseleave", "urban-nature-fill", function () {
+      if (!getDeckHovering()) map.getCanvas().style.cursor = "";
+      tooltip.style.display = "none";
+    });
+
     map.on("mousemove", "parks-fill", function (e) {
       if (getDeckHovering()) {
         map.getCanvas().style.cursor = "";

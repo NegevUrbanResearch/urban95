@@ -8,6 +8,7 @@ const {
   POPULATION_GRID_URL,
   SOCIOECONOMIC_URL,
   PARKS_URL,
+  URBAN_NATURE_AREAS_URL,
   TREES_URL,
   STREET_LIGHTS_URL,
   AMENITIES_CLEAN_URL,
@@ -68,6 +69,7 @@ const {
   createBuildingsFillLayer,
   createBuildingsSelectedLayer,
   applyParkDotPattern,
+  applyUrbanNatureDotPattern,
   Urban95ScoreSidebar,
   Urban95InfoModal,
   Urban95Dashboards,
@@ -156,6 +158,7 @@ const legendLabels = document.getElementById("legend-labels");
 const SYM_PCT_KEY = "_u95_symb_pct";
 const tooltip = document.getElementById("tooltip");
 const radiusToggle = document.getElementById("radius-toggle");
+const showUrbanNatureToggle = document.getElementById("show-urban-nature-toggle");
 const showTreesToggle = document.getElementById("show-trees-toggle");
 const showLightsToggle = document.getElementById("show-lights-toggle");
 const showAmenityPointsToggle = document.getElementById("show-amenity-points-toggle");
@@ -361,6 +364,7 @@ const SCHOOLS_SOURCE_ID = "schools";
 const SCHOOLS_LAYER_ID = "schools-points";
 const KIDS_POPULATION_SOURCE_ID = "kids-population-grid";
 const KIDS_POPULATION_LAYER_ID = "kids-population-grid-fill";
+const URBAN_NATURE_LAYER_ID = "urban-nature-fill";
 const SOCIOECONOMIC_SOURCE_ID = "socioeconomic-statareas";
 const SOCIOECONOMIC_FILL_LAYER_ID = "socioeconomic-statareas-fill";
 const SOCIOECONOMIC_OUTLINE_LAYER_ID = "socioeconomic-statareas-outline";
@@ -785,6 +789,7 @@ const modeController = Urban95ModeController.create({
 function switchMode(mode) {
   const result = modeController.switchMode(mode);
   applySchoolsLayerVisibility();
+  applyUrbanNatureVisibility();
   return result;
 }
 const applyHouseModeHexBackground = modeController.applyHouseModeHexBackground;
@@ -1241,9 +1246,11 @@ Urban95AppStartupBridge.bindStartup({
       applyScoreModeAmenities: amenityMode.apply,
       clearDerivedCaches: clearDerivedCachesState,
       applyHouseModeHexBackground: applyHouseModeHexBackground,
+      applyUrbanNatureVisibility: applyUrbanNatureVisibility,
     },
     renderers: {
       applyParkDotPattern: applyParkDotPattern,
+      applyUrbanNatureDotPattern: applyUrbanNatureDotPattern,
       addAmenityLayers: Urban95MapRenderers.addAmenityLayers,
       applyShowPointsToggle: Urban95MapRenderers.applyShowPointsToggle,
       updateBuildingColors: Urban95MapRenderers.updateBuildingColors,
@@ -1254,6 +1261,7 @@ Urban95AppStartupBridge.bindStartup({
     urls: {
       buildings: BUILDINGS_URL,
       parks: PARKS_URL,
+      urbanNatureAreas: URBAN_NATURE_AREAS_URL,
     },
 });
 Urban95MapEvents.bind({
@@ -1366,6 +1374,17 @@ function ensureKidsPopulationLayer() {
     );
   }
 }
+function applyUrbanNatureVisibility() {
+  if (!map.getLayer(URBAN_NATURE_LAYER_ID)) return;
+  const enabled = showUrbanNatureToggle && showUrbanNatureToggle.checked;
+  const showInMode = currentMode === "house" || currentMode === "citywide";
+  map.setLayoutProperty(
+    URBAN_NATURE_LAYER_ID,
+    "visibility",
+    enabled && showInMode ? "visible" : "none"
+  );
+}
+
 function applyKidsPopulationVisibility() {
   if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) return;
   const visible = showKidsPopulationToggle && showKidsPopulationToggle.checked;
@@ -1661,6 +1680,10 @@ function applyRoadSymbologyVisibility() {
 if (showRoadsToggle) {
   showRoadsToggle.addEventListener("change", applyRoadSymbologyVisibility);
   map.on("load", applyRoadSymbologyVisibility);
+}
+if (showUrbanNatureToggle) {
+  showUrbanNatureToggle.addEventListener("change", applyUrbanNatureVisibility);
+  map.on("load", applyUrbanNatureVisibility);
 }
 if (showKidsPopulationToggle) {
   showKidsPopulationToggle.addEventListener("change", applyKidsPopulationVisibility);

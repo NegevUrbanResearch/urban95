@@ -1,5 +1,6 @@
 (function () {
   var PARK_DOT_PATTERN_ID = "park-dot-pattern";
+  var URBAN_NATURE_DOT_PATTERN_ID = "urban-nature-dot-pattern";
 
   function sourceLayerFor(artifacts, artifactName, fallbackLayer) {
     if (artifacts && typeof artifacts.sourceLayer === "function") {
@@ -176,6 +177,31 @@
     return ctx.getImageData(0, 0, size, size);
   }
 
+  function createUrbanNatureDotPatternImage(documentRef) {
+    var doc = documentRef || document;
+    var size = 12;
+    var canvas = doc.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, size, size);
+
+    [
+      [2.2, 2.0, 0.42, "rgba(77, 124, 15, 0.55)"],
+      [6.0, 3.2, 0.36, "rgba(101, 163, 13, 0.5)"],
+      [9.4, 2.6, 0.38, "rgba(77, 124, 15, 0.52)"],
+      [3.6, 7.0, 0.36, "rgba(101, 163, 13, 0.48)"],
+      [7.8, 8.2, 0.4, "rgba(77, 124, 15, 0.54)"],
+    ].forEach(function (dot) {
+      ctx.fillStyle = dot[3];
+      ctx.beginPath();
+      ctx.arc(dot[0], dot[1], dot[2], 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    return ctx.getImageData(0, 0, size, size);
+  }
+
   function applyParkDotPattern(map, documentRef) {
     if (!map.hasImage(PARK_DOT_PATTERN_ID)) {
       map.addImage(PARK_DOT_PATTERN_ID, createParkDotPatternImage(documentRef), { pixelRatio: 1 });
@@ -187,14 +213,26 @@
     }
   }
 
+  function applyUrbanNatureDotPattern(map, documentRef) {
+    if (map.getLayer("urban-nature-fill")) {
+      map.setPaintProperty("urban-nature-fill", "fill-pattern", undefined);
+      map.setPaintProperty("urban-nature-fill", "fill-color", "rgba(132, 204, 22, 0.18)");
+      map.setPaintProperty("urban-nature-fill", "fill-opacity", 1);
+      map.setPaintProperty("urban-nature-fill", "fill-outline-color", "rgba(63, 98, 18, 0.28)");
+    }
+  }
+
   window.Urban95MapLayers = {
     PARK_DOT_PATTERN_ID: PARK_DOT_PATTERN_ID,
+    URBAN_NATURE_DOT_PATTERN_ID: URBAN_NATURE_DOT_PATTERN_ID,
     resolveBuildingContracts: resolveBuildingContracts,
     createPmtilesProtocol: createPmtilesProtocol,
     createBuildingsSource: createBuildingsSource,
     createBuildingsFillLayer: createBuildingsFillLayer,
     createBuildingsSelectedLayer: createBuildingsSelectedLayer,
     createParkDotPatternImage: createParkDotPatternImage,
+    createUrbanNatureDotPatternImage: createUrbanNatureDotPatternImage,
     applyParkDotPattern: applyParkDotPattern,
+    applyUrbanNatureDotPattern: applyUrbanNatureDotPattern,
   };
 })();

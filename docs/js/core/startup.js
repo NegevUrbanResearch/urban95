@@ -99,6 +99,7 @@
       requireFunction(callbacks, "deps.callbacks", "applyHouseModeHexBackground");
 
       requireFunction(renderers, "deps.renderers", "applyParkDotPattern");
+      requireFunction(renderers, "deps.renderers", "applyUrbanNatureDotPattern");
       requireFunction(renderers, "deps.renderers", "addAmenityLayers");
       requireFunction(renderers, "deps.renderers", "applyShowPointsToggle");
       requireFunction(renderers, "deps.renderers", "updateBuildingColors");
@@ -110,6 +111,7 @@
       logger.debug("[Load] app startup: map load event");
       loading.markMapReady();
       renderers.applyParkDotPattern(map, runtime.document);
+      renderers.applyUrbanNatureDotPattern(map, runtime.document);
 
       loading.setStatus("Loading icons...");
       var iconsStartedAt = performanceApi.now();
@@ -185,6 +187,20 @@
         .catch(function (error) {
           logger.error("Failed to load parks:", error);
           loading.markParksLoaded();
+        });
+
+      runtime.fetchJsonWithGzipFallback(urls.urbanNatureAreas, { required: false })
+        .then(function (featureCollection) {
+          if (featureCollection && map.getSource("urban-nature")) {
+            map.getSource("urban-nature").setData(featureCollection);
+          }
+          renderers.applyUrbanNatureDotPattern(map, runtime.document);
+          if (typeof callbacks.applyUrbanNatureVisibility === "function") {
+            callbacks.applyUrbanNatureVisibility();
+          }
+        })
+        .catch(function (error) {
+          logger.error("Failed to load urban nature areas:", error);
         });
 
       loading.setStatus("Loading amenities...");

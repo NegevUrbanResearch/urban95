@@ -25,7 +25,8 @@ CATEGORY_SUBCATEGORY_WEIGHTS = {
         "roads": 0.4,
     },
     "Nature": {
-        "parks": 1.0,
+        "parks": 0.5,
+        "urban_nature_areas": 0.5,
     },
     "Play": {
         "playgrounds": 1.0,
@@ -175,6 +176,7 @@ def build_layers_from_docs_data(data_dir: Path | str = DEFAULT_DATA_DIR, target_
         "trees": _load_geojson(data_dir / "trees.geojson", target_epsg),
         "roads": _load_geojson(data_dir / "roads.geojson", target_epsg),
         "parks": _load_geojson(data_dir / "parks.geojson", target_epsg),
+        "urban_nature_areas": _load_geojson(data_dir / "urban_nature_areas.geojson", target_epsg),
         "street_lights": _load_geojson(data_dir / "street_lights.geojson", target_epsg),
         "bus_stops": _load_geojson(data_dir / "bus_stops.geojson", target_epsg),
     }
@@ -211,26 +213,39 @@ def build_layers_from_docs_data(data_dir: Path | str = DEFAULT_DATA_DIR, target_
 
 def calc_nature(point: Point, layers: dict, include_details: bool = False):
     """
-    חישוב טבע: גודל פארקים בטווח 300 מ'.
+    חישוב טבע: גודל פארקים ואזורי טבע עירוני בטווח 300 מ'.
     """
     buffer_300m = point.buffer(300)
     parks_score = 0.0
-    
+    urban_nature_score = 0.0
+    nature_weights = CATEGORY_SUBCATEGORY_WEIGHTS["Nature"]
+
     if "parks" in layers and not layers["parks"].empty:
         parks_in_buffer = _features_intersecting(layers["parks"], buffer_300m)
-        
+
         if not parks_in_buffer.empty:
             # בודק אם יש לפחות פארק אחד גדול מ-3 דונם (3000 מ"ר)
             has_large_park = any(parks_in_buffer.geometry.area >= 3000)
             if has_large_park:
                 parks_score = 1.0
             else:
-                parks_score = 0.5 # יש פארק אבל קטן מ-3 דונם
+                parks_score = 0.5  # יש פארק אבל קטן מ-3 דונם
 
-    final_score = parks_score * 100
+    if "urban_nature_areas" in layers and not layers["urban_nature_areas"].empty:
+        urban_nature_in_buffer = _features_intersecting(layers["urban_nature_areas"], buffer_300m)
+        if not urban_nature_in_buffer.empty:
+            urban_nature_score = 1.0
+
+    final_score = (
+        (parks_score * nature_weights["parks"])
+        + (urban_nature_score * nature_weights["urban_nature_areas"])
+    ) * 100
     if not include_details:
         return final_score
-    return final_score, {"parks": parks_score * 100}
+    return final_score, {
+        "parks": parks_score * 100,
+        "urban_nature_areas": urban_nature_score * 100,
+    }
 
 
 def calc_play(point: Point, layers: dict, include_details: bool = False):

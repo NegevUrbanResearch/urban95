@@ -15,6 +15,7 @@ var POPULATION_GRID_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls",
 var SOCIOECONOMIC_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "socioeconomic");
 var BUILDINGS_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "buildingsLookup");
 var PARKS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "parks");
+var URBAN_NATURE_AREAS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "urbanNatureAreas");
 var TREES_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "trees");
 var STREET_LIGHTS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "streetLights");
 var AMENITIES_CLEAN_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "amenitiesClean");
@@ -218,6 +219,13 @@ var applyParkDotPattern =
     "applyParkDotPattern",
     "function"
   );
+var applyUrbanNatureDotPattern =
+  requireNamespaceMember(
+    Urban95MapLayers,
+    "Urban95MapLayers",
+    "applyUrbanNatureDotPattern",
+    "function"
+  );
 var Urban95ScoreSidebar = requireNamespace(window, "Urban95ScoreSidebar");
 requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "configure", "function");
 requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "show", "function");
@@ -358,6 +366,7 @@ window.Urban95AppDependencies = {
   SOCIOECONOMIC_URL: SOCIOECONOMIC_URL,
   BUILDINGS_LOOKUP_URL: BUILDINGS_LOOKUP_URL,
   PARKS_URL: PARKS_URL,
+  URBAN_NATURE_AREAS_URL: URBAN_NATURE_AREAS_URL,
   TREES_URL: TREES_URL,
   STREET_LIGHTS_URL: STREET_LIGHTS_URL,
   AMENITIES_CLEAN_URL: AMENITIES_CLEAN_URL,
@@ -425,6 +434,7 @@ window.Urban95AppDependencies = {
   createBuildingsFillLayer: createBuildingsFillLayer,
   createBuildingsSelectedLayer: createBuildingsSelectedLayer,
   applyParkDotPattern: applyParkDotPattern,
+  applyUrbanNatureDotPattern: applyUrbanNatureDotPattern,
   Urban95ScoreSidebar: Urban95ScoreSidebar,
   Urban95InfoModal: Urban95InfoModal,
   Urban95Dashboards: Urban95Dashboards,

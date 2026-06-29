@@ -6,6 +6,7 @@
     buildings: BASE + "/buildings_accessibility.geojson",
     roads: BASE + "/roads.geojson",
     parks: BASE + "/parks.geojson",
+    urbanNatureAreas: BASE + "/urban_nature_areas.geojson",
     education: BASE + "/education.geojson",
     populationGrid: BASE + "/population-grid.geojson",
     socioeconomic: BASE + "/Beersheva_socioeconomic_statareas2023.geojson",

@@ -78,6 +78,7 @@ BUILDING_LOOKUP_WEIGHTED_SUBCATEGORY_STEMS = (
     ("environmental_quality", "trees"),
     ("environmental_quality", "roads"),
     ("nature", "parks"),
+    ("nature", "urban_nature_areas"),
     ("play", "playgrounds"),
     ("safety_mobility", "street_lights"),
     ("safety_mobility", "bicycle_access"),

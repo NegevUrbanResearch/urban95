@@ -382,6 +382,7 @@
             data: opts.roadsUrl || "./data/roads.geojson",
           },
           parks: { type: "geojson", data: emptyFeatureCollection() },
+          "urban-nature": { type: "geojson", data: emptyFeatureCollection() },
           "radius-circle": { type: "geojson", data: emptyFeatureCollection() },
           "selected-building": { type: "geojson", data: emptyFeatureCollection() },
           amenities: { type: "geojson", data: emptyFeatureCollection() },
@@ -407,6 +408,17 @@
         ].concat(
           createRoadPaintLayers(),
           [
+            {
+              id: "urban-nature-fill",
+              type: "fill",
+              source: "urban-nature",
+              paint: {
+                "fill-color": "rgba(132, 204, 22, 0.18)",
+                "fill-opacity": 1,
+                "fill-outline-color": "rgba(63, 98, 18, 0.28)",
+              },
+              layout: { visibility: "none" },
+            },
             {
               id: "parks-fill",
               type: "fill",

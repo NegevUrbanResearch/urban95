@@ -12,6 +12,7 @@
     trees: "park-alt1",
     roads: "road-accident",
     parks: "park",
+    urban_nature_areas: "park-alt1",
     playgrounds: "playground",
     street_lights: "lighthouse",
     bicycle_access: "bicycle",

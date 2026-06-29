@@ -618,6 +618,11 @@ body.desktop-only-blocked {
   margin-bottom: 0;
 }
 
+#urban95-point-toggles.detail-point-toggles {
+  grid-template-columns: 1fr;
+  row-gap: 2px;
+}
+
 .layers-backdrop {
   display: none;
   position: fixed;
@@ -644,8 +649,8 @@ body.desktop-only-blocked {
 
 .toggle-with-icon {
   display: grid;
-  grid-template-columns: 32px 12px max-content;
-  column-gap: 4px;
+  grid-template-columns: 32px 12px minmax(0, 1fr);
+  column-gap: 6px;
   align-items: center;
   min-height: 18px;
   padding: 4px 0;
@@ -694,6 +699,7 @@ body.desktop-only-blocked {
 .toggle-label {
   font-weight: 500;
   line-height: 18px;
+  min-width: 0;
 }
 
 .toggle-icon {

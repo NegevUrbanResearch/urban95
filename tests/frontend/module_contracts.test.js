@@ -529,6 +529,7 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95MapLayers.createBuildingsFillLayer, "function");
   assert.equal(typeof browser.window.Urban95MapLayers.createBuildingsSelectedLayer, "function");
   assert.equal(typeof browser.window.Urban95MapLayers.applyParkDotPattern, "function");
+  assert.equal(typeof browser.window.Urban95MapLayers.applyUrbanNatureDotPattern, "function");
   assert.equal(typeof browser.window.Urban95MapShell.createBaseMap, "function");
   [
     "configure",
@@ -2206,6 +2207,7 @@ test("startup validates nested grouped dependencies with helpful errors", async 
         },
         renderers: {
           applyParkDotPattern: function () {},
+          applyUrbanNatureDotPattern: function () {},
           addAmenityLayers: function () {},
           applyShowPointsToggle: function () {},
           updateBuildingColors: function () {},
@@ -2214,6 +2216,7 @@ test("startup validates nested grouped dependencies with helpful errors", async 
         urls: {
           buildings: "./data/buildings_accessibility.geojson",
           parks: "./data/parks.geojson",
+          urbanNatureAreas: "./data/urban_nature_areas.geojson",
         },
       });
     },

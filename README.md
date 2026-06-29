@@ -65,7 +65,8 @@ Each category is itself built from subcategory weights in `src/index calculation
   - Trees: 20%
   - Distance from fast roads: 40%
 - **Nature**
-  - Parks: 100%
+  - Parks: 50%
+  - Urban nature areas: 50% (any site polygon within 300 m)
 - **Play**
   - Playgrounds: 100%
 - **Safety & Mobility**

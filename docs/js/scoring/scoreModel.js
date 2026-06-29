@@ -69,7 +69,8 @@
       { stem: "roads", label: "Distance from fast roads", weight: 0.4 },
     ],
     nature: [
-      { stem: "parks", label: "Parks", weight: 1.0 },
+      { stem: "parks", label: "Parks", weight: 0.5 },
+      { stem: "urban_nature_areas", label: "Urban nature areas", weight: 0.5 },
     ],
     play: [
       { stem: "playgrounds", label: "Playgrounds", weight: 1.0 },
