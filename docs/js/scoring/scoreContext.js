@@ -20,21 +20,15 @@
 
     var getCurrentMode = requireFunction(deps.getCurrentMode, "deps.getCurrentMode");
     var getBuildingsData = requireFunction(deps.getBuildingsData, "deps.getBuildingsData");
-    var getSelectedWeightedCategoryStem = requireFunction(
-      deps.getSelectedWeightedCategoryStem,
-      "deps.getSelectedWeightedCategoryStem"
-    );
     var fixedMinutes = requireNumber(deps.fixedMinutes, "deps.fixedMinutes");
 
     [
       "getBuildingCleanFilteredScore",
       "getBuildingOverallScore",
       "collectBuildingScores",
-      "getWeightedAverageValueFromSource",
-      "weightedNeighborhoodRankingRows",
-      "getCitywideWeightedAverageScore",
       "getPercentileSeriesCacheKey",
       "getBuildingAmenityStatKeysForMinutes",
+      "resolveActiveMetric",
     ].forEach(function (memberName) {
       requireFunction(scoreModel[memberName], "deps.scoreModel." + memberName);
     });
@@ -44,12 +38,30 @@
       "getAllFilterTypes",
       "getScoreMode",
       "getWalkMinutes",
+      "getActiveHeatmapId",
       "hasBuildingAmenityStatKeys",
       "getBuildingAmenityStatKeys",
       "setBuildingAmenityStatKeys",
     ].forEach(function (memberName) {
       requireFunction(state[memberName], "deps.state." + memberName);
     });
+
+    function getActiveHeatmapIdFromState() {
+      return state.getActiveHeatmapId();
+    }
+
+    function getActiveMetric(overrides) {
+      var next = Object.assign(
+        {
+          scoreMode: state.getScoreMode(),
+          walkMinutes: state.getWalkMinutes(),
+          selectedAmenityTypes: Array.from(state.getSelectedAmenityTypes()),
+          activeHeatmapId: getActiveHeatmapIdFromState(),
+        },
+        overrides || {}
+      );
+      return scoreModel.resolveActiveMetric(next);
+    }
 
     function getCurrentScoreModelContext(overrides) {
       return Object.assign(
@@ -74,6 +86,15 @@
     }
 
     function getCurrentBuildingOverallScore(props, minutes) {
+      if (state.getScoreMode() === "weighted") {
+        var metric = getActiveMetric();
+        if (!metric || !metric.buildingPropertyKey) return 0;
+        var value = props && props[metric.buildingPropertyKey];
+        if (value !== undefined && value !== null && value !== "") {
+          return Number(value) || 0;
+        }
+        return 0;
+      }
       return scoreModel.getBuildingOverallScore(
         props,
         minutes,
@@ -87,39 +108,21 @@
       if (!buildingsData || !Array.isArray(buildingsData.features) || buildingsData.features.length === 0) {
         return [];
       }
+      var metric = getActiveMetric();
+      if (metric.kind.indexOf("weighted") === 0) {
+        if (!metric.buildingPropertyKey) return [];
+        return buildingsData.features
+          .map(function (feature) {
+            return Number(feature && feature.properties && feature.properties[metric.buildingPropertyKey]) || 0;
+          })
+          .filter(Number.isFinite);
+      }
       if (state.getSelectedAmenityTypes().size === 0 || state.getAllFilterTypes().length === 0) {
         return [];
       }
       return scoreModel.collectBuildingScores(buildingsData, state.getWalkMinutes(), function (props, minutes) {
         return getCurrentBuildingOverallScore(props, minutes);
       });
-    }
-
-    function getWeightedAverageValueFromCurrentSelection(source, sfx) {
-      return scoreModel.getWeightedAverageValueFromSource(
-        source,
-        sfx,
-        getSelectedWeightedCategoryStem()
-      );
-    }
-
-    function weightedNeighborhoodRankingRowsForCurrentSelection(stats, sfx) {
-      return scoreModel.weightedNeighborhoodRankingRows(
-        stats,
-        sfx,
-        getSelectedWeightedCategoryStem()
-      );
-    }
-
-    function getCitywideWeightedAverageScoreForCurrentSelection(stats, sfx) {
-      return scoreModel.getCitywideWeightedAverageScore(
-        stats,
-        sfx,
-        getCurrentScoreModelContext({
-          selectedStem: getSelectedWeightedCategoryStem(),
-          buildingsData: getBuildingsData(),
-        })
-      );
     }
 
     function getCurrentPercentileSeriesCacheKey(minutes) {
@@ -142,13 +145,11 @@
     }
 
     return {
+      getActiveMetric: getActiveMetric,
       getCurrentScoreModelContext: getCurrentScoreModelContext,
       getCurrentBuildingCleanFilteredScore: getCurrentBuildingCleanFilteredScore,
       getCurrentBuildingOverallScore: getCurrentBuildingOverallScore,
       collectCurrentBuildingScores: collectCurrentBuildingScores,
-      getWeightedAverageValueFromCurrentSelection: getWeightedAverageValueFromCurrentSelection,
-      weightedNeighborhoodRankingRowsForCurrentSelection: weightedNeighborhoodRankingRowsForCurrentSelection,
-      getCitywideWeightedAverageScoreForCurrentSelection: getCitywideWeightedAverageScoreForCurrentSelection,
       getCurrentPercentileSeriesCacheKey: getCurrentPercentileSeriesCacheKey,
       getCurrentBuildingAmenityStatKeysForMinutes: getCurrentBuildingAmenityStatKeysForMinutes,
     };

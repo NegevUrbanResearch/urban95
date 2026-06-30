@@ -4,6 +4,7 @@
   }
   var config = window.Urban95Config;
   var generatedFallbacks = config.generatedFallbacks || {};
+  var generatedArtifactPolicies = config.generatedArtifactPolicies || {};
   var BASE = config.BASE || "./data";
   var generated = window.URBAN95_GENERATED_ARTIFACTS || {};
 
@@ -22,9 +23,18 @@
     return fallbackPath;
   }
 
+  function shouldUseGeneratedArtifact(name) {
+    var policy = generatedArtifactPolicies[name];
+    if (policy && Object.prototype.hasOwnProperty.call(policy, "useGeneratedAsset")) {
+      return !!policy.useGeneratedAsset;
+    }
+    return true;
+  }
+
   function hasGeneratedArtifact(name) {
     var entry = generated[name];
     return (
+      shouldUseGeneratedArtifact(name) &&
       !!entry &&
       entry.status === "built" &&
       !!window.pmtiles &&

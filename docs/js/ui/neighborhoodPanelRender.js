@@ -98,7 +98,9 @@
       '%</div><div class="cw-stat-label">Coverage</div></div>';
     html += "</div>";
 
-    var selectedStem = renderCtx.getSelectedWeightedCategoryStem();
+    var activeMetric = renderCtx.getActiveMetric ? renderCtx.getActiveMetric() : null;
+    var selectedStem = activeMetric && activeMetric.selectedWeightedStem;
+    var selectedSubStem = activeMetric && activeMetric.selectedWeightedSubStem;
     if (!selectedStem) {
       var highlights = renderCtx.weightedCategoryHighlightsFromSource(props, sfx);
       html += '<div class="cw-section">';
@@ -176,13 +178,19 @@
     if (context && context.weighted) {
       var sfx = context.sfx;
       var neighborhoodProps = context.neighborhoodProps || {};
-      var selectedStem = renderCtx.getSelectedWeightedCategoryStem();
+      var activeMetric = renderCtx.getActiveMetric ? renderCtx.getActiveMetric() : null;
+      var selectedStem = activeMetric && activeMetric.selectedWeightedStem;
+      var selectedSubStem = activeMetric && activeMetric.selectedWeightedSubStem;
       var histCanvas = bodyEl.querySelector("#hood-sidebar-score-hist");
       if (histCanvas) {
-        var dist =
-          !selectedStem && citywideStats && citywideStats["distribution_weighted" + sfx]
-            ? citywideStats["distribution_weighted" + sfx]
-            : renderCtx.buildHistogramDistributionFromScores(renderCtx.collectBuildingScores(), 10);
+        var dist = renderCtx.getWeightedHistogramDistribution(
+          citywideStats,
+          sfx,
+          activeMetric,
+          function () {
+            return renderCtx.buildHistogramDistributionFromScores(renderCtx.collectBuildingScores(), 10);
+          }
+        );
         var labels = dist.edges.slice(0, -1).map(function (edge, index) {
           return edge + "-" + dist.edges[index + 1];
         });
@@ -223,7 +231,20 @@
       var subList = bodyEl.querySelector("#hood-sidebar-subcategory-compare-list");
       if (subList && citywideStats) {
         var rows = renderCtx.weightedSubcategoryComparisonRows(neighborhoodProps, citywideStats, sfx);
-        renderCtx.renderWeightedSubcategoryComparisonList(subList, rows);
+        rows = rows.filter(function (row) {
+          return row.hasData !== false;
+        });
+        if (selectedSubStem && selectedStem) {
+          rows = rows.filter(function (row) {
+            return row.categoryStem === selectedStem && row.subStem === selectedSubStem;
+          });
+        }
+        if (rows.length === 0) {
+          subList.innerHTML =
+            '<div class="sidebar-section-hint">Neighborhood subcategory averages are unavailable for this metric in the current data export.</div>';
+        } else {
+          renderCtx.renderWeightedSubcategoryComparisonList(subList, rows);
+        }
       }
     } else {
       var invObj = (context && context.invObj) || {};

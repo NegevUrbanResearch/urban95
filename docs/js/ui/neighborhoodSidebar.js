@@ -60,6 +60,13 @@
     return deps.sidebarEl.getBoundingClientRect().width || 400;
   }
 
+  function getRenderStateHelper(name) {
+    if (!deps || typeof deps[name] !== "function") {
+      throw new Error("Urban95NeighborhoodSidebar requires " + name);
+    }
+    return deps[name];
+  }
+
   function finalizeSidebarAndBindCharts(token, renderCtx, chartOptions) {
     Urban95NeighborhoodPanelRender.destroyCharts(chartInstances);
     if (deps.emptyEl) {
@@ -140,9 +147,53 @@
       deps.loadCitywideStats().then(function () {
         if (token !== renderGeneration) return;
         var citywideStats = deps.getCitywideStats();
-        var selectedCategoryLabel = renderCtx.getSelectedWeightedCategoryLabel();
-        var avgScore = renderCtx.getWeightedAverageValueFromSource(props, sfx);
-        var cityAvgScore = renderCtx.getCitywideWeightedAverageScore(citywideStats, sfx);
+        var activeMetric = renderCtx.getActiveMetric ? renderCtx.getActiveMetric() : null;
+        var missingWeightedSubcategoryData =
+          !!(
+            activeMetric &&
+            (
+              !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(activeMetric, props) ||
+              !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(activeMetric, citywideStats)
+            )
+          );
+        var selectedCategoryLabel =
+          !activeMetric || activeMetric.kind === "weighted-overall"
+            ? "Urban95"
+            : activeMetric.label || "Urban95";
+        if (missingWeightedSubcategoryData) {
+          if (renderCtx.heroEl) {
+            renderCtx.heroEl.innerHTML =
+              '<div class="percentile-summary score-explain-sidebar-hero-compact">' +
+              '<p class="score-explain-hero-kicker">' +
+              renderCtx.escapeHtml(selectedCategoryLabel + " score") +
+              '</p><div class="percentile-value">Unavailable</div></div>';
+          }
+          if (renderCtx.metaEl) {
+            renderCtx.metaEl.innerHTML =
+              '<div class="score-explain-building-ctx"><div class="building-ctx-text">' +
+              '<span class="building-ctx-id" dir="rtl" lang="he">' +
+              renderCtx.escapeHtml((props && props.Name) || "Unknown") +
+              '</span><span class="building-ctx-coords">This subcategory is not present in the current neighborhood export.</span></div></div>';
+          }
+          deps.bodyEl.innerHTML =
+            '<div class="cw-section"><p class="sidebar-section-hint">Neighborhood-level Urban95 subcategory summaries are unavailable for this metric in the current data export.</p></div>';
+          finalizeSidebarAndBindCharts(token, renderCtx, {
+            weighted: true,
+            sfx: sfx,
+            neighborhoodProps: props,
+          });
+          return;
+        }
+        var avgScore = getRenderStateHelper("getWeightedNeighborhoodMetricValue")(
+          props,
+          sfx,
+          activeMetric
+        );
+        var cityAvgScore = getRenderStateHelper("getWeightedNeighborhoodMetricValue")(
+          citywideStats,
+          sfx,
+          activeMetric
+        );
         Urban95NeighborhoodPanelRender.populateHeaderWeighted(
           renderCtx,
           props,

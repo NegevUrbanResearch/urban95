@@ -8,6 +8,7 @@
     parks: BASE + "/parks.geojson",
     urbanNatureAreas: BASE + "/urban_nature_areas.geojson",
     education: BASE + "/education.geojson",
+    busStops: BASE + "/bus_stops.geojson",
     populationGrid: BASE + "/population-grid.geojson",
     socioeconomic: BASE + "/Beersheva_socioeconomic_statareas2023.geojson",
     trees: BASE + "/trees.geojson",
@@ -29,6 +30,12 @@
     neighborhoodSurfacePmtiles: BASE + "/neighborhood_surface.pmtiles",
     treesPmtiles: BASE + "/trees.pmtiles",
     streetLightsPmtiles: BASE + "/street_lights.pmtiles",
+  };
+
+  var generatedArtifactPolicies = {
+    neighborhood_surface: {
+      useGeneratedAsset: false,
+    },
   };
 
   var mapContracts = {
@@ -78,6 +85,7 @@
     ICONS_BASE: ICONS_BASE,
     urls: urls,
     generatedFallbacks: generatedFallbacks,
+    generatedArtifactPolicies: generatedArtifactPolicies,
     mapContracts: mapContracts,
     cdn: cdn,
     sources: sources,

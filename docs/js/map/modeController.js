@@ -47,6 +47,7 @@
     var contracts = requireObject(deps.contracts, "deps.contracts");
     var assets = requireObject(deps.assets, "deps.assets");
     var geo = requireObject(deps.geo, "deps.geo");
+    var scoring = deps.scoring || {};
 
     var map = requireObject(runtime.map, "deps.runtime.map");
     var perf = requireObject(runtime.perf, "deps.runtime.perf");
@@ -102,21 +103,11 @@
 
     var modeHint = ui.modeHint || null;
     var modeToggle = requireObject(ui.modeToggle, "deps.ui.modeToggle");
-    var showHeatmapToggle = ui.showHeatmapToggle || null;
     requireMethod(modeToggle, "deps.ui.modeToggle", "querySelectorAll");
-    var pointsVisibilitySection = requireStyleElement(
-      ui.pointsVisibilitySection,
-      "deps.ui.pointsVisibilitySection"
+    var indicatorsSection = requireStyleElement(
+      ui.indicatorsSection,
+      "deps.ui.indicatorsSection"
     );
-    var pointsVisibilityLayersControl = requireStyleElement(
-      ui.pointsVisibilityLayersControl,
-      "deps.ui.pointsVisibilityLayersControl"
-    );
-    var pointsVisibilitySectionTitle = requireStyleElement(
-      ui.pointsVisibilitySectionTitle,
-      "deps.ui.pointsVisibilitySectionTitle"
-    );
-    var legendSection = requireStyleElement(ui.legendSection, "deps.ui.legendSection");
     var radiusInfo = requireStyleElement(ui.radiusInfo, "deps.ui.radiusInfo");
     var citywideBody = requireObject(ui.citywideBody, "deps.ui.citywideBody");
 
@@ -126,7 +117,8 @@
       state.setSelectedNeighborhood,
       "deps.state.setSelectedNeighborhood"
     );
-
+    var getActiveMetric =
+      typeof scoring.getActiveMetric === "function" ? scoring.getActiveMetric : null;
     var buildingsFillLayerId = contracts.buildingsFillLayerId;
     if (typeof buildingsFillLayerId !== "string" || !buildingsFillLayerId) {
       throw new Error("Urban95ModeController requires deps.contracts.buildingsFillLayerId");
@@ -166,6 +158,10 @@
       assets.getNeighborhoodSurfaceScorePropertyKey,
       "deps.assets.getNeighborhoodSurfaceScorePropertyKey"
     );
+    var onModeChanged =
+      typeof assets.onModeChanged === "function" ? assets.onModeChanged : function () {};
+    var setLegendVisible =
+      typeof assets.setLegendVisible === "function" ? assets.setLegendVisible : function () {};
 
     var turf = requireObject(geo.turf, "deps.geo.turf");
     requireMethod(turf, "deps.geo.turf", "bbox");
@@ -202,15 +198,15 @@
     }
 
     function neighborhoodLabelPoint(feature) {
-      if (!feature || !feature.geometry || !window.turf) return null;
-      if (typeof window.turf.centerOfMass === "function") {
+      if (!feature || !feature.geometry) return null;
+      if (typeof turf.centerOfMass === "function") {
         try {
-          var center = window.turf.centerOfMass(feature);
+          var center = turf.centerOfMass(feature);
           if (
             center &&
             center.geometry &&
-            typeof window.turf.booleanPointInPolygon === "function" &&
-            window.turf.booleanPointInPolygon(center, feature)
+            typeof turf.booleanPointInPolygon === "function" &&
+            turf.booleanPointInPolygon(center, feature)
           ) {
             return center;
           }
@@ -220,9 +216,9 @@
           });
         }
       }
-      if (typeof window.turf.pointOnFeature === "function") {
+      if (typeof turf.pointOnFeature === "function") {
         try {
-          return window.turf.pointOnFeature(feature);
+          return turf.pointOnFeature(feature);
         } catch (error) {
           logger.debug(function () {
             return ["[Neighborhood] Inside label point failed", error && error.message ? error.message : error];
@@ -230,8 +226,8 @@
         }
       }
       try {
-        if (typeof window.turf.center === "function") {
-          return window.turf.center(feature);
+        if (typeof turf.center === "function") {
+          return turf.center(feature);
         }
       } catch (error) {
         logger.debug(function () {
@@ -369,8 +365,13 @@
           }
           map.setPaintProperty("neighborhoods-surface", "fill-opacity", houseModeHexOpacity);
           map.setFilter("neighborhoods-surface", ["==", ["to-number", ["get", "has_buildings"], 0], 1]);
-          var heatmapVisible = showHeatmapToggle ? showHeatmapToggle.checked : true;
-          map.setLayoutProperty("neighborhoods-surface", "visibility", heatmapVisible ? "visible" : "none");
+          var metric = getActiveMetric ? getActiveMetric() : null;
+          var heatmapVisible = !!metric;
+          map.setLayoutProperty(
+            "neighborhoods-surface",
+            "visibility",
+            heatmapVisible ? "visible" : "none"
+          );
           mapRenderers.updateNeighborhoodSurfaceData();
         })
         .catch(function (error) {
@@ -379,29 +380,19 @@
     }
 
     function setPointsVisibilityForMode(mode) {
-      var showLayers = mode === "house";
-      pointsVisibilitySection.style.display = "";
-      pointsVisibilitySection.classList.toggle("is-basemap-only", !showLayers);
-      if (pointsVisibilityLayersControl) {
-        pointsVisibilityLayersControl.style.display = showLayers ? "" : "none";
-      }
-      if (pointsVisibilitySectionTitle) {
-        pointsVisibilitySectionTitle.style.display = showLayers ? "" : "none";
-      }
+      void mode;
+      indicatorsSection.style.display = "";
     }
 
     function setControlsForMode(mode) {
       if (mode === "house") {
         setPointsVisibilityForMode(mode);
-        legendSection.style.display = "";
         if (modeHint) modeHint.textContent = "Click map to analyze nearest building";
       } else if (mode === "neighborhood") {
         setPointsVisibilityForMode(mode);
-        legendSection.style.display = "";
         if (modeHint) modeHint.textContent = "Click a neighborhood for details";
       } else {
         setPointsVisibilityForMode(mode);
-        legendSection.style.display = "none";
         if (modeHint) modeHint.textContent = "";
       }
 
@@ -443,9 +434,6 @@
 
         if (map.getLayer(buildingsFillLayerId)) {
           map.setLayoutProperty(buildingsFillLayerId, "visibility", "none");
-        }
-        if (map.getLayer("parks-fill")) {
-          map.setLayoutProperty("parks-fill", "visibility", "none");
         }
         if (map.getLayer("neighborhoods-surface")) {
           map.setPaintProperty(
@@ -493,7 +481,6 @@
 
             if (!isCurrentModeToken(token) || getCurrentMode() !== "neighborhood") return;
             perfSpan("enterNeighborhoodMode:showLayers", null, function () {
-              if (map.getLayer("neighborhoods-surface")) map.setLayoutProperty("neighborhoods-surface", "visibility", "visible");
               if (map.getLayer("neighborhoods-fill")) map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
               if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
               if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
@@ -533,9 +520,6 @@
         }
         if (map.getLayer("neighborhoods-surface")) {
           map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
-        }
-        if (map.getLayer("parks-fill")) {
-          map.setLayoutProperty("parks-fill", "visibility", "visible");
         }
       });
     }
@@ -616,6 +600,8 @@
         modeToggle.querySelectorAll(".mode-opt").forEach(function (btn) {
           btn.classList.toggle("active", btn.dataset.mode === mode);
         });
+        setLegendVisible(mode !== "citywide");
+        onModeChanged(mode, prevMode);
 
         if (mode === "house") {
           return enterHouseMode(token);

@@ -30,6 +30,7 @@
     var modeController = deps.modeController || {};
     var map = deps.map || {};
     var ui = deps.ui || {};
+    var controls = deps.controls || {};
     var setIsochronesDeferred =
       typeof state.setIsochronesDeferred === "function" ? state.setIsochronesDeferred : null;
     var requestAnimationFrameFn =
@@ -44,9 +45,12 @@
       ["perf.session", perf.session],
       ["perf.phase", perf.phase],
       ["state.getCurrentMode", state.getCurrentMode],
+      ["state.getScoreMode", state.getScoreMode],
       ["state.getSelectedBuilding", state.getSelectedBuilding],
       ["state.getSelectedNeighborhood", state.getSelectedNeighborhood],
       ["state.clearDerivedCaches", state.clearDerivedCaches],
+      ["state.getActiveHeatmapId", state.getActiveHeatmapId],
+      ["state.setActiveHeatmapId", state.setActiveHeatmapId],
       ["state.getIsochronesLoaded", state.getIsochronesLoaded],
       [
         "pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad",
@@ -78,8 +82,6 @@
       ["neighborhoodSidebar.hide", neighborhoodSidebar.hide],
       ["neighborhoodSidebar.isOpen", neighborhoodSidebar.isOpen],
       ["modeController.switchMode", modeController.switchMode],
-      ["map.getLayer", map.getLayer],
-      ["map.setLayoutProperty", map.setLayoutProperty],
       ["ui.getCitywideModal", ui.getCitywideModal],
     ].forEach(function (entry) {
       requireFunction(entry[1], entry[0]);
@@ -94,13 +96,21 @@
             void meta;
             return callback();
           };
+    var refreshLegend =
+      typeof controls.refreshLegend === "function" ? controls.refreshLegend : function () {};
+    var syncScoreSidebar =
+      typeof scoreSidebar.sync === "function" ? scoreSidebar.sync : null;
+    var updateDeckAmenityLayers =
+      typeof renderers.updateDeckAmenityLayers === "function"
+        ? renderers.updateDeckAmenityLayers
+        : function () {};
 
     function flowMeta(extra) {
       var selectedBuilding = state.getSelectedBuilding();
       return Object.assign(
         {
           mode: state.getCurrentMode(),
-          scoreMode: state.getScoreMode ? state.getScoreMode() : "",
+          scoreMode: state.getScoreMode(),
           hasSelectedBuilding: !!selectedBuilding,
           walkMinutes: state.getWalkMinutes ? state.getWalkMinutes() : "",
           isochronesLoaded: state.getIsochronesLoaded(),
@@ -120,29 +130,20 @@
       return callback();
     }
 
-    function onFilterSelectionChanged() {
-      renderers.updateBuildingColors();
+    function refreshRightPanels(options) {
+      options = options || {};
+      var currentMode = state.getCurrentMode();
 
-      if (
-        state.getSelectedBuilding() &&
-        pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad()
-      ) {
-        selection.selectBuilding(state.getSelectedBuilding(), false);
-      } else {
-        renderers.updateAmenitiesSource();
-        renderers.updateTreesSource();
-        renderers.updateStreetLightsSource();
+      if (state.getSelectedBuilding() && syncScoreSidebar && options.syncScoreSidebar !== false) {
+        syncScoreSidebar();
       }
 
-      if (state.getCurrentMode() === "neighborhood") {
+      if (currentMode === "neighborhood") {
         renderers.updateNeighborhoodColors();
-        if (
-          neighborhoodSidebar.isOpen() &&
-          state.getSelectedNeighborhood()
-        ) {
+        if (neighborhoodSidebar.isOpen() && state.getSelectedNeighborhood()) {
           neighborhoodSidebar.sync(state.getSelectedNeighborhood());
         }
-      } else if (state.getCurrentMode() === "citywide") {
+      } else if (currentMode === "citywide") {
         renderers.updateNeighborhoodColors();
         var citywideModal = getCitywideModal();
         if (citywideModal && citywideModal.classList && citywideModal.classList.contains("show")) {
@@ -150,12 +151,71 @@
         } else {
           dashboards.updateCitywideModalTitle();
         }
-      } else if (state.getCurrentMode() === "house") {
-        renderers.updateNeighborhoodSurfaceData();
       }
     }
 
+    function applyScoreStateChange(options) {
+      options = options || {};
+      var shouldUpdateSurface = state.getCurrentMode() === "house" || options.forceSurface === true;
+      var updateSurface = function () {
+        if (!shouldUpdateSurface) return;
+        if (options.surfaceSpanName) {
+          perfSpan(options.surfaceSpanName, flowMeta, function () {
+            renderers.updateNeighborhoodSurfaceData();
+          });
+          return;
+        }
+        renderers.updateNeighborhoodSurfaceData();
+      };
+
+      if (options.surfaceFirst === true) {
+        updateSurface();
+      }
+
+      if (typeof options.afterSurface === "function") {
+        options.afterSurface();
+      }
+
+      if (options.skipBuildingColors !== true) {
+        renderers.updateBuildingColors();
+      }
+
+      if (typeof options.afterBuildingColors === "function") {
+        options.afterBuildingColors();
+      }
+
+      if (options.surfaceFirst !== true) {
+        updateSurface();
+      }
+
+      refreshRightPanels(options);
+      refreshLegend();
+    }
+
+    function refreshExpandedPointSources() {
+      if (
+        state.getSelectedBuilding() &&
+        pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad()
+      ) {
+        selection.selectBuilding(state.getSelectedBuilding(), false);
+        return;
+      }
+      renderers.updateAmenitiesSource();
+      renderers.updateTreesSource();
+      renderers.updateStreetLightsSource();
+    }
+
+    function onFilterSelectionChanged() {
+      applyScoreStateChange({
+        afterBuildingColors: refreshExpandedPointSources,
+      });
+    }
+
     function onScoreModeChanged(nextScoreMode) {
+      if (nextScoreMode === "weighted" && !state.getActiveHeatmapId()) {
+        state.setActiveHeatmapId("u95.overall");
+      }
+
       perf.session(
         "score-model -> " + (nextScoreMode === "expanded" ? "Amenities Focus" : "Urban95")
       );
@@ -187,27 +247,11 @@
             });
           }
 
-          var citywideModal = getCitywideModal();
-          if (
-            state.getCurrentMode() === "citywide" &&
-            citywideModal &&
-            citywideModal.classList &&
-            citywideModal.classList.contains("show")
-          ) {
-            dashboards.renderCitywideModal();
-          }
-
-          if (state.getCurrentMode() === "neighborhood") {
-            perfSpan("scoreModelToggle:updateNeighborhoodColors", flowMeta, function () {
-              renderers.updateNeighborhoodColors();
-            });
-            if (
-              neighborhoodSidebar.isOpen() &&
-              state.getSelectedNeighborhood()
-            ) {
-              neighborhoodSidebar.sync(state.getSelectedNeighborhood());
-            }
-          }
+          applyScoreStateChange({
+            skipBuildingColors: state.getCurrentMode() === "house",
+            forceSurface: state.getCurrentMode() === "house",
+            syncScoreSidebar: false,
+          });
         });
       });
     }
@@ -215,47 +259,34 @@
     function onWalkMinutesChanged() {
       perfMark("walkMinutesToggle:start", flowMeta);
       if (state.getCurrentMode() === "house") {
-        perfSpan("walkMinutesToggle:updateNeighborhoodSurfaceData", flowMeta, function () {
-          renderers.updateNeighborhoodSurfaceData();
+        applyScoreStateChange({
+          surfaceFirst: true,
+          skipBuildingColors: true,
+          surfaceSpanName: "walkMinutesToggle:updateNeighborhoodSurfaceData",
+          afterSurface: function () {
+            var selectedBuilding = state.getSelectedBuilding();
+            if (selectedBuilding) {
+              perfSpan("walkMinutesToggle:selectBuilding", flowMeta, function () {
+                selection.selectBuilding(selectedBuilding, false);
+              });
+              requestAnimationFrameOrNow(function () {
+                perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
+                  renderers.updateBuildingColors();
+                });
+              });
+            } else {
+              perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
+                renderers.updateBuildingColors();
+              });
+            }
+          },
         });
-        var selectedBuilding = state.getSelectedBuilding();
-        if (selectedBuilding) {
-          perfSpan("walkMinutesToggle:selectBuilding", flowMeta, function () {
-            selection.selectBuilding(selectedBuilding, false);
-          });
-          requestAnimationFrameOrNow(function () {
-            perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
-              renderers.updateBuildingColors();
-            });
-          });
-        } else {
-          perfSpan("walkMinutesToggle:updateBuildingColors", flowMeta, function () {
-            renderers.updateBuildingColors();
-          });
-        }
+        return;
       }
 
-      if (state.getCurrentMode() === "neighborhood") {
-        perfSpan("walkMinutesToggle:updateNeighborhoodColors", flowMeta, function () {
-          renderers.updateNeighborhoodColors();
-        });
-        if (
-          neighborhoodSidebar.isOpen() &&
-          state.getSelectedNeighborhood()
-        ) {
-          neighborhoodSidebar.sync(state.getSelectedNeighborhood());
-        }
-      }
-
-      var citywideModal = getCitywideModal();
-      if (
-        state.getCurrentMode() === "citywide" &&
-        citywideModal &&
-        citywideModal.classList &&
-        citywideModal.classList.contains("show")
-      ) {
-        dashboards.renderCitywideModal();
-      }
+      applyScoreStateChange({
+        skipBuildingColors: true,
+      });
     }
 
     function onModeToggleRequested(mode) {
@@ -265,9 +296,19 @@
       });
     }
 
-    function onHeatmapVisibilityChanged(visible) {
-      if (state.getCurrentMode() !== "house" || !map.getLayer("neighborhoods-surface")) return;
-      map.setLayoutProperty("neighborhoods-surface", "visibility", visible ? "visible" : "none");
+    function onPointVisibilityChanged() {
+      renderers.applyShowPointsToggle();
+      if (state.getScoreMode() === "weighted") {
+        renderers.updateAmenitiesSource();
+      }
+      updateDeckAmenityLayers();
+      applyScoreStateChange();
+    }
+
+    function setActiveHeatmap(nextHeatmapId) {
+      state.setActiveHeatmapId(nextHeatmapId);
+      clearDerivedCaches();
+      applyScoreStateChange();
     }
 
     function onEscape(event) {
@@ -297,12 +338,13 @@
 
     return {
       clearDerivedCaches: clearDerivedCaches,
+      applyScoreStateChange: applyScoreStateChange,
       onFilterSelectionChanged: onFilterSelectionChanged,
       onScoreModeChanged: onScoreModeChanged,
       onWalkMinutesChanged: onWalkMinutesChanged,
       onModeToggleRequested: onModeToggleRequested,
-      onPointVisibilityChanged: renderers.applyShowPointsToggle,
-      onHeatmapVisibilityChanged: onHeatmapVisibilityChanged,
+      onPointVisibilityChanged: onPointVisibilityChanged,
+      setActiveHeatmap: setActiveHeatmap,
       onEscape: onEscape,
     };
   }

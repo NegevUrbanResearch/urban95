@@ -301,6 +301,8 @@ def build_neighborhood_surface_geojson(
     expanded_pct_by_minutes: dict[int, np.ndarray] = {}
     filter_pct_by_minutes: dict[int, dict[str, np.ndarray]] = {}
     weighted_category_by_minutes: dict[int, dict[str, np.ndarray]] = {}
+    weighted_subcategory_by_minutes: dict[int, dict[str, dict[str, np.ndarray]]] = {}
+    weighted_sub_stems = weighted_subcategory_stems_from_buildings(assigned)
     for minutes in WALK_MINUTES:
         sfx = f"_{minutes}min"
 
@@ -336,6 +338,18 @@ def build_neighborhood_surface_geojson(
             category_vals[cat_stem] = np.clip(vals, 0.0, 100.0)
         weighted_category_by_minutes[minutes] = category_vals
 
+        subcategory_vals: dict[str, dict[str, np.ndarray]] = {}
+        for cat_stem in WEIGHTED_CATEGORY_STEMS:
+            subcategory_vals[cat_stem] = {}
+            for sub_stem in weighted_sub_stems.get(cat_stem, []):
+                sub_col = f"score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
+                if sub_col in assigned.columns:
+                    sub_vals = as_numeric_series(assigned, sub_col, fallback=0.0)
+                else:
+                    sub_vals = np.zeros(len(assigned), dtype=float)
+                subcategory_vals[cat_stem][sub_stem] = np.clip(sub_vals, 0.0, 100.0)
+        weighted_subcategory_by_minutes[minutes] = subcategory_vals
+
     weighted_fixed = weighted_by_minutes.get(URBAN95_FIXED_MINUTES)
     if weighted_fixed is None:
         weighted_fixed = weighted_by_minutes.get(10) or weighted_by_minutes.get(5) or weighted_by_minutes.get(15)
@@ -343,6 +357,7 @@ def build_neighborhood_surface_geojson(
         weighted_fixed = np.zeros(len(assigned), dtype=float)
 
     weighted_categories_fixed = weighted_category_by_minutes.get(URBAN95_FIXED_MINUTES, {})
+    weighted_subcategories_fixed = weighted_subcategory_by_minutes.get(URBAN95_FIXED_MINUTES, {})
 
     local_points_by_name: dict[str, list[tuple[float, float]]] = {}
     local_scores_by_name: dict[str, dict[str, list[tuple[float, float, float]]]] = {}
@@ -361,10 +376,14 @@ def build_neighborhood_surface_geojson(
             cat_arr = weighted_categories_fixed.get(cat_stem)
             cat_val = float(cat_arr[i]) if cat_arr is not None else 0.0
             score_bucket.setdefault(cat_key, []).append((x, y, cat_val))
+        for cat_stem in WEIGHTED_CATEGORY_STEMS:
+            for sub_stem in weighted_sub_stems.get(cat_stem, []):
+                sub_key = f"score_weighted_sub_{cat_stem}_{sub_stem}"
+                sub_arr = weighted_subcategories_fixed.get(cat_stem, {}).get(sub_stem)
+                sub_val = float(sub_arr[i]) if sub_arr is not None else 0.0
+                score_bucket.setdefault(sub_key, []).append((x, y, sub_val))
         for minutes in WALK_MINUTES:
-            w_key = f"score_weighted_{minutes}min"
             e_key = f"score_expanded_{minutes}min"
-            score_bucket.setdefault(w_key, []).append((x, y, float(weighted_by_minutes[minutes][i])))
             score_bucket.setdefault(e_key, []).append((x, y, float(expanded_pct_by_minutes[minutes][i])))
             for f_type in filter_types:
                 f_norm = normalize_surface_filter_key(f_type)
@@ -418,16 +437,25 @@ def build_neighborhood_surface_geojson(
                 else:
                     cat_val = 0.0
                 out_props[cat_key] = round(max(0.0, min(100.0, float(cat_val))), 2)
+            for cat_stem in WEIGHTED_CATEGORY_STEMS:
+                for sub_stem in weighted_sub_stems.get(cat_stem, []):
+                    sub_key = f"score_weighted_sub_{cat_stem}_{sub_stem}"
+                    if has_local:
+                        sub_val = idw_score(
+                            cx,
+                            cy,
+                            local_scores.get(sub_key, []),
+                            HEX_IDW_RADIUS_METERS,
+                        )
+                    else:
+                        sub_val = 0.0
+                    out_props[sub_key] = round(max(0.0, min(100.0, float(sub_val))), 2)
             for minutes in WALK_MINUTES:
-                w_key = f"score_weighted_{minutes}min"
                 e_key = f"score_expanded_{minutes}min"
                 if has_local:
-                    w_val = idw_score(cx, cy, local_scores.get(w_key, []), HEX_IDW_RADIUS_METERS)
                     e_val = idw_score(cx, cy, local_scores.get(e_key, []), HEX_IDW_RADIUS_METERS)
                 else:
-                    w_val = 0.0
                     e_val = 0.0
-                out_props[w_key] = round(max(0.0, min(100.0, float(w_val))), 2)
                 out_props[e_key] = round(max(0.0, min(100.0, float(e_val))), 2)
                 for f_type in filter_types:
                     f_norm = normalize_surface_filter_key(f_type)
@@ -847,6 +875,10 @@ def main():
             for minutes in WALK_MINUTES:
                 key = f"avg_score_weighted_{cat_stem}_{minutes}min"
                 entry[key] = stats.get(key, 0)
+            for sub_stem in weighted_sub_stems.get(cat_stem, []):
+                for minutes in WALK_MINUTES:
+                    sub_key = f"avg_score_weighted_sub_{cat_stem}_{sub_stem}_{minutes}min"
+                    entry[sub_key] = stats.get(sub_key, 0)
         ranking_weighted.append(entry)
     citywide["neighborhood_ranking_weighted"] = ranking_weighted
 

@@ -3,7 +3,7 @@
     var validated = validateDeps(deps || null);
     var perf = validated.perf || {};
     var perfMark = typeof perf.mark === "function" ? perf.mark : function () {};
-    var scoreSidebarPaddingActive = false;
+    var sidebarReservations = { left: 0, right: 0 };
     var scoreSidebarPaddingSnapshot = null;
     var scoreSidebarAppliedPadding = null;
 
@@ -37,85 +37,140 @@
       );
     }
 
-    function setSidebarPadding(open, width, options) {
+    function hasActiveReservations() {
+      return sidebarReservations.left > 0 || sidebarReservations.right > 0;
+    }
+
+    // Reservation widths are absolute occupied widths for each side, not deltas
+    // added onto that side's existing map padding. This preserves the legacy
+    // right-sidebar contract where opening a 360px sidebar yields right: 360,
+    // while still preserving untouched baseline padding on the opposite side.
+    function buildReservationPadding() {
+      return {
+        top: scoreSidebarPaddingSnapshot.top,
+        bottom: scoreSidebarPaddingSnapshot.bottom,
+        left:
+          sidebarReservations.left > 0
+            ? sidebarReservations.left
+            : scoreSidebarPaddingSnapshot.left,
+        right:
+          sidebarReservations.right > 0
+            ? sidebarReservations.right
+            : scoreSidebarPaddingSnapshot.right,
+      };
+    }
+
+    function clearReservationState() {
+      sidebarReservations.left = 0;
+      sidebarReservations.right = 0;
+      scoreSidebarPaddingSnapshot = null;
+      scoreSidebarAppliedPadding = null;
+    }
+
+    function setSidebarReservation(side, width, options) {
       var opts = options || {};
+      if (side !== "left" && side !== "right") {
+        throw new Error("setSidebarReservation side must be 'left' or 'right'");
+      }
+
       var media = validated.matchMedia("(max-width: 768px)");
       var isMobile = !!(media && media.matches);
-      if (open && !isMobile) {
-        if (!scoreSidebarPaddingActive) {
-          scoreSidebarPaddingSnapshot = readMapPaddingSnapshot();
-        }
-        scoreSidebarPaddingActive = true;
-        var nextPadding = Object.assign({}, scoreSidebarPaddingSnapshot, {
-          right: Math.round(width || 0),
-        });
-        if (scoreSidebarPaddingActive && isSamePadding(scoreSidebarAppliedPadding, nextPadding)) {
-          perfMark("scoreSidebarChrome:paddingUnchanged", function () {
-            return {
-              open: true,
-              width: Math.round(Number(width) || 0),
-              right: nextPadding.right,
-              mobile: isMobile,
-              forceResize: opts.forceResize === true,
-            };
-          });
-          if (opts.forceResize) {
-            validated.map.resize();
-            perfMark("scoreSidebarChrome:resize", function () {
-              return {
-                open: true,
-                right: nextPadding.right,
-                forceResize: true,
-              };
-            });
-          }
-          return;
-        }
+      var reservationWidth = isMobile ? 0 : Math.round(Number(width) || 0);
+      var hadState = !!scoreSidebarPaddingSnapshot;
+      var otherSide = side === "left" ? "right" : "left";
+      var willHaveReservations =
+        reservationWidth > 0 || sidebarReservations[otherSide] > 0;
+
+      if (willHaveReservations && !scoreSidebarPaddingSnapshot) {
+        scoreSidebarPaddingSnapshot = readMapPaddingSnapshot();
+      }
+
+      sidebarReservations[side] = reservationWidth;
+
+      if (!hasActiveReservations()) {
         perfMark("scoreSidebarChrome:setPadding", function () {
           return {
-            open: true,
+            side: side,
+            open: reservationWidth > 0,
             width: Math.round(Number(width) || 0),
-            right: nextPadding.right,
+            left: scoreSidebarPaddingSnapshot ? scoreSidebarPaddingSnapshot.left : 0,
+            right: scoreSidebarPaddingSnapshot ? scoreSidebarPaddingSnapshot.right : 0,
             mobile: isMobile,
             forceResize: opts.forceResize === true,
           };
         });
-        validated.map.setPadding(nextPadding);
-        scoreSidebarAppliedPadding = nextPadding;
+        if (hadState && scoreSidebarPaddingSnapshot) {
+          validated.map.setPadding(scoreSidebarPaddingSnapshot);
+        }
+        clearReservationState();
         validated.map.resize();
         perfMark("scoreSidebarChrome:resize", function () {
           return {
-            open: true,
-            right: nextPadding.right,
+            side: side,
+            open: false,
+            left: 0,
+            right: 0,
             forceResize: opts.forceResize === true,
           };
         });
         return;
       }
 
+      var nextPadding = buildReservationPadding();
+      if (isSamePadding(scoreSidebarAppliedPadding, nextPadding)) {
+        perfMark("scoreSidebarChrome:paddingUnchanged", function () {
+          return {
+            side: side,
+            open: reservationWidth > 0,
+            width: Math.round(Number(width) || 0),
+            left: nextPadding.left,
+            right: nextPadding.right,
+            mobile: isMobile,
+            forceResize: opts.forceResize === true,
+          };
+        });
+        if (opts.forceResize) {
+          validated.map.resize();
+          perfMark("scoreSidebarChrome:resize", function () {
+            return {
+              side: side,
+              open: reservationWidth > 0,
+              left: nextPadding.left,
+              right: nextPadding.right,
+              forceResize: true,
+            };
+          });
+        }
+        return;
+      }
+
       perfMark("scoreSidebarChrome:setPadding", function () {
         return {
-          open: false,
+          side: side,
+          open: reservationWidth > 0,
           width: Math.round(Number(width) || 0),
-          right: 0,
+          left: nextPadding.left,
+          right: nextPadding.right,
           mobile: isMobile,
           forceResize: opts.forceResize === true,
         };
       });
-      if (scoreSidebarPaddingActive && scoreSidebarPaddingSnapshot) {
-        validated.map.setPadding(scoreSidebarPaddingSnapshot);
-      }
-      scoreSidebarPaddingActive = false;
-      scoreSidebarPaddingSnapshot = null;
-      scoreSidebarAppliedPadding = null;
+      validated.map.setPadding(nextPadding);
+      scoreSidebarAppliedPadding = nextPadding;
       validated.map.resize();
       perfMark("scoreSidebarChrome:resize", function () {
         return {
-          open: false,
-          right: 0,
+          side: side,
+          open: reservationWidth > 0,
+          left: nextPadding.left,
+          right: nextPadding.right,
           forceResize: opts.forceResize === true,
         };
       });
+    }
+
+    function setSidebarPadding(open, width, options) {
+      setSidebarReservation("right", open ? width : 0, options);
     }
 
     function restoreFocusAfterHide() {
@@ -134,6 +189,7 @@
 
     return {
       setSidebarPadding: setSidebarPadding,
+      setSidebarReservation: setSidebarReservation,
       restoreFocusAfterHide: restoreFocusAfterHide,
     };
   }

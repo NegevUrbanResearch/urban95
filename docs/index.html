@@ -14,6 +14,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="control-sidebar.css" />
   </head>
   <body>
     <div
@@ -59,167 +60,24 @@
 
     <div id="map"></div>
 
-    <div id="controls">
-      <div class="panel-header">
-        <h2>Cities for Children</h2>
-        <span class="subtitle">Accessibility Explorer</span>
-        <button id="info-btn" class="info-btn" title="About this map">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="12" cy="5" r="2.5"></circle>
-            <rect x="9.5" y="10" width="5" height="12" rx="1"></rect>
-          </svg>
-        </button>
-      </div>
-
-      <div class="section mode-section">
-        <div class="section-title">Analysis</div>
-        <div class="mode-toggle" id="mode-toggle">
-          <button class="mode-opt active" data-mode="house">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
-            <span>Building</span>
-          </button>
-          <button class="mode-opt" data-mode="neighborhood">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-            <span>Neighborhood</span>
-          </button>
-          <button class="mode-opt" data-mode="citywide">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="6" width="5" height="14"/><rect x="7" y="3" width="5" height="17"/><rect x="13" y="8" width="5" height="12"/><rect x="19" y="5" width="4" height="15"/></svg>
-            <span>City</span>
-          </button>
-        </div>
-      </div>
-
-      <div class="controls-row">
-        <div class="section" id="amenity-filter-section">
-          <div class="section-title">Filter only</div>
-          <div class="filter-dropdown">
-            <button id="filter-btn" class="filter-btn">
-              <span class="filter-btn-label-wrap">
-                <span class="filter-label-prefix">Filter Only:</span>
-                <span id="filter-label">All types</span>
-              </span>
-              <svg width="12" height="12" viewBox="0 0 12 12"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
-            </button>
-            <div id="filter-popup" class="filter-popup">
-              <div id="filter-items"></div>
-            </div>
+    <aside id="control-sidebar" class="control-sidebar" aria-label="Map controls">
+      <div class="control-sidebar-inner">
+        <header class="control-sidebar-header">
+          <div class="control-sidebar-heading">
+            <h2>Cities for Children</h2>
+            <p>Accessibility Explorer</p>
           </div>
-        </div>
-
-        <div class="section" id="radius-section">
-          <div class="section-title">Walking Time</div>
-          <div class="radius-toggle" id="radius-toggle">
-            <button class="radius-opt active" data-minutes="5">5 min</button>
-            <button class="radius-opt" data-minutes="10">10 min</button>
-            <button class="radius-opt" data-minutes="15">15 min</button>
-          </div>
-          <div class="hint" id="mode-hint">Click map to analyze nearest building</div>
-        </div>
-      </div>
-
-      <div class="section" id="points-visibility-section">
-        <div class="section-title" id="points-visibility-section-title">Layers</div>
-        <div class="layers-control" id="points-visibility-layers-control">
-          <button id="layers-btn" class="layers-btn" type="button" aria-expanded="false" aria-controls="layers-popup">
-            <span class="layers-btn-text">
-              <span class="layers-btn-title">Layer controls</span>
-              <span class="layers-btn-meta" id="layers-btn-meta">2 of 6 enabled</span>
-            </span>
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path fill="currentColor" d="M2 4l4 4 4-4"/></svg>
+          <button id="info-btn" class="info-btn" title="About this map" aria-label="About this map">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="12" cy="5" r="2.5"></circle>
+              <rect x="9.5" y="10" width="5" height="12" rx="1"></rect>
+            </svg>
           </button>
-          <div id="layers-popup" class="layers-popup" role="dialog" aria-label="Layer controls">
-            <div class="layers-popup-header">
-              <strong>Map Layers</strong>
-              <div class="layers-popup-actions">
-                <button type="button" id="layers-select-all" class="layers-action-btn">Select all</button>
-                <button type="button" id="layers-deselect-all" class="layers-action-btn">Deselect all</button>
-              </div>
-            </div>
-            <div class="detail-point-toggles layers-grid" id="urban95-point-toggles">
-              <label class="toggle toggle-with-icon">
-                <input type="checkbox" id="show-urban-nature-toggle" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-icon" aria-hidden="true"><img src="./icons/park-alt1.svg" alt="" /></span>
-                <span class="toggle-label">Urban nature</span>
-              </label>
-              <label class="toggle toggle-with-icon">
-                <input type="checkbox" id="show-trees-toggle" checked />
-                <span class="toggle-slider"></span>
-                <span class="toggle-icon" aria-hidden="true"><img src="./icons/park-alt1.svg" alt="" /></span>
-                <span class="toggle-label">Trees</span>
-              </label>
-              <label class="toggle toggle-with-icon">
-                <input type="checkbox" id="show-lights-toggle" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-icon" aria-hidden="true"><img src="./icons/lighthouse.svg" alt="" /></span>
-                <span class="toggle-label">Lights</span>
-              </label>
-              <label class="toggle toggle-with-icon" id="school-points-toggle-wrap">
-                <input type="checkbox" id="show-schools-toggle" checked />
-                <span class="toggle-slider"></span>
-                <span class="toggle-icon" aria-hidden="true"><img src="./icons/town-hall.svg" alt="" /></span>
-                <span class="toggle-label">Schools</span>
-              </label>
-              <label class="toggle">
-                <input type="checkbox" id="show-heatmap-toggle" checked />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Heatmap</span>
-              </label>
-              <label class="toggle">
-                <input type="checkbox" id="show-kids-population-toggle" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Pop. Kids</span>
-              </label>
-              <label class="toggle">
-                <input type="checkbox" id="show-socioeconomic-toggle" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">SES Clusters</span>
-              </label>
-              <label class="toggle">
-                <input type="checkbox" id="show-roads-toggle" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Roads</span>
-              </label>
-              <label class="toggle" id="amenity-points-toggle-wrap">
-                <input type="checkbox" id="show-amenity-points-toggle" checked />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Amenities</span>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div class="radius-toggle basemap-toggle" id="basemap-toggle" role="radiogroup" aria-label="Basemap">
-          <button type="button" class="radius-opt active" data-basemap="street">Map</button>
-          <button type="button" class="radius-opt" data-basemap="satellite">Satellite</button>
-        </div>
+        </header>
+        <div id="control-sidebar-body" class="control-sidebar-body"></div>
+        <footer id="control-legend" class="control-sidebar-legend"></footer>
       </div>
-
-      <div class="section">
-        <div class="section-title">Building score</div>
-        <div class="metric-options segmented-options" id="score-model-toggle" role="radiogroup" aria-label="Building score">
-          <label class="radio-option">
-            <input type="radio" name="score-model" value="weighted" checked />
-            <span>Urban95</span>
-          </label>
-          <label class="radio-option">
-            <input type="radio" name="score-model" value="expanded" />
-            <span>Amenities Focus</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="section legend-section">
-        <div class="section-title">Accessibility (0-100)</div>
-        <div class="legend-gradient"></div>
-        <div id="legend-labels" class="legend-labels">
-          <span>0</span>
-          <span>25</span>
-          <span>50</span>
-          <span>75</span>
-          <span>100</span>
-        </div>
-      </div>
-    </div>
+    </aside>
 
     <div id="radius-info"></div>
 
@@ -282,7 +140,6 @@
     <div id="tooltip"></div>
 
     <div id="filter-backdrop" class="filter-backdrop"></div>
-    <div id="layers-backdrop" class="layers-backdrop"></div>
 
     <div id="citywide-modal" class="modal">
       <div class="modal-content citywide-content">
@@ -361,8 +218,8 @@
               <li>
                 <strong>Walking time &amp; filter</strong>
                 <p>
-                  Choose <em>5</em>, <em>10</em>, or <em>15</em> minutes in <em>Amenities Focus</em>.  
-                  In <em>Urban95</em>, walking-time and amenity filtering controls are hidden because Urban95 uses a fixed methodology that is not driven directly by those UI controls.
+                  Choose <em>5</em>, <em>10</em>, or <em>15</em> minutes in <em>Amenities Focus</em>.
+                  In <em>Urban95</em>, walking-time and amenity filtering controls are hidden because Urban95 uses a fixed methodology.
                 </p>
               </li>
               <li>
@@ -433,14 +290,24 @@
     <script src="./js/core/appState.js"></script>
     <script src="./js/scoring/scoreModel.js"></script>
     <script src="./js/scoring/scoreContext.js"></script>
+    <script src="./js/scoring/weightedIndicatorIcons.js"></script>
     <script src="./js/scoring/scoreExplain.js"></script>
     <script src="./js/ui/scoreSidebarChrome.js"></script>
     <script src="./js/ui/sidebarChromeBindings.js"></script>
     <script src="./js/ui/amenityMode.js"></script>
     <script src="./js/ui/controlActions.js"></script>
+    <script src="./js/ui/controlSidebarMarkup.js"></script>
+    <script src="./js/ui/weightedMetricShowRegistry.js"></script>
+    <script src="./js/ui/controlSidebarShow.js"></script>
+    <script src="./js/ui/controlSidebarFilters.js"></script>
+    <script src="./js/ui/controlSidebarIndicators.js"></script>
+    <script src="./js/ui/controlSidebarSections.js"></script>
+    <script src="./js/ui/controlSidebarAdapter.js"></script>
     <script src="./js/map/mapLayers.js"></script>
     <script src="./js/map/mapShell.js"></script>
     <script src="./js/map/neighborhoodScores.js"></script>
+    <script src="./js/map/renderState.js"></script>
+    <script src="./js/ui/overlayVisibility.js"></script>
     <script src="./js/map/iconLoader.js"></script>
     <script src="./js/map/mapRenderers.js"></script>
     <script src="./js/map/selection.js"></script>

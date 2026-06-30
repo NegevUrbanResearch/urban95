@@ -27,12 +27,8 @@
     getAmenityConfig: "function",
     getNeighborhoodPercentileKey: "function",
     getNeighborhoodSurfaceScorePropertyKey: "function",
-    getSelectedWeightedCategoryLabel: "function",
-    getSelectedWeightedCategoryStem: "function",
-    getWeightedAverageValueFromSource: "function",
-    getCitywideWeightedAverageScore: "function",
+    getActiveMetric: "function",
     weightedCategoryHighlightsFromSource: "function",
-    weightedNeighborhoodRankingRows: "function",
     weightedSubcategoryComparisonRows: "function",
     renderWeightedSubcategoryComparisonList: "function",
     buildHistogramDistributionFromScores: "function",
@@ -88,6 +84,28 @@
       throw new Error("Urban95Dashboards.configure must be called before dashboard functions");
     }
     return deps;
+  }
+
+  function getRenderStateHelper(name) {
+    var d = requireDeps();
+    if (typeof d[name] !== "function") {
+      throw new Error("Urban95Dashboards requires " + name);
+    }
+    return d[name];
+  }
+
+  function getWeightedMetricInfo() {
+    var d = requireDeps();
+    var metric = d.getActiveMetric();
+    if (!metric || d.getScoreMode() !== "weighted") return null;
+    return {
+      metric: metric,
+      label: metric.kind === "weighted-overall" ? "Urban95" : metric.label || "Urban95",
+      isOverall: metric.kind === "weighted-overall",
+      selectedStem: metric.selectedWeightedStem || null,
+      selectedSubStem: metric.selectedWeightedSubStem || null,
+      neighborhoodAverageKey: metric.neighborhoodAverageKey || null,
+    };
   }
 
   function getState(key) {
@@ -296,7 +314,8 @@
     var subtitleEl = d.citywideSubtitle;
     if (!titleEl || !subtitleEl) return;
     if (d.getScoreMode() === "weighted") {
-      var label = d.getSelectedWeightedCategoryLabel();
+      var weightedInfo = getWeightedMetricInfo();
+      var label = weightedInfo ? weightedInfo.label : "Urban95";
       titleEl.textContent = "Beer Sheva \u2013 City Overview for " + label + " Score";
       subtitleEl.textContent =
         label === "Urban95"
@@ -324,12 +343,29 @@
     var html = "";
 
     if (isWeighted) {
-      var selectedCategoryLabel = d.getSelectedWeightedCategoryLabel();
-      var selectedStem = d.getSelectedWeightedCategoryStem();
+      var weightedInfo = getWeightedMetricInfo();
+      var activeMetric = weightedInfo ? weightedInfo.metric : null;
+      var selectedCategoryLabel = weightedInfo ? weightedInfo.label : "Urban95";
+      var hasNeighborhoodAverageData = getRenderStateHelper("hasWeightedNeighborhoodMetricData")(
+        activeMetric,
+        stats,
+        stats && stats.neighborhood_ranking_weighted
+      );
+      var cityAverageScore = getRenderStateHelper("getWeightedNeighborhoodMetricValue")(
+        stats,
+        sfx,
+        activeMetric
+      );
+      var selectedStem = weightedInfo ? weightedInfo.selectedStem : null;
       var highlights = d.weightedCategoryHighlightsFromSource(stats, sfx);
       html += '<div class="cw-summary">';
       html += '<div class="cw-stat-card"><div class="cw-stat-value">' + (stats.total_buildings || 0).toLocaleString() + '</div><div class="cw-stat-label">Buildings</div></div>';
-      html += '<div class="cw-stat-card"><div class="cw-stat-value">' + d.formatMetricNumber(d.getCitywideWeightedAverageScore(stats, sfx)) + '</div><div class="cw-stat-label">City average (' + selectedCategoryLabel + ')</div></div>';
+      html +=
+        '<div class="cw-stat-card"><div class="cw-stat-value">' +
+        (Number.isFinite(cityAverageScore) ? d.formatMetricNumber(cityAverageScore) : "Unavailable") +
+        '</div><div class="cw-stat-label">City average (' +
+        selectedCategoryLabel +
+        ')</div></div>';
       html += "</div>";
 
       if (!selectedStem) {
@@ -354,7 +390,11 @@
 
       html += '<div class="cw-section">';
       html += '<div class="cw-section-title">Average ' + selectedCategoryLabel + " score by neighborhood</div>";
-      html += '<div class="cw-chart-container" style="height:420px"><canvas id="cw-neighborhood-score-bar"></canvas></div>';
+      if (hasNeighborhoodAverageData) {
+        html += '<div class="cw-chart-container" style="height:420px"><canvas id="cw-neighborhood-score-bar"></canvas></div>';
+      } else {
+        html += '<p style="font-size:12px;color:#64748b;margin:0">Neighborhood averages for this Urban95 subcategory are unavailable in the current data export.</p>';
+      }
       html += "</div>";
     } else {
       var amenityTotal =
@@ -468,18 +508,22 @@
 
     var histCanvas = d.citywideBody.querySelector("#cw-score-hist");
     if (histCanvas) {
-      var selectedWeightedStem = d.getScoreMode() === "weighted" ? d.getSelectedWeightedCategoryStem() : null;
-      var dist = null;
-      if (d.getScoreMode() === "weighted" && !selectedWeightedStem && citywideStats["distribution_weighted" + sfx]) {
-        dist = citywideStats["distribution_weighted" + sfx];
-      } else if (d.getScoreMode() === "expanded" && citywideStats["distribution_expanded" + sfx]) {
-        dist = citywideStats["distribution_expanded" + sfx];
-      } else {
-        dist = citywideStats["distribution" + sfx];
-      }
-      if (d.getScoreMode() === "weighted" && selectedWeightedStem) {
-        dist = d.buildHistogramDistributionFromScores(d.collectBuildingScores(), 10);
-      }
+      var weightedInfo = d.getScoreMode() === "weighted" ? getWeightedMetricInfo() : null;
+        var dist = null;
+        if (d.getScoreMode() === "weighted") {
+          dist = getRenderStateHelper("getWeightedHistogramDistribution")(
+            citywideStats,
+            sfx,
+            weightedInfo ? weightedInfo.metric : null,
+            function () {
+              return d.buildHistogramDistributionFromScores(d.collectBuildingScores(), 10);
+            }
+          );
+        } else if (d.getScoreMode() === "expanded" && citywideStats["distribution_expanded" + sfx]) {
+          dist = citywideStats["distribution_expanded" + sfx];
+        } else {
+          dist = citywideStats["distribution" + sfx];
+        }
       if (dist) {
         var buildingScores = d.collectBuildingScores();
         var breakpoints =
@@ -519,10 +563,28 @@
     if (d.getScoreMode() === "weighted") {
       var neighborhoodCanvas = d.citywideBody.querySelector("#cw-neighborhood-score-bar");
       if (neighborhoodCanvas) {
-        var ranking = d.weightedNeighborhoodRankingRows(citywideStats, sfx);
-        var selectedStem = d.getSelectedWeightedCategoryStem();
-        var selectedCategoryLabel = d.getSelectedWeightedCategoryLabel();
-        var scoreKey = selectedStem ? "avg_score_weighted_" + selectedStem + sfx : "avg_score_weighted" + sfx;
+        var activeMetricInfo = getWeightedMetricInfo();
+        if (
+          !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(
+            activeMetricInfo ? activeMetricInfo.metric : null,
+            citywideStats,
+            citywideStats && citywideStats.neighborhood_ranking_weighted
+          )
+        ) {
+          d.setCitywideCharts(citywideCharts);
+          return;
+        }
+        var ranking = d.scoreModel.weightedNeighborhoodRankingRows(
+          citywideStats,
+          sfx,
+          activeMetricInfo ? activeMetricInfo.metric : null
+        );
+        var selectedCategoryLabel = activeMetricInfo ? activeMetricInfo.label : "Urban95";
+        var scoreKey = activeMetricInfo ? activeMetricInfo.neighborhoodAverageKey : null;
+        if (!scoreKey) {
+          d.setCitywideCharts(citywideCharts);
+          return;
+        }
         citywideCharts.push(
           new Chart(neighborhoodCanvas, {
             type: "bar",

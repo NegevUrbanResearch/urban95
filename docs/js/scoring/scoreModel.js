@@ -94,6 +94,142 @@
     return acc;
   }, {});
 
+  var URBAN95_REGISTRY_MINUTES = 10;
+  var weightedMetricRegistryCache = null;
+
+  function normalizeSurfaceFilterKey(value) {
+    return (
+      String(value || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^0-9a-z]+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "") || "other"
+    );
+  }
+
+  function weightedRegistrySuffix() {
+    return "_" + URBAN95_REGISTRY_MINUTES + "min";
+  }
+
+  function buildWeightedMetricRegistry() {
+    if (weightedMetricRegistryCache) return weightedMetricRegistryCache;
+
+    var sfx = weightedRegistrySuffix();
+    var registry = {
+      "u95.overall": {
+        id: "u95.overall",
+        kind: "weighted-overall",
+        label: "All",
+        scale: "weighted",
+        selectedWeightedStem: null,
+        selectedWeightedSubStem: null,
+        buildingPropertyKey: "score_weighted" + sfx,
+        surfacePropertyKey: "score_weighted",
+        neighborhoodAverageKey: "avg_score_weighted" + sfx,
+      },
+    };
+
+    WEIGHTED_CATEGORY_COMPONENTS.forEach(function (category) {
+      var categoryId = "u95.cat." + category.stem;
+      registry[categoryId] = {
+        id: categoryId,
+        kind: "weighted-category",
+        label: category.label,
+        scale: "weighted",
+        selectedWeightedStem: category.stem,
+        selectedWeightedSubStem: null,
+        buildingPropertyKey: "score_weighted_" + category.stem + sfx,
+        surfacePropertyKey: "score_weighted_" + category.stem,
+        neighborhoodAverageKey: "avg_score_weighted_" + category.stem + sfx,
+      };
+
+      (WEIGHTED_SUBCATEGORY_COMPONENTS[category.stem] || []).forEach(function (sub) {
+        var subId = "u95.sub." + category.stem + "." + sub.stem;
+        registry[subId] = {
+          id: subId,
+          kind: "weighted-subcategory",
+          label: sub.label,
+          scale: "weighted",
+          selectedWeightedStem: category.stem,
+          selectedWeightedSubStem: sub.stem,
+          buildingPropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
+          surfacePropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem,
+          neighborhoodAverageKey: "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
+        };
+      });
+    });
+
+    weightedMetricRegistryCache = registry;
+    return registry;
+  }
+
+  function getWeightedMetric(metricId) {
+    var registry = buildWeightedMetricRegistry();
+    return registry[metricId] || null;
+  }
+
+  function resolveExpandedMetric(selectedAmenityTypes, walkMinutes) {
+    var minutes = Number(walkMinutes) || 5;
+    var suffix = "_" + minutes + "min";
+    var selected = Array.isArray(selectedAmenityTypes)
+      ? selectedAmenityTypes.slice()
+      : Array.from(selectedAmenityTypes || []);
+
+    if (selected.length === 1) {
+      var onlyType = selected[0];
+      var scenarioType = onlyType === "health" ? "healthcare" : onlyType;
+      var filterStem = normalizeSurfaceFilterKey(scenarioType);
+      return {
+        kind: "expanded-filter",
+        label: onlyType,
+        scale: "percentile",
+        buildingPropertyKey: null,
+        surfacePropertyKey: "score_filter_" + filterStem + suffix,
+        neighborhoodAverageKey: null,
+        selectedWeightedStem: null,
+        selectedWeightedSubStem: null,
+      };
+    }
+
+    return {
+      kind: "expanded-overall",
+      label: "Amenities Focus",
+      scale: "percentile",
+      buildingPropertyKey: null,
+      surfacePropertyKey: "score_expanded" + suffix,
+      neighborhoodAverageKey: null,
+      selectedWeightedStem: null,
+      selectedWeightedSubStem: null,
+    };
+  }
+
+  function resolveActiveMetric(options) {
+    var config = options || {};
+    var scoreMode = config.scoreMode;
+    var activeHeatmapId = config.activeHeatmapId;
+    var selectedAmenityTypes = config.selectedAmenityTypes || [];
+    var walkMinutes = config.walkMinutes;
+    var weightedRegistry = buildWeightedMetricRegistry();
+
+    if (scoreMode === "weighted") {
+      return weightedRegistry[activeHeatmapId] || weightedRegistry["u95.overall"];
+    }
+
+    return resolveExpandedMetric(selectedAmenityTypes, walkMinutes);
+  }
+
+  function resolveWeightedMetric(options) {
+    return resolveActiveMetric(
+      Object.assign(
+        {
+          scoreMode: "weighted",
+        },
+        options || {}
+      )
+    );
+  }
+
   function toArray(types) {
     if (!types) return [];
     if (Array.isArray(types)) return types.slice();
@@ -321,32 +457,32 @@
     var config = options || {};
     var fixedMinutes = Number(config.fixedMinutes) || 10;
     var suffix = "_" + (scoreMode === "weighted" ? fixedMinutes : minutes) + "min";
+    var p = props || {};
+
+    if (scoreMode === "weighted") {
+      var metric =
+        config.activeMetric && config.activeMetric.kind && config.activeMetric.kind.indexOf("weighted") === 0
+          ? config.activeMetric
+          : resolveWeightedMetric({
+              activeHeatmapId: config.activeHeatmapId,
+            });
+      if (metric && metric.buildingPropertyKey) {
+        var metricValue = p[metric.buildingPropertyKey];
+        if (metricValue !== undefined && metricValue !== null && metricValue !== "") {
+          return Number(metricValue) || 0;
+        }
+      }
+      var weighted = p["score_weighted" + suffix];
+      if (weighted !== undefined && weighted !== null && weighted !== "") return Number(weighted) || 0;
+      return Number(p.score_weighted) || 0;
+    }
+
     var currentMode = config.currentMode;
     var selectedTypes = toArray(config.selectedAmenityTypes);
     var allTypes = toArray(config.allFilterTypes);
     var filteringLockedToAll = scoreMode !== "weighted" && currentMode && currentMode !== "house";
     var useAll = filteringLockedToAll || selectedTypes.length === 0 || (allTypes.length > 0 && selectedTypes.length === allTypes.length);
     var activeTypes = filteringLockedToAll ? allTypes : (useAll && allTypes.length > 0 ? allTypes : selectedTypes);
-    var p = props || {};
-
-    if (scoreMode === "weighted") {
-      if (!useAll && activeTypes.length > 0) {
-        var weightedTotal = 0;
-        var selectedWeight = 0;
-        activeTypes.forEach(function (stem) {
-          var component = WEIGHTED_CATEGORY_BY_STEM[stem];
-          if (!component) return;
-          var categoryScore = Number(p["score_weighted_" + stem + suffix]);
-          if (!Number.isFinite(categoryScore)) return;
-          weightedTotal += categoryScore * component.weight;
-          selectedWeight += component.weight;
-        });
-        if (selectedWeight > 0) return weightedTotal / selectedWeight;
-      }
-      var weighted = p["score_weighted" + suffix];
-      if (weighted !== undefined && weighted !== null && weighted !== "") return Number(weighted) || 0;
-      return Number(p.score_weighted) || 0;
-    }
 
     if (scoreMode === "clean") {
       return getBuildingCleanFilteredScore(p, minutes, selectedTypes, allTypes, currentMode);
@@ -453,18 +589,33 @@
         var nKey = "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + suffix;
         var cKey = "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + suffix;
         rows.push({
+          metricId: "u95.sub." + category.stem + "." + sub.stem,
+          categoryStem: category.stem,
+          subStem: sub.stem,
           label: category.label + " · " + sub.label,
           neighborhood: Number((neighborhoodProps && neighborhoodProps[nKey]) || 0),
           city: Number((cityStats && cityStats[cKey]) || 0),
+          hasData:
+            !!(neighborhoodProps && Object.prototype.hasOwnProperty.call(neighborhoodProps, nKey)) &&
+            !!(cityStats && Object.prototype.hasOwnProperty.call(cityStats, cKey)),
         });
       });
     });
     return rows;
   }
 
-  function weightedNeighborhoodRankingRows(stats, suffix, selectedStem) {
+  function weightedNeighborhoodRankingRows(stats, suffix, metricOrScoreKey) {
     var rows = ((stats && stats.neighborhood_ranking_weighted) || []).slice();
-    var scoreKey = selectedStem ? "avg_score_weighted_" + selectedStem + suffix : "avg_score_weighted" + suffix;
+    void suffix;
+    var scoreKey =
+      typeof metricOrScoreKey === "string"
+        ? metricOrScoreKey
+        : metricOrScoreKey && metricOrScoreKey.neighborhoodAverageKey
+          ? metricOrScoreKey.neighborhoodAverageKey
+          : null;
+    if (!scoreKey) {
+      return [];
+    }
     rows.sort(function (a, b) {
       return (Number(b[scoreKey]) || 0) - (Number(a[scoreKey]) || 0);
     });
@@ -472,10 +623,17 @@
   }
 
   function getCitywideWeightedAverageScore(stats, suffix, options) {
-    if (!stats) return 0;
+    stats = stats || {};
     var config = options || {};
-    var selectedStem = config.selectedStem;
-    var directKey = selectedStem ? "avg_score_weighted_" + selectedStem + suffix : "avg_score_weighted" + suffix;
+    var metric =
+      config.activeMetric && config.activeMetric.kind && config.activeMetric.kind.indexOf("weighted") === 0
+        ? config.activeMetric
+        : resolveWeightedMetric({
+            activeHeatmapId: config.activeHeatmapId,
+          });
+    var directKey = metric && metric.neighborhoodAverageKey
+      ? metric.neighborhoodAverageKey
+      : "avg_score_weighted" + suffix;
     var direct = Number(stats[directKey]);
     if (Number.isFinite(direct) && direct > 0) return direct;
 
@@ -505,9 +663,8 @@
           "weighted",
           {
             fixedMinutes: config.fixedMinutes,
-            selectedAmenityTypes: selectedStem ? [selectedStem] : config.selectedAmenityTypes,
-            allFilterTypes: config.allFilterTypes,
-            currentMode: "house",
+            activeMetric: metric,
+            activeHeatmapId: config.activeHeatmapId,
           }
         );
       }).filter(function (value) {
@@ -592,5 +749,10 @@
     getPercentileSeriesCacheKey: getPercentileSeriesCacheKey,
     percentileForSeries: percentileForSeries,
     getBuildingAmenityStatKeysForMinutes: getBuildingAmenityStatKeysForMinutes,
+    normalizeSurfaceFilterKey: normalizeSurfaceFilterKey,
+    buildWeightedMetricRegistry: buildWeightedMetricRegistry,
+    getWeightedMetric: getWeightedMetric,
+    resolveExpandedMetric: resolveExpandedMetric,
+    resolveActiveMetric: resolveActiveMetric,
   };
 })();

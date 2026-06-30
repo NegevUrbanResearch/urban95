@@ -21,10 +21,17 @@
     return result;
   }
 
+  function copyLayerVisibility(value) {
+    return value && typeof value === "object" ? Object.assign({}, value) : {};
+  }
+
   function create() {
     var walkMinutes = 5;
     var scoreMode = "weighted";
     var selectedAmenityTypes = new Set();
+    var weightedShownAmenityTypes = new Set();
+    var layerVisibility = {};
+    var activeHeatmapId = "u95.overall";
     var lastFilterRadioSelection = "all";
     var allFilterTypes = [];
     var amenitiesInRadiusIds = new Set();
@@ -38,8 +45,15 @@
       getScoreMode: function () { return scoreMode; },
       setScoreMode: function (value) { scoreMode = value; },
 
+      getLayerVisibility: function () { return copyLayerVisibility(layerVisibility); },
+      setLayerVisibility: function (value) { layerVisibility = copyLayerVisibility(value); },
+      getActiveHeatmapId: function () { return activeHeatmapId; },
+      setActiveHeatmapId: function (value) { activeHeatmapId = value || "u95.overall"; },
+
       getSelectedAmenityTypes: function () { return new Set(selectedAmenityTypes); },
       setSelectedAmenityTypes: function (value) { selectedAmenityTypes = copySet(value); },
+      getWeightedShownAmenityTypes: function () { return new Set(weightedShownAmenityTypes); },
+      setWeightedShownAmenityTypes: function (value) { weightedShownAmenityTypes = copySet(value); },
       getLastFilterRadioSelection: function () { return lastFilterRadioSelection; },
       setLastFilterRadioSelection: function (value) { lastFilterRadioSelection = value || "all"; },
       getAllFilterTypes: function () { return allFilterTypes.slice(); },

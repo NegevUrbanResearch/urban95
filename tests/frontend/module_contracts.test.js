@@ -83,6 +83,20 @@ function loadNeighborhoodSidebarModules(browser) {
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
 }
 
+function loadRenderState(browser) {
+  if (!browser.window.Urban95RenderState) {
+    runBrowserScript("docs/js/map/renderState.js", browser);
+  }
+  return browser.window.Urban95RenderState;
+}
+
+function loadShowRegistry(browser) {
+  if (!browser.window.Urban95WeightedMetricShowRegistry) {
+    runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
+  }
+  return browser.window.Urban95WeightedMetricShowRegistry;
+}
+
 function runPerfPanel(browserOverrides) {
   const browser = createBrowserContext(browserOverrides || {});
   runBrowserScript("docs/js/core/perfPanel.js", browser);
@@ -100,6 +114,7 @@ function loadAppCoordinatorNamespaces(browser) {
 function runAppScript(browser) {
   loadAppCoordinatorNamespaces(browser);
   runBrowserScript("docs/js/scoring/scoreContext.js", browser);
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
   loadNeighborhoodSidebarModules(browser);
@@ -107,9 +122,12 @@ function runAppScript(browser) {
   runBrowserScript("docs/js/ui/controlActions.js", browser);
   runBrowserScript("docs/js/map/mapShell.js", browser);
   runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
+  runBrowserScript("docs/js/map/renderState.js", browser);
   runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
+  runBrowserScript("docs/js/ui/overlayVisibility.js", browser);
+  runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
   runBrowserScript("docs/js/core/appDependencies.js", browser);
   return runBrowserScript("docs/app.js", browser);
 }
@@ -149,13 +167,18 @@ test("index loads core frontend modules before app.js", () => {
   assert.notEqual(mapLibreIndex, -1);
   assert.ok(desktopOnlyGateIndex < mapLibreIndex);
   const scoreContextIndex = requireScriptIndex(scripts, "./js/scoring/scoreContext.js");
+  const weightedIndicatorIconsIndex = requireScriptIndex(
+    scripts,
+    "./js/scoring/weightedIndicatorIcons.js"
+  );
   const scoreExplainIndex = requireScriptIndex(scripts, "./js/scoring/scoreExplain.js");
   const scoreSidebarChromeIndex = requireScriptIndex(scripts, "./js/ui/scoreSidebarChrome.js");
   const scoreSidebarIndex = requireScriptIndex(scripts, "./js/ui/scoreSidebar.js");
   const mapLayersIndex = requireScriptIndex(scripts, "./js/map/mapLayers.js");
   const mapShellIndex = requireScriptIndex(scripts, "./js/map/mapShell.js");
   assert.ok(requireScriptIndex(scripts, "./js/scoring/scoreModel.js") < scoreContextIndex);
-  assert.ok(scoreContextIndex < scoreExplainIndex);
+  assert.ok(scoreContextIndex < weightedIndicatorIconsIndex);
+  assert.ok(weightedIndicatorIconsIndex < scoreExplainIndex);
   assert.ok(scoreExplainIndex < scoreSidebarIndex);
   assert.ok(scoreSidebarChromeIndex < scoreSidebarIndex);
   assert.ok(scoreSidebarChromeIndex < mapLayersIndex);
@@ -170,6 +193,11 @@ test("index loads core frontend modules before app.js", () => {
   assert.ok(requireScriptIndex(scripts, "./js/map/selection.js") < appIndex);
   const amenityModeIndex = requireScriptIndex(scripts, "./js/ui/amenityMode.js");
   const controlActionsIndex = requireScriptIndex(scripts, "./js/ui/controlActions.js");
+  const weightedMetricShowRegistryIndex = requireScriptIndex(
+    scripts,
+    "./js/ui/weightedMetricShowRegistry.js"
+  );
+  const controlSidebarShowIndex = requireScriptIndex(scripts, "./js/ui/controlSidebarShow.js");
   const controlsIndex = requireScriptIndex(scripts, "./js/ui/controls.js");
   assert.ok(scoreSidebarChromeIndex < amenityModeIndex);
   assert.ok(amenityModeIndex < mapLayersIndex);
@@ -177,6 +205,7 @@ test("index loads core frontend modules before app.js", () => {
   assert.ok(mapShellIndex < appIndex);
   assert.ok(amenityModeIndex < controlsIndex);
   assert.ok(controlActionsIndex < controlsIndex);
+  assert.ok(weightedMetricShowRegistryIndex < controlSidebarShowIndex);
   assert.ok(controlActionsIndex < appIndex);
   assert.ok(controlsIndex < appIndex);
   assert.ok(scoreSidebarIndex < appIndex);
@@ -504,6 +533,7 @@ test("core modules expose stable Urban95 namespaces", () => {
   runBrowserScript("docs/js/ui/dashboards.js", browser);
   runBrowserScript("docs/js/core/loadingUi.js", browser);
   runBrowserScript("docs/js/core/appStartupBridge.js", browser);
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
   loadNeighborhoodSidebarModules(browser);
@@ -553,7 +583,6 @@ test("core modules expose stable Urban95 namespaces", () => {
     "scheduleDeckUpdate",
     "initDeckAmenityOverlay",
     "updateBuildingColors",
-    "updateAccessibilityLegendLabels",
     "updateNeighborhoodSurfaceData",
     "updateNeighborhoodColors",
   ].forEach(function (memberName) {
@@ -659,7 +688,7 @@ test("amenity mode owns clean-vs-legacy selection and refresh order", async () =
     ui: {
       buildFilterItems: function () { calls.push("buildFilterItems"); },
       syncFilterUiForScoreMode: function () { calls.push("syncFilter"); },
-      updateShowPointsToggleLabel: function () { calls.push("toggleLabel"); },
+      syncOverlayVisibility: function () { calls.push("toggleLabel"); },
     },
     pointDataLoader: {
       ensureExpandedPointDataLoaded: function () { calls.push("ensureExpanded"); return Promise.resolve(); },
@@ -738,7 +767,7 @@ test("amenity mode falls back to clean data and warns when expanded legacy ameni
     ui: {
       buildFilterItems: function () { calls.push("buildFilterItems"); },
       syncFilterUiForScoreMode: function () { calls.push("syncFilter"); },
-      updateShowPointsToggleLabel: function () { calls.push("toggleLabel"); },
+      syncOverlayVisibility: function () { calls.push("toggleLabel"); },
     },
     pointDataLoader: {
       ensureExpandedPointDataLoaded: function () { calls.push("ensureExpanded"); return Promise.resolve(); },
@@ -807,7 +836,7 @@ test("amenity mode selected-building apply lets selection own radius-derived poi
     ui: {
       buildFilterItems: () => calls.push("buildFilterItems"),
       syncFilterUiForScoreMode: () => calls.push("syncFilterUiForScoreMode"),
-      updateShowPointsToggleLabel: () => calls.push("updateShowPointsToggleLabel"),
+      syncOverlayVisibility: () => calls.push("syncOverlayVisibility"),
     },
     pointDataLoader: {
       ensureExpandedPointDataLoaded: () => Promise.resolve({ upgradedKinds: ["trees", "street-lights"] }),
@@ -870,7 +899,7 @@ test("amenity mode no-selection apply reports fallback refresh result", async ()
     ui: {
       buildFilterItems: () => calls.push("buildFilterItems"),
       syncFilterUiForScoreMode: () => calls.push("syncFilterUiForScoreMode"),
-      updateShowPointsToggleLabel: () => calls.push("updateShowPointsToggleLabel"),
+      syncOverlayVisibility: () => calls.push("syncOverlayVisibility"),
     },
     pointDataLoader: {
       ensureExpandedPointDataLoaded: () => Promise.resolve({ upgradedKinds: [] }),
@@ -899,7 +928,7 @@ test("amenity mode no-selection apply reports fallback refresh result", async ()
   assert.equal(calls.filter((item) => Array.isArray(item) && item[0] === "selectBuilding").length, 0);
 });
 
-test("control actions own score-mode, filter, walk-minute, escape, and heatmap reactions", async () => {
+test("control actions own score-mode, filter, walk-minute, and escape reactions", async () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/ui/controlActions.js", browser);
 
@@ -940,6 +969,13 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
       getCurrentMode: function () {
         return state.currentMode;
       },
+      getScoreMode: function () {
+        return state.scoreMode;
+      },
+      getActiveHeatmapId: function () {
+        return "u95.overall";
+      },
+      setActiveHeatmapId: function () {},
       getSelectedBuilding: function () {
         return state.selectedBuilding;
       },
@@ -1080,7 +1116,6 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
   await actions.onScoreModeChanged("weighted");
   actions.onWalkMinutesChanged();
   await actions.onModeToggleRequested("citywide");
-  actions.onHeatmapVisibilityChanged(false);
   state.currentMode = "citywide";
   actions.onEscape({ stopPropagation: function () { calls.push("stopPropagation"); } });
 
@@ -1124,8 +1159,6 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
     "session:analysis mode -> citywide",
     "phase:modeToggle:click",
     "switch:citywide",
-    "getLayer:neighborhoods-surface",
-    "heatmap none",
     "scoreSidebarOpen",
     "hideCitywide",
     "switch:house",
@@ -1138,7 +1171,6 @@ test("control actions own score-mode, filter, walk-minute, escape, and heatmap r
   assert.ok(calls.includes("amenityApply"));
   assert.ok(calls.includes("radiusInfo"));
   assert.ok(calls.includes("switch:citywide"));
-  assert.ok(calls.includes("heatmap none"));
   assert.ok(calls.includes("isoDeferred"));
   assert.ok(!calls.includes("mark:isochrones"));
 });
@@ -1158,6 +1190,9 @@ test("control actions skip direct radius sync when amenity mode reselected the b
     },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => ({ lng: 1, lat: 2 }),
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -1222,6 +1257,9 @@ test("control actions selected-building cold expanded switch keeps isochrones ba
     },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => ({ lng: 1, lat: 2, properties: { building_id: 55 } }),
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -1297,6 +1335,9 @@ test("control actions keep direct radius sync when amenity mode did not refresh 
     },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => ({ lng: 1, lat: 2 }),
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -1365,6 +1406,9 @@ test("control actions do not direct-sync stale rapid toggles when amenity mode r
     },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => ({ lng: 1, lat: 2 }),
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -1441,6 +1485,9 @@ test("control actions no-selection score-mode path keeps sidebar closed and skip
     },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => null,
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -1516,6 +1563,9 @@ test("filter changes with selected building recompute selection before point-sou
     perf: { session: () => {}, phase: (_name, callback) => callback() },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => selectedBuilding,
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -1579,6 +1629,9 @@ test("filter changes refresh point sources when selected-building recompute is u
     perf: { session: () => {}, phase: (_name, callback) => callback() },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => selectedBuilding,
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -1657,11 +1710,13 @@ test("walk-minute selected building recompute precedes global recolor", () => {
     },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => selectedBuilding,
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
       getIsochronesLoaded: () => true,
-      getScoreMode: () => "expanded",
       getWalkMinutes: () => 10,
       setIsochronesDeferred: () => {},
     },
@@ -1744,6 +1799,11 @@ test("app dependency validation is exposed through one namespace without leaking
   assert.match(dependenciesSource, /^\(function \(\) \{/m);
   assert.match(dependenciesSource, /window\.Urban95AppDependencies\s*=\s*\{/);
   assert.match(appSource, /}\s*=\s*window\.Urban95AppDependencies;/);
+  assert.match(dependenciesSource, /Urban95RenderState:\s*Urban95RenderState/);
+  assert.match(dependenciesSource, /Urban95OverlayVisibility:\s*Urban95OverlayVisibility/);
+  assert.match(appSource, /Urban95RenderState,/);
+  assert.match(appSource, /Urban95OverlayVisibility,/);
+  assert.doesNotMatch(appSource, /window\.Urban95RenderState/);
 
   [
     /window\.requireNamespace\s*=/,
@@ -2246,6 +2306,8 @@ test("special point render plan prefers generated vectors in weighted mode", () 
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getZoom: function () {
         return 14;
@@ -2298,6 +2360,8 @@ test("special point render plan clears weighted GeoJSON source when hidden witho
   };
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getZoom: function () {
         return 12;
@@ -2352,6 +2416,8 @@ test("special point render plan returns in-radius GeoJSON subset in expanded mod
   };
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getZoom: function () {
         return 12;
@@ -2403,6 +2469,7 @@ test("special point render plan returns in-radius GeoJSON subset in expanded mod
 test("special point render plan respects tree and light toggles in expanded mode", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
+  let treeLayerVisible = false;
 
   const data = {
     type: "FeatureCollection",
@@ -2410,6 +2477,8 @@ test("special point render plan respects tree and light toggles in expanded mode
   };
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getZoom: function () {
         return 12;
@@ -2430,6 +2499,9 @@ test("special point render plan respects tree and light toggles in expanded mode
     },
     getAllFilterTypes: function () {
       return ["trees", "street-lights"];
+    },
+    getLayerVisibility: function () {
+      return { trees: treeLayerVisible };
     },
   });
 
@@ -2497,6 +2569,8 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
   };
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -2549,18 +2623,6 @@ test("map renderers keep deck-update caller diagnostics on explicit, scheduled, 
     },
     getAllFilterTypes() {
       return ["parks", "trees", "street-lights"];
-    },
-    getShowTreesChecked() {
-      return true;
-    },
-    getShowLightsChecked() {
-      return true;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getVisibleAmenityFeatures() {
       return visibleAmenityFeatures;
@@ -2708,6 +2770,8 @@ test("map renderers updateAmenitiesSource records caller and transaction diagnos
   const counters = [];
   let visibleAmenityFeatures = [];
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -2759,12 +2823,6 @@ test("map renderers updateAmenitiesSource records caller and transaction diagnos
     setVisibleAmenityFeatures(value) {
       visibleAmenityFeatures = value;
     },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
-    },
     getDeckAmenityOverlay() {
       return null;
     },
@@ -2810,6 +2868,8 @@ test("map renderers can defer deck updates while keeping amenity source data and
   };
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -2879,12 +2939,6 @@ test("map renderers can defer deck updates while keeping amenity source data and
     setVisibleAmenityFeatures(value) {
       visibleAmenityFeatures = value;
     },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
-    },
     getDeckAmenityOverlay() {
       return {
         setProps() {
@@ -2943,6 +2997,8 @@ test("map renderers clear existing deck layers when the amenity points toggle tu
   };
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter() {},
       phase(_name, callback) {
@@ -2991,12 +3047,6 @@ test("map renderers clear existing deck layers when the amenity points toggle tu
         },
       ];
     },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return showAmenityPointsChecked;
-    },
     getDeckAmenityOverlay() {
       return overlay;
     },
@@ -3006,6 +3056,9 @@ test("map renderers clear existing deck layers when the amenity points toggle tu
     setDeckHovering() {},
     getAmenityConfig() {
       return { label: "Parks", color: "#2563eb" };
+    },
+    getLayerVisibility() {
+      return { amenities: showAmenityPointsChecked };
     },
     amenityClusterMinZoom: 13,
     amenityClusterDissolveZoom: 18,
@@ -3042,6 +3095,8 @@ test("map renderers clear existing deck layers when house render gating becomes 
   };
 
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter() {},
       phase(_name, callback) {
@@ -3089,12 +3144,6 @@ test("map renderers clear existing deck layers when house render gating becomes 
           geometry: { type: "Point", coordinates: [34.79, 31.25] },
         },
       ];
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getDeckAmenityOverlay() {
       return overlay;
@@ -3200,6 +3249,8 @@ test("map renderers reuse amenity icon atlas when exact icon key set repeats", (
 
   browser.window.deck = makeDeckLayerConstructors(layerConstructs);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -3245,12 +3296,6 @@ test("map renderers reuse amenity icon atlas when exact icon key set repeats", (
     },
     getVisibleAmenityFeatures() {
       return visibleAmenityFeatures;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getDeckAmenityOverlay() {
       return overlay;
@@ -3329,6 +3374,8 @@ test("map renderers keep cluster data fresh when reused atlas keys stay the same
 
   browser.window.deck = makeDeckLayerConstructors(layerConstructs);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter() {},
       phase(_name, callback) { return callback(); },
@@ -3350,8 +3397,6 @@ test("map renderers keep cluster data fresh when reused atlas keys stay the same
     getScoreMode() { return "expanded"; },
     getSelectedAmenityTypes() { return new Set(["parks"]); },
     getVisibleAmenityFeatures() { return visibleAmenityFeatures; },
-    getShowAmenityPointsTogglePresent() { return true; },
-    getShowAmenityPointsChecked() { return true; },
     getDeckAmenityOverlay() { return overlay; },
     getDeckHovering() { return false; },
     setDeckHovering() {},
@@ -3418,6 +3463,8 @@ test("map renderers rebuild amenity icon atlas when exact icon key set changes",
   };
   browser.window.deck = makeDeckLayerConstructors([]);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter() {},
       phase(_name, callback) {
@@ -3461,12 +3508,6 @@ test("map renderers rebuild amenity icon atlas when exact icon key set changes",
     },
     getVisibleAmenityFeatures() {
       return visibleAmenityFeatures;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getDeckAmenityOverlay() {
       return overlay;
@@ -3560,6 +3601,8 @@ test("map renderers skip duplicate scheduled deck updates when render state is u
 
   browser.window.deck = makeDeckLayerConstructors([]);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -3623,12 +3666,6 @@ test("map renderers skip duplicate scheduled deck updates when render state is u
     },
     setVisibleAmenityFeatures(value) {
       visibleAmenityFeatures = value;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getDeckAmenityOverlay() {
       return overlay;
@@ -3733,6 +3770,8 @@ test("map renderers coalesce camera deck schedules until idle and keep non-camer
 
   browser.window.deck = makeDeckLayerConstructors([]);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -3785,18 +3824,6 @@ test("map renderers coalesce camera deck schedules until idle and keep non-camer
     },
     getAllFilterTypes() {
       return ["parks"];
-    },
-    getShowTreesChecked() {
-      return true;
-    },
-    getShowLightsChecked() {
-      return true;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getVisibleAmenityFeatures() {
       return visibleAmenityFeatures;
@@ -3910,6 +3937,8 @@ test("map renderers fall back when idle never fires for camera deck schedules", 
   installFakeCanvas(browser.window.document);
   browser.window.deck = makeDeckLayerConstructors([]);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -3974,18 +4003,6 @@ test("map renderers fall back when idle never fires for camera deck schedules", 
     },
     getAllFilterTypes() {
       return ["parks"];
-    },
-    getShowTreesChecked() {
-      return true;
-    },
-    getShowLightsChecked() {
-      return true;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getVisibleAmenityFeatures() {
       return visibleAmenityFeatures;
@@ -4090,6 +4107,8 @@ test("map renderers reconfigure clears pending debounce timers from prior deps",
   };
   browser.window.deck = makeDeckLayerConstructors([]);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         firstCounters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -4149,18 +4168,6 @@ test("map renderers reconfigure clears pending debounce timers from prior deps",
     getAllFilterTypes() {
       return ["parks"];
     },
-    getShowTreesChecked() {
-      return true;
-    },
-    getShowLightsChecked() {
-      return true;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
-    },
     getVisibleAmenityFeatures() {
       return [{ id: 1 }];
     },
@@ -4211,6 +4218,8 @@ test("map renderers reconfigure clears pending debounce timers from prior deps",
 
   const secondCounters = [];
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         secondCounters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -4260,18 +4269,6 @@ test("map renderers reconfigure clears pending debounce timers from prior deps",
     },
     getAllFilterTypes() {
       return ["parks"];
-    },
-    getShowTreesChecked() {
-      return true;
-    },
-    getShowLightsChecked() {
-      return true;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getVisibleAmenityFeatures() {
       return [];
@@ -4352,6 +4349,8 @@ test("map renderers idle listener fallback unsubscribes when map.once is unavail
   };
   browser.window.deck = makeDeckLayerConstructors([]);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -4415,18 +4414,6 @@ test("map renderers idle listener fallback unsubscribes when map.once is unavail
     },
     getAllFilterTypes() {
       return ["parks"];
-    },
-    getShowTreesChecked() {
-      return true;
-    },
-    getShowLightsChecked() {
-      return true;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getVisibleAmenityFeatures() {
       return [];
@@ -4507,6 +4494,8 @@ test("map renderers prefer unsubscribe-capable idle listeners over once for supe
   };
   browser.window.deck = makeDeckLayerConstructors([]);
   browser.window.Urban95MapRenderers.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     urban95Perf: {
       counter(name, meta) {
         counters.push({ name, meta: typeof meta === "function" ? meta() : meta });
@@ -4573,18 +4562,6 @@ test("map renderers prefer unsubscribe-capable idle listeners over once for supe
     },
     getAllFilterTypes() {
       return ["parks"];
-    },
-    getShowTreesChecked() {
-      return true;
-    },
-    getShowLightsChecked() {
-      return true;
-    },
-    getShowAmenityPointsTogglePresent() {
-      return true;
-    },
-    getShowAmenityPointsChecked() {
-      return true;
     },
     getVisibleAmenityFeatures() {
       return [];
@@ -5567,6 +5544,36 @@ test("data artifacts resolve generated fallback URLs from config", () => {
   });
 });
 
+test("data artifacts prefer geojson for neighborhood surface even when pmtiles exist", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: { status: "built", output: "./data/buildings_accessibility.pmtiles" },
+      neighborhood_surface: { status: "built", output: "./data/neighborhood_surface.pmtiles" },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+
+  assert.equal(
+    browser.window.Urban95Config.generatedArtifactPolicies.neighborhood_surface.useGeneratedAsset,
+    false
+  );
+  assert.equal(browser.window.Urban95DataArtifacts.hasGeneratedArtifact("buildings"), true);
+  assert.equal(browser.window.Urban95DataArtifacts.hasGeneratedArtifact("neighborhood_surface"), false);
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        browser.window.Urban95DataArtifacts.vectorSourceOrGeojson(
+          "neighborhood_surface",
+          "./data/neighborhood_surface.pmtiles"
+        )
+      )
+    ),
+    { type: "geojson", data: { type: "FeatureCollection", features: [] } }
+  );
+});
+
 test("map layer factories honor explicit field-level API", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/map/mapLayers.js", browser);
@@ -5840,6 +5847,7 @@ test("app.js is final coordinator only after ownership extraction", () => {
     /Urban95IconLoader\.create\s*\(/,
     /Urban95AmenityMode\.create\s*\(/,
     /Urban95ControlActions\.create\s*\(/,
+    /Urban95OverlayVisibility\.create\s*\(/,
     /Urban95AppStartupBridge\.bindStartup\s*\(/,
     /Urban95Controls\.bind\s*\(/,
     /Urban95MapEvents\.bind\s*\(/,
@@ -5888,10 +5896,6 @@ test("mode controller uses explicit UI element injection instead of document loo
     "utf8"
   );
 
-  assert.match(appSource, /pointsVisibilitySection:\s*pointsVisibilitySectionEl/);
-  assert.match(appSource, /pointsVisibilityLayersControl:\s*pointsVisibilityLayersControlEl/);
-  assert.match(appSource, /pointsVisibilitySectionTitle:\s*pointsVisibilitySectionTitleEl/);
-  assert.match(appSource, /legendSection:\s*legendSectionEl/);
   assert.match(appSource, /radiusInfo:\s*radiusInfoEl/);
   assert.match(appSource, /citywideBody:\s*citywideBodyEl/);
   assert.doesNotMatch(modeSource, /documentRef/);
@@ -5922,7 +5926,7 @@ test("control actions uses explicit modal accessors instead of document lookups"
   assert.doesNotMatch(controlActionsSource, /["']citywide-modal["']/);
 });
 
-test("control actions no longer requires or receives state.getScoreMode", () => {
+test("control actions requires and receives state.getScoreMode", () => {
   const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
   const controlActionsSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "ui", "controlActions.js"),
@@ -5934,8 +5938,9 @@ test("control actions no longer requires or receives state.getScoreMode", () => 
   assert.notEqual(controlsBindStart, -1);
   const controlActionsCreateBlock = appSource.slice(controlActionsCreateStart, controlsBindStart);
 
-  assert.doesNotMatch(controlActionsSource, /\["state\.getScoreMode", state\.getScoreMode\]/);
-  assert.doesNotMatch(controlActionsCreateBlock, /getScoreMode:\s*getScoreModeState,/);
+  assert.match(controlActionsSource, /\["state\.getScoreMode", state\.getScoreMode\]/);
+  assert.match(controlActionsCreateBlock, /getScoreMode:\s*getScoreModeState,/);
+  assert.match(controlActionsSource, /state\.getScoreMode\(\) === "weighted"/);
 });
 
 function createModeControllerHarness(overrides) {
@@ -5947,6 +5952,8 @@ function createModeControllerHarness(overrides) {
   let currentMode = "house";
 
   const deps = {
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     runtime: {
       map: {
         getLayer(id) {
@@ -6068,14 +6075,10 @@ function createModeControllerHarness(overrides) {
         },
       },
       modeHint: { textContent: "" },
-      showHeatmapToggle: { checked: true },
-      pointsVisibilitySection: {
+      indicatorsSection: {
         style: { display: "initial" },
         classList: { toggle() {} },
       },
-      pointsVisibilityLayersControl: { style: { display: "initial" } },
-      pointsVisibilitySectionTitle: { style: { display: "initial" } },
-      legendSection: { style: { display: "initial" } },
       radiusInfo: { style: { display: "block" } },
       citywideBody: { innerHTML: "" },
     },
@@ -6088,6 +6091,11 @@ function createModeControllerHarness(overrides) {
       },
       setSelectedNeighborhood(value) {
         calls.push(["state:setSelectedNeighborhood", value]);
+      },
+    },
+    scoring: {
+      getActiveMetric() {
+        return { surfacePropertyKey: "score_weighted" };
       },
     },
     contracts: {
@@ -6113,6 +6121,9 @@ function createModeControllerHarness(overrides) {
       },
       getNeighborhoodSurfaceScorePropertyKey() {
         return "score";
+      },
+      setLegendVisible(value) {
+        calls.push(["assets:setLegendVisible", value]);
       },
     },
     geo: {
@@ -6428,6 +6439,8 @@ function createSelectionDeferredSidebarTestContext() {
     },
   };
   const deps = {
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getSource(id) {
         return id === "radius-source" ? radiusSource : selectedBuildingSource;
@@ -6825,6 +6838,8 @@ test("selection pending-isochrone path tags the loading overlay reason", () => {
   const calls = [];
   let isochroneLoadPromise = null;
   const deps = {
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getSource() {
         return {
@@ -6978,6 +6993,8 @@ test("selection pending-isochrone path can suppress the global overlay while pre
   const showOverlayCalls = [];
   let isochroneLoadPromise = null;
   const deps = {
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getSource() {
         return {
@@ -7167,6 +7184,8 @@ test("background isochrone failure does not poison a later direct selected-build
   let shouldFailLookup = true;
 
   browser.window.Urban95Selection.configure({
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getSource() {
         return {
@@ -7318,6 +7337,9 @@ test("background isochrone failure does not poison a later direct selected-build
     },
     state: {
       getCurrentMode: () => "house",
+      getScoreMode: () => "expanded",
+      getActiveHeatmapId: () => "u95.overall",
+      setActiveHeatmapId: () => {},
       getSelectedBuilding: () => selectedBuildingState,
       getSelectedNeighborhood: () => null,
       clearDerivedCaches: () => {},
@@ -7447,6 +7469,8 @@ test("selection clearRadiusSelection no-ops only when state and overlay sources 
   };
   let hasRadiusSelectionState = false;
   const deps = {
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getSource(id) {
         return id === "radius-source" ? radiusSource : selectedBuildingSource;
@@ -7533,6 +7557,8 @@ test("selection clearRadiusSelection clears module-owned overlay data even when 
     },
   };
   const deps = {
+    renderState: loadRenderState(browser),
+    showRegistry: loadShowRegistry(browser),
     map: {
       getSource(id) {
         return id === "radius-source" ? radiusSource : selectedBuildingSource;
@@ -7664,21 +7690,45 @@ test("task-7 selection receives coordinator-owned source ids explicitly", () => 
 test("controls bind validates dependencies and returns the coordinator surface", () => {
   const browser = createBrowserContext();
   const listeners = [];
-  const makeElement = function () {
-    return {
+  const elementById = {};
+  const makeElement = function (id) {
+    const el = {
+      id: id || "",
       style: {},
       disabled: false,
+      hidden: false,
       textContent: "",
       innerHTML: "",
       className: "",
       checked: true,
+      dataset: {},
       classList: {
-        add() {},
-        remove() {},
-        contains() {
-          return false;
+        _classes: new Set(),
+        add(name) {
+          this._classes.add(name);
         },
-        toggle() {},
+        remove(name) {
+          this._classes.delete(name);
+        },
+        contains(name) {
+          return this._classes.has(name);
+        },
+        toggle(name, force) {
+          if (force === true) {
+            this._classes.add(name);
+            return true;
+          }
+          if (force === false) {
+            this._classes.delete(name);
+            return false;
+          }
+          if (this._classes.has(name)) {
+            this._classes.delete(name);
+            return false;
+          }
+          this._classes.add(name);
+          return true;
+        },
       },
       addEventListener(type, handler) {
         listeners.push({ type, handler });
@@ -7687,17 +7737,36 @@ test("controls bind validates dependencies and returns the coordinator surface",
       contains() {
         return false;
       },
+      querySelector(selector) {
+        const idMatch = typeof selector === "string" ? selector.match(/^#([\w-]+)$/) : null;
+        return idMatch ? elementById[idMatch[1]] || null : null;
+      },
       querySelectorAll() {
         return [];
       },
       appendChild() {},
+      getBoundingClientRect() {
+        return { width: 320 };
+      },
     };
+    if (id) elementById[id] = el;
+    return el;
   };
   browser.window.document.addEventListener = function (type, handler) {
     listeners.push({ type, handler });
   };
+  browser.window.addEventListener = function (type, handler) {
+    listeners.push({ type, handler });
+  };
 
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarMarkup.js", browser);
+  runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarShow.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarFilters.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarIndicators.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarSections.js", browser);
   runBrowserScript("docs/js/ui/controls.js", browser);
 
   assert.throws(
@@ -7705,25 +7774,23 @@ test("controls bind validates dependencies and returns the coordinator surface",
     /Urban95Controls\.bind missing required dependency: elements/
   );
 
-  const elements = {
-    filterBtn: makeElement(),
-    filterPopup: makeElement(),
-    filterLabel: makeElement(),
-    filterItems: makeElement(),
-    filterBackdrop: makeElement(),
-    amenityFilterSection: makeElement(),
-    radiusSection: makeElement(),
-    radiusToggle: makeElement(),
-    scoreModelToggle: makeElement(),
-    modeToggle: makeElement(),
-    modeHint: makeElement(),
-    showTreesToggle: makeElement(),
-    showLightsToggle: makeElement(),
-    showAmenityPointsToggle: makeElement(),
-    showHeatmapToggle: makeElement(),
-    urban95PointToggles: makeElement(),
-    amenityPointsToggleWrap: makeElement(),
-  };
+  const bodyEl = makeElement();
+  Object.defineProperty(bodyEl, "innerHTML", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return bodyEl._html || "";
+    },
+    set(value) {
+      bodyEl._html = value;
+      const idMatches = String(value).match(/id="([^"]+)"/g) || [];
+      idMatches.forEach(function (match) {
+        makeElement(match.slice(4, -1));
+      });
+    },
+  });
+  bodyEl.dataset = {};
+
   runBrowserScript("docs/js/core/appState.js", browser);
   const appState = browser.window.Urban95AppState.create();
   appState.setSelectedAmenityTypes(new Set(["trees"]));
@@ -7731,8 +7798,14 @@ test("controls bind validates dependencies and returns the coordinator surface",
   let scoreMode = "weighted";
   let currentMode = "house";
   const binding = browser.window.Urban95Controls.bind({
-    elements,
+    elements: {
+      bodyEl,
+      sidebarEl: makeElement(),
+      legendEl: makeElement(),
+      filterBackdrop: makeElement(),
+    },
     scoreModel: browser.window.Urban95ScoreModel,
+    showRegistry: loadShowRegistry(browser),
     getState() {
       return {
         scoreMode,
@@ -7740,6 +7813,7 @@ test("controls bind validates dependencies and returns the coordinator surface",
         selectedAmenityTypes: appState.getSelectedAmenityTypes(),
         allFilterTypes: appState.getAllFilterTypes(),
         lastFilterRadioSelection: appState.getLastFilterRadioSelection(),
+        layerVisibility: {},
       };
     },
     setScoreMode() {},
@@ -7768,8 +7842,12 @@ test("controls bind validates dependencies and returns the coordinator surface",
       onWalkMinutesChanged() {},
       onModeToggleRequested() {},
       onPointVisibilityChanged() {},
-      onHeatmapVisibilityChanged() {},
+      onHeatmapSelectionChanged() {},
       onEscape() {},
+      onMetricShowRequested() {},
+      isMetricShowEnabled() {
+        return false;
+      },
       clearDerivedCaches() {},
     },
   });
@@ -7780,27 +7858,102 @@ test("controls bind validates dependencies and returns the coordinator surface",
     "buildFilterItems",
     "closeFilterPopup",
     "syncFilterUiForScoreMode",
-    "updateShowPointsToggleLabel",
-    "describeTypeMix",
+    "syncOverlayVisibility",
   ].forEach(function (memberName) {
     assert.equal(typeof binding[memberName], "function");
   });
 
-  binding.updateShowPointsToggleLabel();
-  assert.equal(elements.urban95PointToggles.style.display, "");
-  assert.equal(elements.amenityPointsToggleWrap.style.display, "none");
-
-  scoreMode = "expanded";
-  binding.updateShowPointsToggleLabel();
-  assert.equal(elements.urban95PointToggles.style.display, "");
-  assert.equal(elements.amenityPointsToggleWrap.style.display, "");
+  const ui = binding.getUiElements();
+  binding.syncOverlayVisibility();
+  assert.equal(ui.indicatorsSection.classList.contains("is-basemap-only"), false);
 
   currentMode = "neighborhood";
-  binding.updateShowPointsToggleLabel();
-  assert.equal(elements.urban95PointToggles.style.display, "none");
-  assert.equal(elements.amenityPointsToggleWrap.style.display, "");
+  binding.syncOverlayVisibility();
+  assert.equal(ui.indicatorsSection.classList.contains("is-basemap-only"), true);
+
+  currentMode = "house";
+  binding.syncOverlayVisibility();
+  assert.equal(ui.indicatorsSection.classList.contains("is-basemap-only"), false);
 
   assert.ok(listeners.some((entry) => entry.type === "keydown"));
+});
+
+test("controls binding fails fast when onHeatmapSelectionChanged is missing", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarMarkup.js", browser);
+  runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarShow.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarFilters.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarIndicators.js", browser);
+  runBrowserScript("docs/js/ui/controlSidebarSections.js", browser);
+  runBrowserScript("docs/js/ui/controls.js", browser);
+
+  const makeElement = () => ({
+    dataset: {},
+    style: {},
+    hidden: false,
+    innerHTML: "",
+    addEventListener() {},
+    getBoundingClientRect() {
+      return { width: 320 };
+    },
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+    classList: { add() {}, remove() {}, toggle() {} },
+  });
+
+  assert.throws(
+    () =>
+      browser.window.Urban95Controls.bind({
+        elements: {
+          sidebarEl: makeElement(),
+          bodyEl: makeElement(),
+          legendEl: makeElement(),
+          filterBackdrop: makeElement(),
+        },
+        scoreModel: browser.window.Urban95ScoreModel,
+    showRegistry: loadShowRegistry(browser),
+        getState() {
+          return {
+            scoreMode: "weighted",
+            currentMode: "house",
+            selectedAmenityTypes: new Set(),
+            allFilterTypes: [],
+            lastFilterRadioSelection: "all",
+          };
+        },
+        setScoreMode() {},
+        setWalkMinutes() {},
+        setSelectedAmenityTypes() {},
+        setAllFilterTypes() {},
+        setLastFilterRadioSelection() {},
+        getTypesWithData() {
+          return new Set();
+        },
+        getAllTreesData() {
+          return null;
+        },
+        getAllStreetLightsData() {
+          return null;
+        },
+        callbacks: {
+          onFilterSelectionChanged() {},
+          onScoreModeChanged() {},
+          onWalkMinutesChanged() {},
+          onModeToggleRequested() {},
+          onPointVisibilityChanged() {},
+          onEscape() {},
+          clearDerivedCaches() {},
+        },
+      }),
+    /callbacks\.onHeatmapSelectionChanged/
+  );
 });
 
 test("task-3 app coordinator binds score model helpers without reimplementing extracted pure helpers", () => {
@@ -7832,7 +7985,7 @@ test("task-5 app coordinator wires the score sidebar module instead of keeping l
   assert.match(appSource, /Urban95ScoreSidebar\.configure\(\{/);
   assert.match(
     appSource,
-    /scoreSidebar:\s*\{\s*isOpen:\s*Urban95ScoreSidebar\.isOpen,\s*hide:\s*Urban95ScoreSidebar\.hide,\s*\}/s
+    /scoreSidebar:\s*\{\s*isOpen:\s*Urban95ScoreSidebar\.isOpen,\s*hide:\s*Urban95ScoreSidebar\.hide,\s*sync:\s*Urban95ScoreSidebar\.sync,\s*\}/s
   );
   assert.match(controlActionsSource, /scoreSidebar\.isOpen\(\)/);
   assert.match(controlActionsSource, /scoreSidebar\.hide\(\)/);
@@ -8323,7 +8476,7 @@ test("score sidebar always keeps the bar-based desktop breakdown instead of ultr
     "utf8"
   );
 
-  assert.match(styleSource, /--score-sidebar-width:\s*clamp\(340px,\s*30vw,\s*440px\);/);
+  assert.match(styleSource, /--score-sidebar-width:\s*clamp\(300px,\s*26vw,\s*380px\);/);
   assert.match(sidebarSource, /var textScale = Math\.max\(0\.74, s\);/);
   assert.match(styleSource, /\.score-explain-sidebar-inner\.is-chart-fit-tight \.score-explain-sidebar-hero-compact \.percentile-value/);
   assert.match(styleSource, /\.score-explain-sidebar-inner\.is-chart-fit-tight \.score-explain-building-ctx/);
@@ -8484,8 +8637,63 @@ test("score sidebar chrome records opt-in padding and resize diagnostics", () =>
   assert.equal(records[3][1].forceResize, true);
 });
 
+test("score sidebar chrome reservations replace same-side baseline padding but preserve the opposite side", () => {
+  const mapCalls = [];
+  const browser = createBrowserContext({
+    matchMedia() {
+      return { matches: false };
+    },
+    document: {
+      getElementById() {
+        return null;
+      },
+    },
+  });
+  const map = {
+    currentPadding: { top: 10, right: 24, bottom: 30, left: 48 },
+    getPadding() {
+      mapCalls.push({ type: "getPadding" });
+      return this.currentPadding;
+    },
+    setPadding(nextPadding) {
+      mapCalls.push({ type: "setPadding", value: nextPadding });
+      this.currentPadding = Object.assign({}, nextPadding);
+    },
+    resize() {
+      mapCalls.push({ type: "resize" });
+    },
+  };
+
+  runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
+
+  const chrome = browser.window.Urban95ScoreSidebarChrome.create({
+    map: map,
+    document: browser.window.document,
+    matchMedia: browser.window.matchMedia,
+  });
+
+  chrome.setSidebarReservation("left", 300);
+  chrome.setSidebarReservation("right", 360);
+  chrome.setSidebarReservation("right", 0);
+  chrome.setSidebarReservation("left", 0);
+
+  assert.equal(typeof chrome.setSidebarReservation, "function");
+  assert.deepEqual(JSON.parse(JSON.stringify(mapCalls)), [
+    { type: "getPadding" },
+    { type: "setPadding", value: { top: 10, right: 24, bottom: 30, left: 300 } },
+    { type: "resize" },
+    { type: "setPadding", value: { top: 10, right: 360, bottom: 30, left: 300 } },
+    { type: "resize" },
+    { type: "setPadding", value: { top: 10, right: 24, bottom: 30, left: 300 } },
+    { type: "resize" },
+    { type: "setPadding", value: { top: 10, right: 24, bottom: 30, left: 48 } },
+    { type: "resize" },
+  ]);
+});
+
 test("score explanation create fails fast when a required scoreModel member is missing", () => {
   const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
 
   assert.throws(
@@ -8576,6 +8784,7 @@ test("score explanation module builds weighted breakdowns without app.js helpers
     path.resolve(__dirname, "..", "..", "docs", "js", "scoring", "scoreExplain.js"),
     "utf8"
   );
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
 
   const state = {
@@ -8640,6 +8849,9 @@ test("score explanation module builds weighted breakdowns without app.js helpers
   const explain = browser.window.Urban95ScoreExplain.create({
     scoreModel: fakeScoreModel,
     iconsBase: "./icons",
+    getActiveMetric() {
+      return { kind: "weighted-category", selectedWeightedStem: "nature" };
+    },
     state: {
       getScoreMode() {
         return state.scoreMode;
@@ -8670,6 +8882,9 @@ test("score explanation module builds weighted breakdowns without app.js helpers
       },
       setPercentileSeries(cacheKey, value) {
         state.percentileSeries[cacheKey] = value;
+      },
+      getPercentileSeriesCacheKey(minutes) {
+        return fakeScoreModel.getPercentileSeriesCacheKey(minutes);
       },
       getBuildingAmenityStatKeysForMinutes() {
         return new Set();
@@ -9080,7 +9295,9 @@ function loadAppStatePrerequisites(browser) {
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
   runBrowserScript("docs/js/scoring/scoreContext.js", browser);
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
   runBrowserScript("docs/js/ui/sidebarChromeBindings.js", browser);
@@ -9353,7 +9570,9 @@ function loadModeControllerAppPrerequisites(browser) {
   runBrowserScript("docs/js/core/startup.js", browser);
   runBrowserScript("docs/js/core/loadingUi.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
   runBrowserScript("docs/js/scoring/scoreContext.js", browser);
+  runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
   runBrowserScript("docs/js/ui/sidebarChromeBindings.js", browser);
@@ -9362,6 +9581,7 @@ function loadModeControllerAppPrerequisites(browser) {
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/map/mapShell.js", browser);
   runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
+  runBrowserScript("docs/js/map/renderState.js", browser);
   runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
@@ -9369,6 +9589,7 @@ function loadModeControllerAppPrerequisites(browser) {
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
+  runBrowserScript("docs/js/ui/overlayVisibility.js", browser);
 }
 
 test("app.js fails fast when Urban95ModeController is missing", () => {
@@ -9734,4 +9955,33 @@ test("desktopOnlyGate supports ?desktop bypass for testing", () => {
     }).blocked,
     false
   );
+});
+
+test("weighted metric registry fields exist in generated neighborhood artifacts", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+
+  const registry = browser.window.Urban95ScoreModel.buildWeightedMetricRegistry();
+  const metrics = Object.values(registry).filter((metric) => metric && metric.kind.indexOf("weighted") === 0);
+  const neighborhoodSurface = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "data", "neighborhood_surface.geojson"), "utf8")
+  );
+  const citywideStats = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "data", "citywide_stats.json"), "utf8")
+  );
+  const surfaceProps = ((neighborhoodSurface.features || [])[0] || {}).properties || {};
+  const rankingRows = citywideStats.neighborhood_ranking_weighted || [];
+
+  metrics.forEach((metric) => {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(surfaceProps, metric.surfacePropertyKey),
+      metric.id + " missing surface field " + metric.surfacePropertyKey
+    );
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(citywideStats, metric.neighborhoodAverageKey) ||
+        rankingRows.some((row) => Object.prototype.hasOwnProperty.call(row, metric.neighborhoodAverageKey)),
+      metric.id + " missing citywide/ranking field " + metric.neighborhoodAverageKey
+    );
+  });
 });

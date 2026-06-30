@@ -11,6 +11,7 @@ var ICONS_BASE = requireNamespaceMember(Urban95Config, "Urban95Config", "ICONS_B
 var BUILDINGS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "buildings");
 var ROADS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "roads");
 var EDUCATION_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "education");
+var BUS_STOPS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "busStops");
 var POPULATION_GRID_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "populationGrid");
 var SOCIOECONOMIC_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "socioeconomic");
 var BUILDINGS_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "buildingsLookup");
@@ -147,6 +148,13 @@ var weightedCategoryHighlightsFromSource =
   requireScoreModelMember(Urban95ScoreModel, "weightedCategoryHighlightsFromSource");
 var weightedSubcategoryComparisonRows =
   requireScoreModelMember(Urban95ScoreModel, "weightedSubcategoryComparisonRows");
+var Urban95WeightedMetricShowRegistry = requireNamespace(window, "Urban95WeightedMetricShowRegistry");
+requireNamespaceMember(
+  Urban95WeightedMetricShowRegistry,
+  "Urban95WeightedMetricShowRegistry",
+  "resolveWeightedShowActions",
+  "function"
+);
 var Urban95ScoreContext = requireNamespace(window, "Urban95ScoreContext");
 requireNamespaceMember(Urban95ScoreContext, "Urban95ScoreContext", "create", "function");
 var Urban95ScoreExplain = requireNamespace(window, "Urban95ScoreExplain");
@@ -177,6 +185,15 @@ requireNamespaceMember(
   "create",
   "function"
 );
+var Urban95RenderState = requireNamespace(window, "Urban95RenderState");
+[
+  "getWeightedNeighborhoodMetricValue",
+  "hasWeightedNeighborhoodMetricData",
+  "getWeightedHistogramDistribution",
+  "resolvePolygonAnalysisFilter",
+].forEach(function (memberName) {
+  requireNamespaceMember(Urban95RenderState, "Urban95RenderState", memberName, "function");
+});
 var resolveBuildingContracts =
   requireNamespaceMember(
     Urban95MapLayers,
@@ -299,6 +316,8 @@ var Urban95ModeController = requireNamespace(window, "Urban95ModeController");
 requireNamespaceMember(Urban95ModeController, "Urban95ModeController", "create", "function");
 var Urban95MapEvents = requireNamespace(window, "Urban95MapEvents");
 requireNamespaceMember(Urban95MapEvents, "Urban95MapEvents", "bind", "function");
+var Urban95OverlayVisibility = requireNamespace(window, "Urban95OverlayVisibility");
+requireNamespaceMember(Urban95OverlayVisibility, "Urban95OverlayVisibility", "create", "function");
 var Urban95MapRenderers = requireNamespace(window, "Urban95MapRenderers");
 [
   "configure",
@@ -320,7 +339,6 @@ var Urban95MapRenderers = requireNamespace(window, "Urban95MapRenderers");
   "scheduleDeckUpdate",
   "initDeckAmenityOverlay",
   "updateBuildingColors",
-  "updateAccessibilityLegendLabels",
   "updateNeighborhoodSurfaceData",
   "updateNeighborhoodColors",
 ].forEach(function (memberName) {
@@ -362,6 +380,7 @@ window.Urban95AppDependencies = {
   BUILDINGS_URL: BUILDINGS_URL,
   ROADS_URL: ROADS_URL,
   EDUCATION_URL: EDUCATION_URL,
+  BUS_STOPS_URL: BUS_STOPS_URL,
   POPULATION_GRID_URL: POPULATION_GRID_URL,
   SOCIOECONOMIC_URL: SOCIOECONOMIC_URL,
   BUILDINGS_LOOKUP_URL: BUILDINGS_LOOKUP_URL,
@@ -417,6 +436,7 @@ window.Urban95AppDependencies = {
   formatScoreInteger: formatScoreInteger,
   weightedCategoryHighlightsFromSource: weightedCategoryHighlightsFromSource,
   weightedSubcategoryComparisonRows: weightedSubcategoryComparisonRows,
+  Urban95WeightedMetricShowRegistry: Urban95WeightedMetricShowRegistry,
   Urban95ScoreContext: Urban95ScoreContext,
   Urban95ScoreExplain: Urban95ScoreExplain,
   Urban95ScoreSidebarChrome: Urban95ScoreSidebarChrome,
@@ -428,6 +448,7 @@ window.Urban95AppDependencies = {
   createBaseMap: createBaseMap,
   applyBasemap: applyBasemap,
   Urban95NeighborhoodScores: Urban95NeighborhoodScores,
+  Urban95RenderState: Urban95RenderState,
   resolveBuildingContracts: resolveBuildingContracts,
   createPmtilesProtocol: createPmtilesProtocol,
   createBuildingsSource: createBuildingsSource,
@@ -440,6 +461,7 @@ window.Urban95AppDependencies = {
   Urban95Dashboards: Urban95Dashboards,
   Urban95ModeController: Urban95ModeController,
   Urban95MapEvents: Urban95MapEvents,
+  Urban95OverlayVisibility: Urban95OverlayVisibility,
   Urban95MapRenderers: Urban95MapRenderers,
   Urban95Selection: Urban95Selection,
   Urban95Controls: Urban95Controls,

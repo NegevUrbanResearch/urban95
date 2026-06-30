@@ -57,16 +57,7 @@
 
     var getScoreMode = requireFunction(deps.getScoreMode, "deps.getScoreMode");
     var getWalkMinutes = requireFunction(deps.getWalkMinutes, "deps.getWalkMinutes");
-    var getCurrentMode = requireFunction(deps.getCurrentMode, "deps.getCurrentMode");
-    var getSelectedAmenityTypes = requireFunction(
-      deps.getSelectedAmenityTypes,
-      "deps.getSelectedAmenityTypes"
-    );
-    var getAllFilterTypes = requireFunction(deps.getAllFilterTypes, "deps.getAllFilterTypes");
-    var getSelectedWeightedCategoryStem = requireFunction(
-      deps.getSelectedWeightedCategoryStem,
-      "deps.getSelectedWeightedCategoryStem"
-    );
+    var getActiveMetric = requireFunction(deps.getActiveMetric, "deps.getActiveMetric");
     var fixedMinutes = requireNumber(deps.fixedMinutes, "deps.fixedMinutes");
 
     function getZoomForPolygon(polygon) {
@@ -83,9 +74,8 @@
 
     function getNeighborhoodAverageKey(sfx) {
       if (getScoreMode() === "weighted") {
-        var selectedStem = getSelectedWeightedCategoryStem();
-        if (selectedStem) return "avg_score_weighted_" + selectedStem + sfx;
-        return "avg_score_weighted_" + fixedMinutes + "min";
+        var metric = getActiveMetric();
+        return metric ? metric.neighborhoodAverageKey || null : null;
       }
       return "avg_overall" + sfx;
     }
@@ -101,24 +91,12 @@
     }
 
     function getNeighborhoodSurfaceScorePropertyKey() {
+      var metric = getActiveMetric();
       if (getScoreMode() === "weighted") {
-        var selectedStem = getSelectedWeightedCategoryStem();
-        if (selectedStem) return "score_weighted_" + selectedStem;
-        return "score_weighted";
+        return metric ? metric.surfacePropertyKey || null : null;
       }
-      var sfx = "_" + getScoreMinutes() + "min";
       if (getScoreMode() === "expanded") {
-        if (getCurrentMode() !== "house") {
-          return "score_expanded" + sfx;
-        }
-        if (getSelectedAmenityTypes().size === getAllFilterTypes().length) {
-          return "score_expanded" + sfx;
-        }
-        if (getSelectedAmenityTypes().size === 1) {
-          var selectedType = Array.from(getSelectedAmenityTypes())[0] || "";
-          var scenarioType = selectedType === "health" ? "healthcare" : selectedType;
-          return "score_filter_" + normalizeSurfaceFilterKey(scenarioType) + sfx;
-        }
+        return metric ? metric.surfacePropertyKey : null;
       }
       return null;
     }

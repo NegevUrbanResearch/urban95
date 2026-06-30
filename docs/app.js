@@ -5,6 +5,7 @@ const {
   BUILDINGS_URL,
   ROADS_URL,
   EDUCATION_URL,
+  BUS_STOPS_URL,
   POPULATION_GRID_URL,
   SOCIOECONOMIC_URL,
   PARKS_URL,
@@ -54,6 +55,7 @@ const {
   formatScoreInteger,
   weightedCategoryHighlightsFromSource,
   weightedSubcategoryComparisonRows,
+  Urban95WeightedMetricShowRegistry,
   Urban95ScoreContext,
   Urban95ScoreExplain,
   Urban95ScoreSidebarChrome,
@@ -63,6 +65,7 @@ const {
   createBaseMap,
   applyBasemap,
   Urban95NeighborhoodScores,
+  Urban95RenderState,
   resolveBuildingContracts,
   createPmtilesProtocol,
   createBuildingsSource,
@@ -75,6 +78,7 @@ const {
   Urban95Dashboards,
   Urban95ModeController,
   Urban95MapEvents,
+  Urban95OverlayVisibility,
   Urban95MapRenderers,
   Urban95Selection,
   Urban95Controls,
@@ -86,8 +90,12 @@ const getScoreModeState = appState.getScoreMode.bind(appState);
 const setScoreModeState = appState.setScoreMode.bind(appState);
 const getWalkMinutesState = appState.getWalkMinutes.bind(appState);
 const setWalkMinutesState = appState.setWalkMinutes.bind(appState);
+const getActiveHeatmapIdState = appState.getActiveHeatmapId.bind(appState);
+const setActiveHeatmapIdState = appState.setActiveHeatmapId.bind(appState);
 const getSelectedAmenityTypesState = appState.getSelectedAmenityTypes.bind(appState);
 const setSelectedAmenityTypesState = appState.setSelectedAmenityTypes.bind(appState);
+const getWeightedShownAmenityTypesState = appState.getWeightedShownAmenityTypes.bind(appState);
+const setWeightedShownAmenityTypesState = appState.setWeightedShownAmenityTypes.bind(appState);
 const getAllFilterTypesState = appState.getAllFilterTypes.bind(appState);
 const setAllFilterTypesState = appState.setAllFilterTypes.bind(appState);
 const getAmenitiesInRadiusIdsState = appState.getAmenitiesInRadiusIds.bind(appState);
@@ -104,6 +112,8 @@ const hasBuildingAmenityStatKeysState = appState.hasBuildingAmenityStatKeys.bind
 const getBuildingAmenityStatKeysState = appState.getBuildingAmenityStatKeys.bind(appState);
 const setBuildingAmenityStatKeysState = appState.setBuildingAmenityStatKeys.bind(appState);
 const clearDerivedCachesState = appState.clearDerivedCaches.bind(appState);
+const getLayerVisibilityState = appState.getLayerVisibility.bind(appState);
+const setLayerVisibilityState = appState.setLayerVisibility.bind(appState);
 const BUILDING_LAYER_CONTRACTS = resolveBuildingContracts({
   config: Urban95Config,
   artifacts: GENERATED_ARTIFACTS,
@@ -147,39 +157,12 @@ const map = createBaseMap({
   streetLightsPmtilesUrl: STREET_LIGHTS_PMTILES_URL,
   neighborhoodSurfacePmtilesUrl: NEIGHBORHOOD_SURFACE_PMTILES_URL,
 });
-const filterBtn = document.getElementById("filter-btn");
-const filterPopup = document.getElementById("filter-popup");
-const filterLabel = document.getElementById("filter-label");
-const filterItems = document.getElementById("filter-items");
+const controlSidebarEl = document.getElementById("control-sidebar");
+const controlSidebarBodyEl = document.getElementById("control-sidebar-body");
+const controlLegendEl = document.getElementById("control-legend");
 const filterBackdrop = document.getElementById("filter-backdrop");
-const amenityFilterSection = document.getElementById("amenity-filter-section");
-const radiusSection = document.getElementById("radius-section");
-const legendLabels = document.getElementById("legend-labels");
 const SYM_PCT_KEY = "_u95_symb_pct";
 const tooltip = document.getElementById("tooltip");
-const radiusToggle = document.getElementById("radius-toggle");
-const showUrbanNatureToggle = document.getElementById("show-urban-nature-toggle");
-const showTreesToggle = document.getElementById("show-trees-toggle");
-const showLightsToggle = document.getElementById("show-lights-toggle");
-const showAmenityPointsToggle = document.getElementById("show-amenity-points-toggle");
-const showSchoolsToggle = document.getElementById("show-schools-toggle");
-const layersBtn = document.getElementById("layers-btn");
-const layersPopup = document.getElementById("layers-popup");
-const layersBackdrop = document.getElementById("layers-backdrop");
-const layersBtnMeta = document.getElementById("layers-btn-meta");
-const layersSelectAllBtn = document.getElementById("layers-select-all");
-const layersDeselectAllBtn = document.getElementById("layers-deselect-all");
-const basemapToggle = document.getElementById("basemap-toggle");
-const urban95PointToggles = document.getElementById("urban95-point-toggles");
-const amenityPointsToggleWrap = document.getElementById("amenity-points-toggle-wrap");
-const schoolPointsToggleWrap = document.getElementById("school-points-toggle-wrap");
-const showHeatmapToggle = document.getElementById("show-heatmap-toggle");
-const showRoadsToggle = document.getElementById("show-roads-toggle");
-const showKidsPopulationToggle = document.getElementById("show-kids-population-toggle");
-const showSocioeconomicToggle = document.getElementById("show-socioeconomic-toggle");
-const scoreModelToggle = document.getElementById("score-model-toggle");
-const modeToggle = document.getElementById("mode-toggle");
-const modeHint = document.getElementById("mode-hint");
 const scoreExplainSidebarEl = document.getElementById("score-explain-sidebar");
 const scoreExplainSidebarBodyEl = document.getElementById("score-explain-sidebar-body");
 const scoreExplainSidebarEmptyEl = document.getElementById("score-explain-sidebar-empty");
@@ -199,6 +182,12 @@ const neighborhoodSidebarBodyEl = document.getElementById("neighborhood-sidebar-
 const neighborhoodSidebarEmptyEl = document.getElementById("neighborhood-sidebar-empty");
 const neighborhoodSidebarBackdropEl = document.getElementById("neighborhood-sidebar-backdrop");
 let controlsBinding = null;
+let controlSidebarAdapter = null;
+function getControlUiElements() {
+  return controlsBinding && typeof controlsBinding.getUiElements === "function"
+    ? controlsBinding.getUiElements()
+    : {};
+}
 const URBAN95_FIXED_MINUTES = 10;
 const URBAN95_REFERENCE_RADIUS_METERS = 300;
 const BUILDING_CENTROID_GRID_CELL_DEGREES = 0.002;
@@ -212,24 +201,11 @@ const pointDataSources = Urban95PointDataSources.create({
 });
 const loadPointsLookup = pointDataSources.loadPointsLookup;
 const loadAmenitiesGeojsonFallback = pointDataSources.loadAmenitiesGeojsonFallback;
-function requireControlsBindingMember(memberName) {
-  if (!controlsBinding || typeof controlsBinding[memberName] !== "function") {
-    throw new Error("Urban95Controls.bind must provide " + memberName + " before docs/app.js uses it");
-  }
-  return controlsBinding[memberName];
-}
 const neighborhoodScores = Urban95NeighborhoodScores.create({
   turf: turf,
   getScoreMode: getScoreModeState,
   getWalkMinutes: getWalkMinutesState,
-  getCurrentMode: function () {
-    return currentMode;
-  },
-  getSelectedAmenityTypes: getSelectedAmenityTypesState,
-  getAllFilterTypes: getAllFilterTypesState,
-  getSelectedWeightedCategoryStem: function () {
-    return scoreExplain.getSelectedWeightedCategoryStem();
-  },
+  getActiveMetric: getActiveMetricState,
   fixedMinutes: URBAN95_FIXED_MINUTES,
 });
 const getZoomForPolygon = neighborhoodScores.getZoomForPolygon;
@@ -240,6 +216,12 @@ const getNeighborhoodSurfaceScorePropertyKey =
   neighborhoodScores.getNeighborhoodSurfaceScorePropertyKey;
 const getNeighborhoodSurfaceColorExpression =
   neighborhoodScores.getNeighborhoodSurfaceColorExpression;
+const getWeightedNeighborhoodMetricValue =
+  Urban95RenderState.getWeightedNeighborhoodMetricValue;
+const hasWeightedNeighborhoodMetricData =
+  Urban95RenderState.hasWeightedNeighborhoodMetricData;
+const getWeightedHistogramDistribution =
+  Urban95RenderState.getWeightedHistogramDistribution;
 const scoreContext = Urban95ScoreContext.create({
   scoreModel: Urban95ScoreModel,
   state: {
@@ -247,6 +229,7 @@ const scoreContext = Urban95ScoreContext.create({
     getAllFilterTypes: getAllFilterTypesState,
     getScoreMode: getScoreModeState,
     getWalkMinutes: getWalkMinutesState,
+    getActiveHeatmapId: getActiveHeatmapIdState,
     hasBuildingAmenityStatKeys: hasBuildingAmenityStatKeysState,
     getBuildingAmenityStatKeys: getBuildingAmenityStatKeysState,
     setBuildingAmenityStatKeys: setBuildingAmenityStatKeysState,
@@ -257,26 +240,21 @@ const scoreContext = Urban95ScoreContext.create({
   getBuildingsData: function () {
     return buildingsData;
   },
-  getSelectedWeightedCategoryStem: function () {
-    return scoreExplain.getSelectedWeightedCategoryStem();
-  },
   fixedMinutes: URBAN95_FIXED_MINUTES,
 });
 const getCurrentScoreModelContext = scoreContext.getCurrentScoreModelContext;
 const getCurrentBuildingCleanFilteredScore = scoreContext.getCurrentBuildingCleanFilteredScore;
 const getCurrentBuildingOverallScore = scoreContext.getCurrentBuildingOverallScore;
 const collectCurrentBuildingScores = scoreContext.collectCurrentBuildingScores;
-const getWeightedAverageValueFromCurrentSelection =
-  scoreContext.getWeightedAverageValueFromCurrentSelection;
-const weightedNeighborhoodRankingRowsForCurrentSelection =
-  scoreContext.weightedNeighborhoodRankingRowsForCurrentSelection;
-const getCitywideWeightedAverageScoreForCurrentSelection =
-  scoreContext.getCitywideWeightedAverageScoreForCurrentSelection;
 const getCurrentPercentileSeriesCacheKey = scoreContext.getCurrentPercentileSeriesCacheKey;
 const getCurrentBuildingAmenityStatKeysForMinutes =
   scoreContext.getCurrentBuildingAmenityStatKeysForMinutes;
+function getActiveMetricState() {
+  return scoreContext.getActiveMetric();
+}
 const scoreExplain = Urban95ScoreExplain.create({
   scoreModel: Urban95ScoreModel,
+  getActiveMetric: scoreContext.getActiveMetric,
   iconsBase: ICONS_BASE,
   state: {
     getScoreMode: getScoreModeState,
@@ -291,6 +269,7 @@ const scoreExplain = Urban95ScoreExplain.create({
     hasPercentileSeries: hasPercentileSeriesState,
     getPercentileSeries: getPercentileSeriesState,
     setPercentileSeries: setPercentileSeriesState,
+    getPercentileSeriesCacheKey: getCurrentPercentileSeriesCacheKey,
     getBuildingAmenityStatKeysForMinutes: getCurrentBuildingAmenityStatKeysForMinutes,
     getBuildingOverallScore: getCurrentBuildingOverallScore,
   },
@@ -320,9 +299,8 @@ Urban95ScoreSidebar.configure({
   getOrdinalSuffix: scoreExplain.getOrdinalSuffix,
   buildExplainScoreBreakdown: scoreExplain.buildExplainScoreBreakdown,
   buildPercentileMetrics: scoreExplain.buildPercentileMetrics,
-  getScoreMode: function () {
-    return getScoreModeState();
-  },
+  getActiveMetric: getActiveMetricState,
+  getScoreMode: getScoreModeState,
   getScoreModeLabel: getScoreModeLabel,
   getScoreMinutes: getScoreMinutes,
   getSelectedBuilding: function () {
@@ -362,6 +340,8 @@ const ROAD_LAYER_IDS = [
 ];
 const SCHOOLS_SOURCE_ID = "schools";
 const SCHOOLS_LAYER_ID = "schools-points";
+const BUS_STOPS_SOURCE_ID = "bus-stops";
+const BUS_STOPS_LAYER_ID = "bus-stops-points";
 const KIDS_POPULATION_SOURCE_ID = "kids-population-grid";
 const KIDS_POPULATION_LAYER_ID = "kids-population-grid-fill";
 const URBAN_NATURE_LAYER_ID = "urban-nature-fill";
@@ -405,6 +385,7 @@ let _deckHovering = false;
 let _lastDeckClickTime = 0;
 let buildingCentroidGridIndex = new Map();
 let schoolsHoverBound = false;
+let busStopsHoverBound = false;
 const pointDataLoader = createPointDataLoader({
   urls: {
     trees: TREES_URL,
@@ -412,9 +393,7 @@ const pointDataLoader = createPointDataLoader({
   },
   fetchJsonWithGzipFallback: fetchJsonWithGzipFallback,
   hasGeneratedArtifact: hasGeneratedArtifact,
-  getScoreMode: function () {
-    return getScoreModeState();
-  },
+  getScoreMode: getScoreModeState,
   onSkippedTreesGeojson: function () {
     Urban95Logger.perf("[Load] trees: skipped full GeoJSON fetch for weighted PMTiles display");
     Urban95MapRenderers.updateTreesSource();
@@ -434,7 +413,9 @@ const pointDataLoader = createPointDataLoader({
       );
       return;
     }
-    buildFilterItems(allAmenityTypes);
+    if (controlsBinding && typeof controlsBinding.buildFilterItems === "function") {
+      controlsBinding.buildFilterItems(allAmenityTypes);
+    }
     Urban95MapRenderers.updateAmenitiesSource();
     Urban95MapRenderers.updateTreesSource();
     Urban95MapRenderers.updateStreetLightsSource();
@@ -459,78 +440,33 @@ Urban95MapRenderers.configure({
   ensureDeckGlLoaded: ensureDeckGlLoaded,
   amenityTypeConfig: AMENITY_TYPE_CONFIG,
   getAmenityConfig: getAmenityConfig,
-  getCurrentMode: function () {
-    return currentMode;
-  },
-  getScoreMode: function () {
-    return getScoreModeState();
-  },
+  getCurrentMode: function () { return currentMode; },
+  getScoreMode: getScoreModeState,
   getScoreMinutes: getScoreMinutes,
-  getSelectedAmenityTypes: function () {
-    return getSelectedAmenityTypesState();
-  },
-  getAllFilterTypes: function () {
-    return getAllFilterTypesState();
-  },
-  getVisibleAmenityFeatures: function () {
-    return visibleAmenityFeatures;
-  },
-  setVisibleAmenityFeatures: function (value) {
-    visibleAmenityFeatures = value;
-  },
-  getAmenitiesInRadiusIds: function () {
-    return getAmenitiesInRadiusIdsState();
-  },
-  getTreesInRadiusIds: function () {
-    return treesInRadiusIds;
-  },
-  getStreetLightsInRadiusIds: function () {
-    return streetLightsInRadiusIds;
-  },
-  getAllAmenitiesData: function () {
-    return allAmenitiesData;
-  },
-  getAllTreesData: function () {
-    return pointDataLoader.getAllTreesData();
-  },
-  getAllStreetLightsData: function () {
-    return pointDataLoader.getAllStreetLightsData();
-  },
-  getDeckAmenityOverlay: function () {
-    return deckAmenityOverlay;
-  },
-  setDeckAmenityOverlay: function (value) {
-    deckAmenityOverlay = value;
-  },
-  getDeckHovering: function () {
-    return _deckHovering;
-  },
-  setDeckHovering: function (value) {
-    _deckHovering = value;
-  },
-  getDeckUpdateTimer: function () {
-    return _deckUpdateTimer;
-  },
-  setDeckUpdateTimer: function (value) {
-    _deckUpdateTimer = value;
-  },
-  setLastDeckClickTime: function (value) {
-    _lastDeckClickTime = value;
-  },
-  getShowTreesChecked: function () {
-    return showTreesToggle ? showTreesToggle.checked : true;
-  },
-  getShowLightsChecked: function () {
-    return showLightsToggle ? showLightsToggle.checked : true;
-  },
-  getShowAmenityPointsTogglePresent: function () {
-    return !!showAmenityPointsToggle;
-  },
-  getShowAmenityPointsChecked: function () {
-    return showAmenityPointsToggle ? showAmenityPointsToggle.checked : true;
-  },
+  getSelectedAmenityTypes: function () { return getSelectedAmenityTypesState(); },
+  getAllFilterTypes: function () { return getAllFilterTypesState(); },
+  getVisibleAmenityFeatures: function () { return visibleAmenityFeatures; },
+  setVisibleAmenityFeatures: function (value) { visibleAmenityFeatures = value; },
+  getAmenitiesInRadiusIds: function () { return getAmenitiesInRadiusIdsState(); },
+  getTreesInRadiusIds: function () { return treesInRadiusIds; },
+  getStreetLightsInRadiusIds: function () { return streetLightsInRadiusIds; },
+  getAllAmenitiesData: function () { return allAmenitiesData; },
+  getAllTreesData: function () { return pointDataLoader.getAllTreesData(); },
+  getAllStreetLightsData: function () { return pointDataLoader.getAllStreetLightsData(); },
+  getDeckAmenityOverlay: function () { return deckAmenityOverlay; },
+  setDeckAmenityOverlay: function (value) { deckAmenityOverlay = value; },
+  getDeckHovering: function () { return _deckHovering; },
+  setDeckHovering: function (value) { _deckHovering = value; },
+  getDeckUpdateTimer: function () { return _deckUpdateTimer; },
+  setDeckUpdateTimer: function (value) { _deckUpdateTimer = value; },
+  setLastDeckClickTime: function (value) { _lastDeckClickTime = value; },
+  getWeightedShownAmenityTypes: getWeightedShownAmenityTypesState,
+  getLayerVisibility: getLayerVisibilityState,
+  getActiveMetric: getActiveMetricState,
+  renderState: Urban95RenderState,
+  scoreModel: Urban95ScoreModel,
+  showRegistry: Urban95WeightedMetricShowRegistry,
   tooltipEl: tooltip,
-  legendLabelsEl: legendLabels,
   getBuildingsData: function () {
     return buildingsData;
   },
@@ -601,9 +537,11 @@ Urban95Selection.configure({
   getWalkMinutes: function () {
     return getWalkMinutesState();
   },
-  getScoreMode: function () {
-    return getScoreModeState();
-  },
+  getScoreMode: getScoreModeState,
+  getActiveMetric: getActiveMetricState,
+  renderState: Urban95RenderState,
+  scoreModel: Urban95ScoreModel,
+  showRegistry: Urban95WeightedMetricShowRegistry,
   getCurrentMode: function () {
     return currentMode;
   },
@@ -712,10 +650,10 @@ Urban95Selection.configure({
 });
 
 function getScoreModeLabel(mode) {
-  return requireControlsBindingMember("getScoreModeLabel")(mode);
-}
-function syncFilterUiForScoreMode() {
-  return requireControlsBindingMember("syncFilterUiForScoreMode")();
+  if (!controlsBinding || typeof controlsBinding.getScoreModeLabel !== "function") {
+    return mode === "expanded" ? "Amenities Focus" : "Urban95";
+  }
+  return controlsBinding.getScoreModeLabel(mode);
 }
 const HOUSE_MODE_HEX_OPACITY = 0.3;
 let currentMode = "house"; // "house" | "neighborhood" | "citywide"
@@ -725,75 +663,35 @@ let neighborhoodChartsPayload = null;
 let citywideStats = null;
 let selectedNeighborhood = null;
 let citywideCharts = [];
+let modeController = null;
 const citywideModalEl = document.getElementById("citywide-modal");
 const citywideCloseEl = document.getElementById("citywide-close");
 const citywideTitleEl = document.getElementById("citywide-modal-title");
 const citywideSubtitleEl = document.getElementById("citywide-modal-subtitle");
 const citywideBodyEl = document.getElementById("citywide-body");
-const pointsVisibilitySectionEl = document.getElementById("points-visibility-section");
-const pointsVisibilityLayersControlEl = document.getElementById("points-visibility-layers-control");
-const pointsVisibilitySectionTitleEl = document.getElementById("points-visibility-section-title");
-const legendSectionEl = document.querySelector(".legend-section");
 const radiusInfoEl = document.getElementById("radius-info");
-const modeController = Urban95ModeController.create({
-  runtime: {
-    map: map,
-    perf: urban95Perf,
-    logger: Urban95Logger,
-  },
-  integrations: {
-    dashboards: Urban95Dashboards,
-    mapRenderers: Urban95MapRenderers,
-    selection: Urban95Selection,
-    neighborhoodSidebar: Urban95NeighborhoodSidebar,
-  },
-  ui: {
-    modeHint: modeHint,
-    modeToggle: modeToggle,
-    showHeatmapToggle: showHeatmapToggle,
-    pointsVisibilitySection: pointsVisibilitySectionEl,
-    pointsVisibilityLayersControl: pointsVisibilityLayersControlEl,
-    pointsVisibilitySectionTitle: pointsVisibilitySectionTitleEl,
-    legendSection: legendSectionEl,
-    radiusInfo: radiusInfoEl,
-    citywideBody: citywideBodyEl,
-  },
-  state: {
-    getCurrentMode: function () {
-      return currentMode;
-    },
-    setCurrentMode: function (value) {
-      currentMode = value;
-    },
-    setSelectedNeighborhood: function (value) {
-      selectedNeighborhood = value;
-    },
-  },
-  contracts: {
-    buildingsFillLayerId: BUILDINGS_FILL_LAYER_ID,
-    neighborhoodSurfaceSourceLayerFallback: NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK,
-    houseModeHexOpacity: HOUSE_MODE_HEX_OPACITY,
-  },
-  assets: {
-    syncFilterUiForScoreMode: syncFilterUiForScoreMode,
-    updateFilterLabel: updateFilterLabel,
-    hasGeneratedArtifact: hasGeneratedArtifact,
-    sourceLayer: sourceLayer,
-    getNeighborhoodSurfaceColorExpression: getNeighborhoodSurfaceColorExpression,
-    getNeighborhoodSurfaceScorePropertyKey: getNeighborhoodSurfaceScorePropertyKey,
-  },
-  geo: {
-    turf: turf,
-  },
-});
 function switchMode(mode) {
-  const result = modeController.switchMode(mode);
-  applySchoolsLayerVisibility();
-  applyUrbanNatureVisibility();
-  return result;
+  if (!modeController) {
+    throw new Error("Urban95ModeController must be created before switchMode");
+  }
+  return modeController.switchMode(mode);
 }
-const applyHouseModeHexBackground = modeController.applyHouseModeHexBackground;
-const addNeighborhoodLayers = modeController.addNeighborhoodLayers;
+const overlayVisibility = Urban95OverlayVisibility.create({
+  getLayerVisibility: getLayerVisibilityState,
+  setLayerVisibility: setLayerVisibilityState,
+  getWeightedShownAmenityTypes: getWeightedShownAmenityTypesState,
+  setWeightedShownAmenityTypes: setWeightedShownAmenityTypesState,
+  getCurrentMode: function () {
+    return currentMode;
+  },
+  getControlUiElements: getControlUiElements,
+  mirrorOverlayToggleChecked: function (layer, enabled) {
+    if (controlSidebarAdapter && typeof controlSidebarAdapter.mirrorOverlayToggleChecked === "function") {
+      controlSidebarAdapter.mirrorOverlayToggleChecked(layer, enabled);
+    }
+  },
+  map: map,
+});
 Urban95Dashboards.configure({
   map: map,
   fetchJsonWithGzipFallback: fetchJsonWithGzipFallback,
@@ -805,50 +703,27 @@ Urban95Dashboards.configure({
     citywideStats: CITYWIDE_STATS_URL,
   },
   scoreModel: Urban95ScoreModel,
-  getScoreMode: function () {
-    return getScoreModeState();
-  },
+  getScoreMode: getScoreModeState,
   getScoreMinutes: getScoreMinutes,
   escapeHtml: scoreExplain.escapeHtml,
-  getNeighborhoodsData: function () {
-    return neighborhoodsData;
-  },
-  setNeighborhoodsData: function (value) {
-    neighborhoodsData = value;
-  },
-  getNeighborhoodSurfaceData: function () {
-    return neighborhoodSurfaceData;
-  },
-  setNeighborhoodSurfaceData: function (value) {
-    neighborhoodSurfaceData = value;
-  },
-  getNeighborhoodChartsPayload: function () {
-    return neighborhoodChartsPayload;
-  },
-  setNeighborhoodChartsPayload: function (value) {
-    neighborhoodChartsPayload = value;
-  },
-  getCitywideStats: function () {
-    return citywideStats;
-  },
-  setCitywideStats: function (value) {
-    citywideStats = value;
-  },
-  getCitywideCharts: function () {
-    return citywideCharts;
-  },
-  setCitywideCharts: function (value) {
-    citywideCharts = value;
-  },
+  getNeighborhoodsData: function () { return neighborhoodsData; },
+  setNeighborhoodsData: function (value) { neighborhoodsData = value; },
+  getNeighborhoodSurfaceData: function () { return neighborhoodSurfaceData; },
+  setNeighborhoodSurfaceData: function (value) { neighborhoodSurfaceData = value; },
+  getNeighborhoodChartsPayload: function () { return neighborhoodChartsPayload; },
+  setNeighborhoodChartsPayload: function (value) { neighborhoodChartsPayload = value; },
+  getCitywideStats: function () { return citywideStats; },
+  setCitywideStats: function (value) { citywideStats = value; },
+  getCitywideCharts: function () { return citywideCharts; },
+  setCitywideCharts: function (value) { citywideCharts = value; },
   getAmenityConfig: getAmenityConfig,
   getNeighborhoodPercentileKey: getNeighborhoodPercentileKey,
   getNeighborhoodSurfaceScorePropertyKey: getNeighborhoodSurfaceScorePropertyKey,
-  getSelectedWeightedCategoryLabel: scoreExplain.getSelectedWeightedCategoryLabel,
-  getSelectedWeightedCategoryStem: scoreExplain.getSelectedWeightedCategoryStem,
-  getWeightedAverageValueFromSource: getWeightedAverageValueFromCurrentSelection,
-  getCitywideWeightedAverageScore: getCitywideWeightedAverageScoreForCurrentSelection,
+  getActiveMetric: getActiveMetricState,
+  getWeightedNeighborhoodMetricValue: getWeightedNeighborhoodMetricValue,
+  hasWeightedNeighborhoodMetricData: hasWeightedNeighborhoodMetricData,
+  getWeightedHistogramDistribution: getWeightedHistogramDistribution,
   weightedCategoryHighlightsFromSource: weightedCategoryHighlightsFromSource,
-  weightedNeighborhoodRankingRows: weightedNeighborhoodRankingRowsForCurrentSelection,
   weightedSubcategoryComparisonRows: weightedSubcategoryComparisonRows,
   renderWeightedSubcategoryComparisonList: scoreExplain.renderWeightedSubcategoryComparisonList,
   buildHistogramDistributionFromScores: buildHistogramDistributionFromScores,
@@ -873,6 +748,8 @@ Urban95Dashboards.configure({
         },
 });
 Urban95NeighborhoodSidebar.configure({
+  getWeightedNeighborhoodMetricValue: getWeightedNeighborhoodMetricValue,
+  hasWeightedNeighborhoodMetricData: hasWeightedNeighborhoodMetricData,
   sidebarEl: neighborhoodSidebarEl,
   heroEl: neighborhoodSidebarHeroEl,
   eyebrowEl: neighborhoodSidebarEyebrowEl,
@@ -883,14 +760,10 @@ Urban95NeighborhoodSidebar.configure({
   backdropEl: neighborhoodSidebarBackdropEl,
   setSidebarPadding: scoreSidebarChrome.setSidebarPadding,
   restoreFocusAfterHide: scoreSidebarChrome.restoreFocusAfterHide,
-  setSelectedNeighborhood: function (feature) {
-    selectedNeighborhood = feature;
-  },
+  setSelectedNeighborhood: function (feature) { selectedNeighborhood = feature; },
   loadCitywideStats: Urban95Dashboards.loadCitywideStats,
   loadNeighborhoodChartsPayload: Urban95Dashboards.loadNeighborhoodChartsPayload,
-  getCitywideStats: function () {
-    return citywideStats;
-  },
+  getCitywideStats: function () { return citywideStats; },
   ensureChartJsLoaded: ensureChartJsLoaded,
   requestAnimationFrame:
     typeof window.requestAnimationFrame === "function"
@@ -902,10 +775,8 @@ Urban95NeighborhoodSidebar.configure({
   getScoreMinutes: getScoreMinutes,
   renderDeps: {
     pieSlicesFromInventoryCounts: Urban95Dashboards.pieSlicesFromInventoryCounts,
-    getSelectedWeightedCategoryLabel: scoreExplain.getSelectedWeightedCategoryLabel,
-    getSelectedWeightedCategoryStem: scoreExplain.getSelectedWeightedCategoryStem,
-    getWeightedAverageValueFromSource: getWeightedAverageValueFromCurrentSelection,
-    getCitywideWeightedAverageScore: getCitywideWeightedAverageScoreForCurrentSelection,
+    getActiveMetric: getActiveMetricState,
+    getWeightedHistogramDistribution: getWeightedHistogramDistribution,
     weightedCategoryHighlightsFromSource: weightedCategoryHighlightsFromSource,
     weightedSubcategoryComparisonRows: weightedSubcategoryComparisonRows,
     renderWeightedSubcategoryComparisonList: scoreExplain.renderWeightedSubcategoryComparisonList,
@@ -919,9 +790,7 @@ Urban95NeighborhoodSidebar.configure({
     formatScoreInteger: formatScoreInteger,
     escapeHtml: scoreExplain.escapeHtml,
     heroPercentileMeterFillStyle: scoreExplain.heroPercentileMeterFillStyle,
-    getCitywideStats: function () {
-      return citywideStats;
-    },
+    getCitywideStats: function () { return citywideStats; },
   },
 });
 const iconLoader = Urban95IconLoader.create({
@@ -976,10 +845,20 @@ const amenityMode = Urban95AmenityMode.create({
   },
   ui: {
     buildFilterItems: function () {
-      buildFilterItems(allAmenityTypes);
+      if (controlsBinding && typeof controlsBinding.buildFilterItems === "function") {
+        controlsBinding.buildFilterItems(allAmenityTypes);
+      }
     },
-    syncFilterUiForScoreMode: syncFilterUiForScoreMode,
-    updateShowPointsToggleLabel: updateShowPointsToggleLabel,
+    syncFilterUiForScoreMode: function () {
+      if (controlsBinding && typeof controlsBinding.syncFilterUiForScoreMode === "function") {
+        controlsBinding.syncFilterUiForScoreMode();
+      }
+    },
+    syncOverlayVisibility: function () {
+      if (controlsBinding && typeof controlsBinding.syncOverlayVisibility === "function") {
+        controlsBinding.syncOverlayVisibility();
+      }
+    },
   },
   pointDataLoader: {
     ensureExpandedPointDataLoaded: pointDataLoader.ensureExpandedPointDataLoaded,
@@ -1001,14 +880,8 @@ const amenityMode = Urban95AmenityMode.create({
 function collectBuildingScores() {
   return collectCurrentBuildingScores();
 }
-function updateShowPointsToggleLabel() {
-  return requireControlsBindingMember("updateShowPointsToggleLabel")();
-}
 function getBuildingOverallScore(props, minutes) {
   return getCurrentBuildingOverallScore(props, minutes);
-}
-function updateFilterLabel() {
-  return requireControlsBindingMember("updateFilterLabel")();
 }
 function formatArea(areaM2) {
   if (areaM2 >= 10000) {
@@ -1016,15 +889,7 @@ function formatArea(areaM2) {
   }
   return Math.round(areaM2).toLocaleString() + " m²";
 }
-function buildFilterItems(types) {
-  return requireControlsBindingMember("buildFilterItems")(types);
-}
-function openFilterPopup() {
-  return;
-}
-function closeFilterPopup() {
-  return requireControlsBindingMember("closeFilterPopup")();
-}
+
 const controlActions = Urban95ControlActions.create({
   perf: urban95Perf,
   state: {
@@ -1044,6 +909,11 @@ const controlActions = Urban95ControlActions.create({
     getIsochronesLoaded: function () {
       return isochronesLoaded;
     },
+    getActiveHeatmapId: getActiveHeatmapIdState,
+    setActiveHeatmapId: setActiveHeatmapIdState,
+    getLayerVisibility: getLayerVisibilityState,
+    setLayerVisibility: setLayerVisibilityState,
+    getScoreMode: getScoreModeState,
   },
   pointDataLoader: {
     canRefreshPointAnalysisAfterPointDataLoad: pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad,
@@ -1065,6 +935,7 @@ const controlActions = Urban95ControlActions.create({
     updateBuildingColors: Urban95MapRenderers.updateBuildingColors,
     updateNeighborhoodSurfaceData: Urban95MapRenderers.updateNeighborhoodSurfaceData,
     updateNeighborhoodColors: Urban95MapRenderers.updateNeighborhoodColors,
+    updateDeckAmenityLayers: Urban95MapRenderers.updateDeckAmenityLayers,
   },
   selection: {
     loadIsochrones: Urban95Selection.loadIsochrones,
@@ -1080,6 +951,7 @@ const controlActions = Urban95ControlActions.create({
   scoreSidebar: {
     isOpen: Urban95ScoreSidebar.isOpen,
     hide: Urban95ScoreSidebar.hide,
+    sync: Urban95ScoreSidebar.sync,
   },
   neighborhoodSidebar: {
     show: Urban95NeighborhoodSidebar.show,
@@ -1099,101 +971,157 @@ const controlActions = Urban95ControlActions.create({
       return citywideModalEl;
     },
   },
+  controls: {
+    refreshLegend: function () {
+      if (controlsBinding && typeof controlsBinding.refreshLegend === "function") {
+        controlsBinding.refreshLegend();
+      }
+    },
+  },
 });
-function handlePointVisibilityChanged() {
-  controlActions.onPointVisibilityChanged();
-  applySchoolsLayerVisibility();
-}
+controlSidebarAdapter = Urban95ControlSidebarAdapter.create({
+  getUiElements: getControlUiElements,
+  controlActions: {
+    onPointVisibilityChanged: controlActions.onPointVisibilityChanged,
+    onScoreModeChanged: controlActions.onScoreModeChanged,
+  },
+  syncers: {
+    syncRoadsVisibility: applyRoadSymbologyVisibility,
+    syncUrbanNatureVisibility: applyUrbanNatureVisibility,
+    syncKidsPopulationVisibility: applyKidsPopulationVisibility,
+    syncSocioeconomicVisibility: applySocioeconomicVisibility,
+    syncSchoolsVisibility: applySchoolsLayerVisibility,
+    syncBusStopsVisibility: applyBusStopsLayerVisibility,
+    syncParksVisibility: overlayVisibility.applyParksVisibility,
+  },
+});
 controlsBinding = Urban95Controls.bind({
   elements: {
-    filterBtn: filterBtn,
-    filterPopup: filterPopup,
-    filterLabel: filterLabel,
-    filterItems: filterItems,
+    sidebarEl: controlSidebarEl,
+    bodyEl: controlSidebarBodyEl,
+    legendEl: controlLegendEl,
     filterBackdrop: filterBackdrop,
-    amenityFilterSection: amenityFilterSection,
-    radiusSection: radiusSection,
-    pointsVisibilitySection: pointsVisibilitySectionEl,
-    radiusToggle: radiusToggle,
-    scoreModelToggle: scoreModelToggle,
-    modeToggle: modeToggle,
-    modeHint: modeHint,
-    showTreesToggle: showTreesToggle,
-    showLightsToggle: showLightsToggle,
-    showSchoolsToggle: showSchoolsToggle,
-    showAmenityPointsToggle: showAmenityPointsToggle,
-    showRoadsToggle: showRoadsToggle,
-    showKidsPopulationToggle: showKidsPopulationToggle,
-    layersBtn: layersBtn,
-    layersPopup: layersPopup,
-    layersBackdrop: layersBackdrop,
-    layersBtnMeta: layersBtnMeta,
-    layersSelectAllBtn: layersSelectAllBtn,
-    layersDeselectAllBtn: layersDeselectAllBtn,
-    basemapToggle: basemapToggle,
-    showHeatmapToggle: showHeatmapToggle,
-    urban95PointToggles: urban95PointToggles,
-    schoolPointsToggleWrap: schoolPointsToggleWrap,
-    amenityPointsToggleWrap: amenityPointsToggleWrap,
   },
+  iconsBase: ICONS_BASE,
   scoreModel: Urban95ScoreModel,
+  showRegistry: Urban95WeightedMetricShowRegistry,
+  scoreContext: scoreContext,
+  getActiveMetric: scoreContext.getActiveMetric,
   isTouchDevice: isTouchDevice,
   getState: function () {
     return {
       scoreMode: getScoreModeState(),
       walkMinutes: getWalkMinutesState(),
+      activeHeatmapId: getActiveHeatmapIdState(),
       selectedAmenityTypes: getSelectedAmenityTypesState(),
       allFilterTypes: getAllFilterTypesState(),
       lastFilterRadioSelection: getLastFilterRadioSelectionState(),
       currentMode: currentMode,
+      layerVisibility: getLayerVisibilityState(),
     };
   },
-  setScoreMode: function (value) {
-    setScoreModeState(value);
-  },
-  setWalkMinutes: function (value) {
-    setWalkMinutesState(value);
-  },
-  setSelectedAmenityTypes: function (value) {
-    setSelectedAmenityTypesState(value);
-  },
-  setAllFilterTypes: function (value) {
-    setAllFilterTypesState(value);
-  },
-  setLastFilterRadioSelection: function (value) {
-    setLastFilterRadioSelectionState(value);
-  },
-  getTypesWithData: function () {
-    return typesWithData;
-  },
-  getAllTreesData: function () {
-    return pointDataLoader.getAllTreesData();
-  },
-  getAllStreetLightsData: function () {
-    return pointDataLoader.getAllStreetLightsData();
-  },
+  setScoreMode: function (value) { setScoreModeState(value); },
+  setWalkMinutes: function (value) { setWalkMinutesState(value); },
+  setActiveHeatmapId: function (value) { setActiveHeatmapIdState(value); },
+  setSelectedAmenityTypes: function (value) { setSelectedAmenityTypesState(value); },
+  setAllFilterTypes: function (value) { setAllFilterTypesState(value); },
+  setLastFilterRadioSelection: function (value) { setLastFilterRadioSelectionState(value); },
+  getTypesWithData: function () { return typesWithData; },
+  getAllTreesData: function () { return pointDataLoader.getAllTreesData(); },
+  getAllStreetLightsData: function () { return pointDataLoader.getAllStreetLightsData(); },
   callbacks: {
     applyScoreModeAmenities: amenityMode.apply,
     onFilterSelectionChanged: controlActions.onFilterSelectionChanged,
-    onScoreModeChanged: controlActions.onScoreModeChanged,
+    onScoreModeChanged: function (nextScoreMode) {
+      if (nextScoreMode !== "weighted") {
+        setWeightedShownAmenityTypesState(new Set());
+        overlayVisibility.updateCanonicalLayerVisibility("parks", false);
+      }
+      controlSidebarAdapter.onScoreModeChanged(nextScoreMode);
+    },
     onWalkMinutesChanged: controlActions.onWalkMinutesChanged,
     onModeToggleRequested: controlActions.onModeToggleRequested,
-    onPointVisibilityChanged: handlePointVisibilityChanged,
-    onHeatmapVisibilityChanged: controlActions.onHeatmapVisibilityChanged,
-    onEscape: controlActions.onEscape,
-    onBasemapChanged: function (basemap) {
-      applyBasemap(map, basemap);
+    onPointVisibilityChanged: function (row) {
+      overlayVisibility.applyOverlayToggleRowChange(row);
+      controlSidebarAdapter.onOverlayVisibilityChanged();
     },
+    onHeatmapSelectionChanged: controlActions.setActiveHeatmap,
+    onEscape: controlActions.onEscape,
+    onBasemapChanged: function (basemap) { applyBasemap(map, basemap); },
+    onMetricShowRequested: function (action, enabled) {
+      if (overlayVisibility.applyCanonicalMetricShowAction(action, enabled)) {
+        controlSidebarAdapter.onOverlayVisibilityChanged();
+      }
+    },
+    isMetricShowEnabled: function (action) { return overlayVisibility.isCanonicalMetricShowEnabled(action); },
     clearDerivedCaches: controlActions.clearDerivedCaches,
+    onSidebarWidthChanged: function (width) { scoreSidebarChrome.setSidebarReservation("left", width); },
   },
 });
-if (scoreModelToggle) {
-  scoreModelToggle.addEventListener("change", function (e) {
-    const input = e && e.target;
-    if (!input || input.name !== "score-model") return;
-    applySchoolsLayerVisibility();
-  });
-}
+const controlUi = controlsBinding.getUiElements();
+modeController = Urban95ModeController.create({
+  runtime: {
+    map: map,
+    perf: urban95Perf,
+    logger: Urban95Logger,
+  },
+  integrations: {
+    dashboards: Urban95Dashboards,
+    mapRenderers: Urban95MapRenderers,
+    selection: Urban95Selection,
+    neighborhoodSidebar: Urban95NeighborhoodSidebar,
+  },
+  ui: {
+    modeHint: controlUi.modeHint,
+    modeToggle: controlUi.modeToggle,
+    indicatorsSection: controlUi.indicatorsSection,
+    radiusInfo: radiusInfoEl,
+    citywideBody: citywideBodyEl,
+  },
+  state: {
+    getCurrentMode: function () {
+      return currentMode;
+    },
+    setCurrentMode: function (value) {
+      currentMode = value;
+    },
+    setSelectedNeighborhood: function (value) {
+      selectedNeighborhood = value;
+    },
+  },
+  scoring: {
+    getActiveMetric: getActiveMetricState,
+  },
+  contracts: {
+    buildingsFillLayerId: BUILDINGS_FILL_LAYER_ID,
+    neighborhoodSurfaceSourceLayerFallback: NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK,
+    houseModeHexOpacity: HOUSE_MODE_HEX_OPACITY,
+  },
+  assets: {
+    syncFilterUiForScoreMode: controlsBinding.syncFilterUiForScoreMode,
+    updateFilterLabel: controlsBinding.updateFilterLabel,
+    onModeChanged: function () {
+      if (controlsBinding && typeof controlsBinding.syncOverlayVisibility === "function") {
+        controlsBinding.syncOverlayVisibility();
+      }
+      if (controlSidebarAdapter) {
+        controlSidebarAdapter.syncMapLayers();
+      }
+    },
+    setLegendVisible: function (visible) {
+      if (controlsBinding && typeof controlsBinding.setLegendVisible === "function") {
+        controlsBinding.setLegendVisible(visible);
+      }
+    },
+    hasGeneratedArtifact: hasGeneratedArtifact,
+    sourceLayer: sourceLayer,
+    getNeighborhoodSurfaceColorExpression: getNeighborhoodSurfaceColorExpression,
+    getNeighborhoodSurfaceScorePropertyKey: getNeighborhoodSurfaceScorePropertyKey,
+  },
+  geo: {
+    turf: turf,
+  },
+});
 Urban95AppStartupBridge.bindStartup({
   map: map,
   startup: Urban95Startup,
@@ -1245,7 +1173,7 @@ Urban95AppStartupBridge.bindStartup({
       loadAmenitiesGeojsonFallback: loadAmenitiesGeojsonFallback,
       applyScoreModeAmenities: amenityMode.apply,
       clearDerivedCaches: clearDerivedCachesState,
-      applyHouseModeHexBackground: applyHouseModeHexBackground,
+      applyHouseModeHexBackground: modeController.applyHouseModeHexBackground.bind(modeController),
       applyUrbanNatureVisibility: applyUrbanNatureVisibility,
     },
     renderers: {
@@ -1376,7 +1304,7 @@ function ensureKidsPopulationLayer() {
 }
 function applyUrbanNatureVisibility() {
   if (!map.getLayer(URBAN_NATURE_LAYER_ID)) return;
-  const enabled = showUrbanNatureToggle && showUrbanNatureToggle.checked;
+  const enabled = overlayVisibility.isCanonicalLayerVisible("urban-nature", false);
   const showInMode = currentMode === "house" || currentMode === "citywide";
   map.setLayoutProperty(
     URBAN_NATURE_LAYER_ID,
@@ -1387,7 +1315,7 @@ function applyUrbanNatureVisibility() {
 
 function applyKidsPopulationVisibility() {
   if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) return;
-  const visible = showKidsPopulationToggle && showKidsPopulationToggle.checked;
+  const visible = overlayVisibility.isCanonicalLayerVisible("kids-population", false);
   map.setLayoutProperty(KIDS_POPULATION_LAYER_ID, "visibility", visible ? "visible" : "none");
 }
 async function loadKidsPopulationGridLayer() {
@@ -1511,7 +1439,7 @@ function ensureSocioeconomicLayer() {
   }
 }
 function applySocioeconomicVisibility() {
-  const visible = showSocioeconomicToggle && showSocioeconomicToggle.checked;
+  const visible = overlayVisibility.isCanonicalLayerVisible("socioeconomic", false);
   const nextVisibility = visible ? "visible" : "none";
   [
     SOCIOECONOMIC_FILL_LAYER_ID,
@@ -1610,12 +1538,79 @@ function applySchoolsLayerVisibility() {
   if (!map.getLayer(SCHOOLS_LAYER_ID)) return;
   const isUrban95 = getScoreModeState() === "weighted";
   const visible =
-    !!showSchoolsToggle &&
-    showSchoolsToggle.checked &&
+    overlayVisibility.isCanonicalLayerVisible("schools", false) &&
     isUrban95 &&
     currentMode === "house" &&
     map.getZoom() >= SCHOOLS_DETAIL_POINTS_MIN_ZOOM;
   map.setLayoutProperty(SCHOOLS_LAYER_ID, "visibility", visible ? "visible" : "none");
+}
+function ensureBusStopsLayer() {
+  if (!map.getSource(BUS_STOPS_SOURCE_ID)) {
+    map.addSource(BUS_STOPS_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(BUS_STOPS_LAYER_ID)) {
+    const beforeLayerId = map.getLayer("selected-building-outline")
+      ? "selected-building-outline"
+      : undefined;
+    map.addLayer(
+      {
+        id: BUS_STOPS_LAYER_ID,
+        type: "symbol",
+        source: BUS_STOPS_SOURCE_ID,
+        minzoom: SCHOOLS_DETAIL_POINTS_MIN_ZOOM,
+        layout: {
+          "icon-image": "bus",
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 1.0, 14, 1.3, 18, 1.8],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          visibility: "none",
+        },
+        paint: {
+          "icon-color": "#2563EB",
+          "icon-opacity": 0.95,
+        },
+      },
+      beforeLayerId
+    );
+  }
+}
+function applyBusStopsLayerVisibility() {
+  if (!map.getLayer(BUS_STOPS_LAYER_ID)) return;
+  const isUrban95 = getScoreModeState() === "weighted";
+  const visible =
+    overlayVisibility.isCanonicalLayerVisible("bus-stops", false) &&
+    isUrban95 &&
+    currentMode === "house" &&
+    map.getZoom() >= SCHOOLS_DETAIL_POINTS_MIN_ZOOM;
+  map.setLayoutProperty(BUS_STOPS_LAYER_ID, "visibility", visible ? "visible" : "none");
+}
+function bindBusStopsHover() {
+  if (busStopsHoverBound || !map.getLayer(BUS_STOPS_LAYER_ID)) return;
+  Urban95MapRenderers.bindPointHoverLayer(BUS_STOPS_LAYER_ID, function (feature) {
+    const props = (feature && feature.properties) || {};
+    return props.stop_name || props.name || "Bus stop";
+  });
+  busStopsHoverBound = true;
+}
+async function loadBusStopsLayer() {
+  try {
+    const busStops = await fetchJsonWithGzipFallback(BUS_STOPS_URL, { required: false });
+    ensureBusStopsLayer();
+    const source = map.getSource(BUS_STOPS_SOURCE_ID);
+    if (!source) return;
+    source.setData(
+      busStops && busStops.type === "FeatureCollection"
+        ? busStops
+        : { type: "FeatureCollection", features: [] }
+    );
+    bindBusStopsHover();
+    applyBusStopsLayerVisibility();
+  } catch (err) {
+    console.error("Failed to load bus stops layer:", err);
+  }
 }
 async function loadSchoolsLayer() {
   try {
@@ -1670,28 +1665,23 @@ function bindSchoolsHover() {
   schoolsHoverBound = true;
 }
 function applyRoadSymbologyVisibility() {
-  const visibility = showRoadsToggle && showRoadsToggle.checked ? "visible" : "none";
+  const visibility = overlayVisibility.isCanonicalLayerVisible("roads", false) ? "visible" : "none";
   ROAD_LAYER_IDS.forEach(function (layerId) {
     if (map.getLayer(layerId)) {
       map.setLayoutProperty(layerId, "visibility", visibility);
     }
   });
 }
-if (showRoadsToggle) {
-  showRoadsToggle.addEventListener("change", applyRoadSymbologyVisibility);
-  map.on("load", applyRoadSymbologyVisibility);
-}
-if (showUrbanNatureToggle) {
-  showUrbanNatureToggle.addEventListener("change", applyUrbanNatureVisibility);
-  map.on("load", applyUrbanNatureVisibility);
-}
-if (showKidsPopulationToggle) {
-  showKidsPopulationToggle.addEventListener("change", applyKidsPopulationVisibility);
-}
-if (showSocioeconomicToggle) {
-  showSocioeconomicToggle.addEventListener("change", applySocioeconomicVisibility);
-}
+map.on("load", function () {
+  if (controlSidebarAdapter) {
+    setLayerVisibilityState(
+      Object.assign({}, overlayVisibility.buildDefaultLayerVisibility(), getLayerVisibilityState())
+    );
+    controlSidebarAdapter.syncMapLayers();
+  }
+});
 map.on("load", loadKidsPopulationGridLayer);
 map.on("load", loadSocioeconomicLayer);
 map.on("load", loadSchoolsLayer);
+map.on("load", loadBusStopsLayer);
 Urban95InfoModal.bind({ infoModal: document.getElementById("info-modal"), infoBtn: document.getElementById("info-btn"), modalClose: document.getElementById("modal-close"), modalStart: document.getElementById("modal-start"), modalTabs: document.querySelectorAll(".modal-tab"), tabContents: document.querySelectorAll(".modal-tab-content") });

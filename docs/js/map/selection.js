@@ -24,6 +24,13 @@
     return deps;
   }
 
+  function requireRenderState(d) {
+    if (!d || !d.renderState) {
+      throw new Error("Urban95Selection.configure requires renderState");
+    }
+    return d.renderState;
+  }
+
   function perfSpan(d, name, meta, callback) {
     if (d.urban95Perf && typeof d.urban95Perf.span === "function") {
       return d.urban95Perf.span(name, meta, callback);
@@ -320,8 +327,7 @@
       var streetLightIndices = new Set();
       var counts = {};
 
-      var selectedAmenityTypes = d.getSelectedAmenityTypes();
-      if (selectedAmenityTypes.size === 0 || !polygon) {
+      if (!polygon) {
         return {
           amenityIndices: amenityIndices,
           treeIndices: treeIndices,
@@ -330,15 +336,37 @@
         };
       }
 
-      var allFilterTypes = d.getAllFilterTypes();
-      var useAll = selectedAmenityTypes.size === allFilterTypes.length;
+      var analysisFilter = requireRenderState(d).resolvePolygonAnalysisFilter({
+        scoreMode: d.getScoreMode(),
+        selectedAmenityTypes: d.getSelectedAmenityTypes(),
+        allFilterTypes: d.getAllFilterTypes(),
+        getActiveMetric: d.getActiveMetric,
+        scoreModel: d.scoreModel,
+        showRegistry: d.showRegistry,
+      });
+
+      if (analysisFilter.empty) {
+        return {
+          amenityIndices: amenityIndices,
+          treeIndices: treeIndices,
+          streetLightIndices: streetLightIndices,
+          counts: counts,
+        };
+      }
+
+      var amenityTypeSet = new Set(analysisFilter.amenityTypes || []);
+      var useAll = analysisFilter.useAll === true;
       var polygonBbox = d.turf.bbox(polygon);
 
       var allAmenitiesData = d.getAllAmenitiesData();
       if (allAmenitiesData && allAmenitiesData.features) {
         allAmenitiesData.features.forEach(function (feature, index) {
           var type = feature.properties.amenity_type;
-          if (!useAll && !selectedAmenityTypes.has(type)) return;
+          if (d.getScoreMode() === "weighted") {
+            if (!amenityTypeSet.has(type)) return;
+          } else if (!useAll && !amenityTypeSet.has(type)) {
+            return;
+          }
           var coords = feature.geometry && feature.geometry.coordinates;
           if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
             amenityIndices.add(index);
@@ -348,7 +376,7 @@
       }
 
       var allTreesData = d.getAllTreesData();
-      if (allTreesData && allTreesData.features && (useAll || selectedAmenityTypes.has("trees"))) {
+      if (allTreesData && allTreesData.features && analysisFilter.includeTrees) {
         allTreesData.features.forEach(function (feature, index) {
           var coords = feature.geometry && feature.geometry.coordinates;
           if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {
@@ -359,11 +387,7 @@
       }
 
       var allStreetLightsData = d.getAllStreetLightsData();
-      if (
-        allStreetLightsData &&
-        allStreetLightsData.features &&
-        (useAll || selectedAmenityTypes.has("street-lights"))
-      ) {
+      if (allStreetLightsData && allStreetLightsData.features && analysisFilter.includeStreetLights) {
         allStreetLightsData.features.forEach(function (feature, index) {
           var coords = feature.geometry && feature.geometry.coordinates;
           if (isCoordinateInsidePolygon(coords, polygon, polygonBbox)) {

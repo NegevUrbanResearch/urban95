@@ -35,6 +35,13 @@
     return deps;
   }
 
+  function requireRenderState(d) {
+    if (!d || !d.renderState) {
+      throw new Error("Urban95MapRenderers.configure requires renderState");
+    }
+    return d.renderState;
+  }
+
   function perfCounter(d, name, meta) {
     if (d.urban95Perf && typeof d.urban95Perf.counter === "function") {
       d.urban95Perf.counter(name, meta);
@@ -167,30 +174,46 @@
   }
 
   function getDeckRenderState(d) {
-    var togglePresent =
-      typeof d.getShowAmenityPointsTogglePresent === "function" && d.getShowAmenityPointsTogglePresent();
-    var toggleChecked =
-      !togglePresent ||
-      (typeof d.getShowAmenityPointsChecked === "function" && d.getShowAmenityPointsChecked());
-    var shouldRender =
-      d.getCurrentMode() === "house" &&
-      (d.getScoreMode() !== "expanded" || !togglePresent || toggleChecked) &&
-      d.map.getZoom() >= d.amenityClusterMinZoom;
+    var renderState = requireRenderState(d);
+    var layerVisibility = getLayerVisibilityMap(d);
+    var amenitiesLayerId = renderState.OVERLAY_LAYER_IDS.AMENITIES;
+    var togglePresent = Object.prototype.hasOwnProperty.call(layerVisibility, amenitiesLayerId);
+    var amenitiesVisible = isLayerVisible(d, amenitiesLayerId, true);
+    var shouldRender = renderState.shouldRenderDeckAmenities({
+      currentMode: d.getCurrentMode(),
+      scoreMode: d.getScoreMode(),
+      togglePresent: togglePresent,
+      layerVisibility: layerVisibility,
+      zoom: d.map.getZoom(),
+      amenityClusterMinZoom: d.amenityClusterMinZoom,
+    });
     var visibleFeatures = d.getVisibleAmenityFeatures();
     return {
       shouldRender: shouldRender,
       visibleFeatures: visibleFeatures,
-      key: [
-        shouldRender ? "render" : "hidden",
-        d.getScoreMode(),
-        d.getCurrentMode(),
-        togglePresent ? "toggle" : "no-toggle",
-        toggleChecked ? "checked" : "unchecked",
-        selectedAmenityTypesSignature(d),
-        getExactCameraSignature(d),
-        String(visibleAmenityFeaturesStamp),
-      ].join("::"),
+      key: renderState.buildDeckRenderStateKey({
+        shouldRender: shouldRender,
+        scoreMode: d.getScoreMode(),
+        currentMode: d.getCurrentMode(),
+        togglePresent: togglePresent,
+        amenitiesVisible: amenitiesVisible,
+        selectedAmenityTypesSignature: selectedAmenityTypesSignature(d),
+        cameraSignature: getExactCameraSignature(d),
+        visibleFeaturesStamp: visibleAmenityFeaturesStamp,
+      }),
     };
+  }
+
+  function getLayerVisibilityMap(d) {
+    return typeof d.getLayerVisibility === "function" ? d.getLayerVisibility() : {};
+  }
+
+  function isLayerVisible(d, layerId, fallback) {
+    return requireRenderState(d).isLayerVisible(getLayerVisibilityMap(d), layerId, fallback);
+  }
+
+  function getActiveMetricFromDeps(d) {
+    return typeof d.getActiveMetric === "function" ? d.getActiveMetric() : null;
   }
 
   function getSelectedAmenityTypes() {
@@ -302,83 +325,29 @@
 
   function getSpecialPointRenderPlan(config) {
     var d = requireDeps();
-    var useGeneratedVector = d.hasGeneratedArtifact(config.artifactKey);
-    var showWeighted =
-      d.getCurrentMode() === "house" &&
-      d.getScoreMode() === "weighted" &&
-      d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
-      config.getWeightedToggle();
-
-    if (d.getScoreMode() === "weighted") {
-      var weightedData = config.getData();
-      return {
-        geojsonVisible: showWeighted && !useGeneratedVector,
-        vectorVisible: showWeighted && useGeneratedVector,
-        features:
-          useGeneratedVector || !weightedData
-            ? null
-            : showWeighted
-              ? weightedData
-              : { type: "FeatureCollection", features: [] },
-      };
-    }
-
-    var data = config.getData();
-    if (!data) {
-      return {
-        geojsonVisible: d.getCurrentMode() === "house",
-        vectorVisible: false,
-        features: null,
-      };
-    }
-
-    var selectedAmenityTypes = d.getSelectedAmenityTypes();
-    if (selectedAmenityTypes.size === 0) {
-      return {
-        geojsonVisible: d.getCurrentMode() === "house",
-        vectorVisible: false,
-        features: { type: "FeatureCollection", features: [] },
-      };
-    }
-
-    var allFilterTypes = d.getAllFilterTypes();
-    var useAll = selectedAmenityTypes.size === allFilterTypes.length;
-    var showKind = useAll || selectedAmenityTypes.has(config.filterType);
-    if (!showKind || !config.getWeightedToggle()) {
-      return {
-        geojsonVisible: d.getCurrentMode() === "house",
-        vectorVisible: false,
-        features: { type: "FeatureCollection", features: [] },
-      };
-    }
-
-    if (config.isOnlyFilter()) {
-      return {
-        geojsonVisible: d.getCurrentMode() === "house",
-        vectorVisible: false,
-        features: data,
-      };
-    }
-
-    var ids = config.getInRadiusIds();
-    if (ids.size === 0) {
-      return {
-        geojsonVisible: d.getCurrentMode() === "house",
-        vectorVisible: false,
-        features: { type: "FeatureCollection", features: [] },
-      };
-    }
-
-    return {
-      geojsonVisible: d.getCurrentMode() === "house",
-      vectorVisible: false,
-      features: {
-        type: "FeatureCollection",
-        features: data.features.filter(function (_feature, index) {
-          return ids.has(index);
-        }),
-      },
+    var renderState = requireRenderState(d);
+    var layerVisibility = getLayerVisibilityMap(d);
+    var selectedAmenityTypes =
+      typeof d.getSelectedAmenityTypes === "function" ? d.getSelectedAmenityTypes() : new Set();
+    var allFilterTypes = typeof d.getAllFilterTypes === "function" ? d.getAllFilterTypes() : [];
+    var context = {
+      scoreMode: d.getScoreMode(),
+      currentMode: d.getCurrentMode(),
+      zoom: d.map.getZoom(),
+      urban95DetailPointsMinZoom: d.urban95DetailPointsMinZoom,
+      layerVisibility: layerVisibility,
+      useGeneratedVector: d.hasGeneratedArtifact(config.artifactKey),
+      filterType: config.filterType,
+      getData: config.getData,
+      getInRadiusIds: config.getInRadiusIds,
+      isOnlyFilter: config.isOnlyFilter,
+      selectedAmenityTypes: selectedAmenityTypes,
+      allFilterTypes: allFilterTypes,
+      metric: getActiveMetricFromDeps(d),
+      scoreModel: d.scoreModel,
+      showRegistry: d.showRegistry,
     };
+    return renderState.computeSpecialPointRenderPlan(context);
   }
 
   function applySpecialPointRenderPlan(config, plan) {
@@ -411,7 +380,6 @@
       geojsonLayerId: "tree-icons",
       vectorLayerId: "tree-icons-vector",
       filterType: "trees",
-      getWeightedToggle: d.getShowTreesChecked,
       getData: d.getAllTreesData,
       getInRadiusIds: d.getTreesInRadiusIds,
       isOnlyFilter: isFilterOnlyTrees,
@@ -426,7 +394,6 @@
       geojsonLayerId: "street-light-icons",
       vectorLayerId: "street-light-icons-vector",
       filterType: "street-lights",
-      getWeightedToggle: d.getShowLightsChecked,
       getData: d.getAllStreetLightsData,
       getInRadiusIds: d.getStreetLightsInRadiusIds,
       isOnlyFilter: isFilterOnlyStreetLights,
@@ -436,33 +403,25 @@
   function syncPointLayerVisibility() {
     var d = requireDeps();
     resetPointHoverState();
-    var showWeightedTrees =
-      d.getCurrentMode() === "house" &&
-      d.getScoreMode() === "weighted" &&
-      d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
-      d.getShowTreesChecked();
-    var showWeightedLights =
-      d.getCurrentMode() === "house" &&
-      d.getScoreMode() === "weighted" &&
-      d.map.getZoom() >= d.urban95DetailPointsMinZoom &&
-      d.getShowLightsChecked();
+    var treePlan = getSpecialPointRenderPlan(getTreeRenderConfig());
+    var lightPlan = getSpecialPointRenderPlan(getStreetLightRenderConfig());
     setLayerVisibilityIfPresent(
       "tree-icons-vector",
-      showWeightedTrees && d.hasGeneratedArtifact("trees")
+      treePlan.vectorVisible
     );
     setLayerVisibilityIfPresent(
       "tree-icons",
-      showWeightedTrees && !d.hasGeneratedArtifact("trees")
+      treePlan.geojsonVisible
     );
     setLayerVisibilityIfPresent(
       "street-light-icons-vector",
-      showWeightedLights && d.hasGeneratedArtifact("street_lights")
+      lightPlan.vectorVisible
     );
     setLayerVisibilityIfPresent(
       "street-light-icons",
-      showWeightedLights && !d.hasGeneratedArtifact("street_lights")
+      lightPlan.geojsonVisible
     );
-    if (d.getScoreMode() !== "expanded" && d.getDeckAmenityOverlay()) {
+    if (d.getScoreMode() === "weighted" && d.getDeckAmenityOverlay()) {
       d.getDeckAmenityOverlay().setProps({ layers: [] });
     }
   }
@@ -514,12 +473,51 @@
       }
 
       if (d.getScoreMode() === "weighted") {
-        perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "weighted", features: 0 }, function () {
-          source.setData({ type: "FeatureCollection", features: [] });
+        var weightedShownAmenityTypes = requireRenderState(d).resolveWeightedShownAmenityTypes({
+          metric: getActiveMetricFromDeps(d),
+          scoreModel: d.scoreModel,
+          showRegistry: d.showRegistry,
+          shownAmenityTypes:
+            typeof d.getWeightedShownAmenityTypes === "function"
+              ? d.getWeightedShownAmenityTypes()
+              : [],
         });
-        setVisibleAmenityFeaturesState(d, []);
-        updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "weighted" });
-        finishUpdate("weighted", 0);
+        if (!weightedShownAmenityTypes || weightedShownAmenityTypes.length === 0) {
+          perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "weighted", features: 0 }, function () {
+            source.setData({ type: "FeatureCollection", features: [] });
+          });
+          setVisibleAmenityFeaturesState(d, []);
+          updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "weighted" });
+          finishUpdate("weighted", 0);
+          return;
+        }
+
+        var weightedShownAmenityTypeSet = new Set(weightedShownAmenityTypes);
+        var weightedFeatures = perfSpan(
+          d,
+          "renderer:updateAmenitiesSource:buildWeightedShownFeatures",
+          function () {
+            return { features: weightedShownAmenityTypes.length };
+          },
+          function () {
+            return allAmenitiesData.features
+              .filter(function (feature) {
+                return weightedShownAmenityTypeSet.has(feature.properties.amenity_type);
+              })
+              .map(function (feature) {
+                return Object.assign({}, feature, {
+                  properties: Object.assign({}, feature.properties, { _inRadius: false }),
+                });
+              });
+          }
+        );
+
+        perfSpan(d, "renderer:updateAmenitiesSource:setData", { branch: "weightedShown", features: weightedFeatures.length }, function () {
+          source.setData({ type: "FeatureCollection", features: weightedFeatures });
+        });
+        setVisibleAmenityFeaturesState(d, weightedFeatures);
+        updateDeckAmenityLayers({ caller: "updateAmenitiesSource", branch: "weightedShown" });
+        finishUpdate("weightedShown", weightedFeatures.length);
         return;
       }
 
@@ -1396,28 +1394,30 @@
     return d.urban95Perf.phase("updateBuildingColors", function () {
       var buildingsData = d.getBuildingsData();
       if (!buildingsData || !buildingsData.features || buildingsData.features.length === 0) return;
-      if (d.getAllFilterTypes().length === 0) return;
+      if (d.getScoreMode() !== "weighted" && d.getAllFilterTypes().length === 0) return;
 
       var feats = buildingsData.features;
       var symPctKey = d.symPctKey;
+      var isWeighted = d.getScoreMode() === "weighted";
       var selectedAmenityTypes = d.getSelectedAmenityTypes();
+      var hasExpandedSelection = selectedAmenityTypes.size > 0;
 
-      if (selectedAmenityTypes.size === 0) {
-        feats.forEach(function (feature) {
-          var props = feature.properties || {};
-          props[symPctKey] = 0;
-        });
-      } else {
+      if (isWeighted || hasExpandedSelection) {
         var scores = d.collectBuildingScores();
-        var ranks = d.getScoreMode() === "weighted" ? null : d.bulkPercentileRanks(scores);
+        var ranks = isWeighted ? null : d.bulkPercentileRanks(scores);
         feats.forEach(function (feature, index) {
           var props = feature.properties || {};
-          if (d.getScoreMode() === "weighted") {
+          if (isWeighted) {
             var rawScore = scores[index];
             props[symPctKey] = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0;
           } else {
             props[symPctKey] = ranks[index] != null ? ranks[index] : 0;
           }
+        });
+      } else {
+        feats.forEach(function (feature) {
+          var props = feature.properties || {};
+          props[symPctKey] = 0;
         });
       }
 
@@ -1453,19 +1453,7 @@
           d.buildingsChoroplethFillColorExpr
         );
       }
-      updateAccessibilityLegendLabels();
     });
-  }
-
-  function updateAccessibilityLegendLabels() {
-    var d = requireDeps();
-    if (!d.legendLabelsEl) return;
-    var labels = [0, 25, 50, 75, 100];
-    d.legendLabelsEl.innerHTML = labels
-      .map(function (label) {
-        return "<span>" + label + "</span>";
-      })
-      .join("");
   }
 
   function updateNeighborhoodSurfaceData() {
@@ -1480,32 +1468,60 @@
     return d.urban95Perf.phase("updateNeighborhoodSurfaceData", function () {
       var surfaceSrc = d.map.getSource("neighborhood-score-surface");
       if (!surfaceSrc) return;
+      var activeMetric = getActiveMetricFromDeps(d);
+      var renderState = requireRenderState(d);
+      var neighborhoodSurfaceData = d.getNeighborhoodSurfaceData();
 
       if (d.hasGeneratedArtifact("neighborhood_surface")) {
+        var generatedScoreKey = d.getNeighborhoodSurfaceScorePropertyKey();
+        if (d.getScoreMode() === "weighted" && !generatedScoreKey) {
+          if (d.map.getLayer("neighborhoods-surface")) {
+            d.map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
+          }
+          return;
+        }
+        if (
+          d.getScoreMode() === "weighted" &&
+          activeMetric &&
+          activeMetric.kind === "weighted-subcategory" &&
+          neighborhoodSurfaceData &&
+          !renderState.supportsMetricSurfaceData(activeMetric, neighborhoodSurfaceData)
+        ) {
+          if (d.map.getLayer("neighborhoods-surface")) {
+            d.map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
+          }
+          return;
+        }
         if (d.map.getLayer("neighborhoods-surface")) {
-          var scoreKey = d.getNeighborhoodSurfaceScorePropertyKey() || "score_weighted";
-          var colorExpr = d.getNeighborhoodSurfaceColorExpression(scoreKey);
+          var colorExpr = d.getNeighborhoodSurfaceColorExpression(generatedScoreKey);
           var outlineExpr = d.getCurrentMode() === "house" ? "rgba(0,0,0,0)" : colorExpr;
           d.map.setPaintProperty("neighborhoods-surface", "fill-color", colorExpr);
           d.map.setPaintProperty("neighborhoods-surface", "fill-outline-color", outlineExpr);
+          d.map.setLayoutProperty(
+            "neighborhoods-surface",
+            "visibility",
+            activeMetric ? "visible" : "none"
+          );
         }
         return;
       }
 
-      var neighborhoodSurfaceData = d.getNeighborhoodSurfaceData();
       var precomputedScoreKey = d.getNeighborhoodSurfaceScorePropertyKey();
       if (
         d.getScoreMode() === "weighted" &&
-        precomputedScoreKey &&
-        precomputedScoreKey !== "score_weighted" &&
-        neighborhoodSurfaceData &&
-        Array.isArray(neighborhoodSurfaceData.features) &&
-        neighborhoodSurfaceData.features.length > 0
+        activeMetric &&
+        activeMetric.kind === "weighted-subcategory" &&
+        !renderState.supportsMetricSurfaceData(activeMetric, neighborhoodSurfaceData)
       ) {
-        var sample = neighborhoodSurfaceData.features[0].properties || {};
-        if (!Object.prototype.hasOwnProperty.call(sample, precomputedScoreKey)) {
-          precomputedScoreKey = "score_weighted";
+        if (surfaceSrc && typeof surfaceSrc.setData === "function") {
+          perfSpan(d, "renderer:updateNeighborhoodSurfaceData:setData", { branch: "missingSubcategory", features: 0 }, function () {
+            surfaceSrc.setData({ type: "FeatureCollection", features: [] });
+          });
         }
+        if (d.map.getLayer("neighborhoods-surface")) {
+          d.map.setLayoutProperty("neighborhoods-surface", "visibility", "none");
+        }
+        return;
       }
 
       if (
@@ -1524,6 +1540,11 @@
           var dataOutlineExpr = d.getCurrentMode() === "house" ? "rgba(0,0,0,0)" : dataColorExpr;
           d.map.setPaintProperty("neighborhoods-surface", "fill-color", dataColorExpr);
           d.map.setPaintProperty("neighborhoods-surface", "fill-outline-color", dataOutlineExpr);
+          d.map.setLayoutProperty(
+            "neighborhoods-surface",
+            "visibility",
+            activeMetric ? "visible" : "none"
+          );
         }
         return;
       }
@@ -1552,12 +1573,26 @@
       var sfx = "_" + d.getScoreMinutes() + "min";
       var avgKey = d.getNeighborhoodAverageKey(sfx);
       var feats = neighborhoodsData.features;
+      var activeMetric = getActiveMetricFromDeps(d);
+      if (
+        d.getScoreMode() === "weighted" &&
+        (!avgKey ||
+          (feats.length > 0 &&
+            !requireRenderState(d).supportsMetricNeighborhoodAverageData(
+              activeMetric,
+              feats[0].properties || {}
+            )))
+      ) {
+        d.map.setLayoutProperty("neighborhoods-fill", "visibility", "none");
+        return;
+      }
+      d.map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
       var values = feats.map(function (feature) {
         var props = feature.properties || {};
         if (d.getScoreMode() === "weighted") {
           var selectedValue = Number(props[avgKey]);
           if (Number.isFinite(selectedValue)) return selectedValue;
-          return Number(props["avg_score_weighted" + sfx]) || 0;
+          return NaN;
         }
         return Number(props[avgKey]) || 0;
       });
@@ -1605,7 +1640,6 @@
         d.map.setPaintProperty("neighborhoods-fill", "fill-color", colorExpr);
         d.map.setPaintProperty("neighborhoods-fill", "fill-opacity", 0.6);
       }
-      updateAccessibilityLegendLabels();
     });
   }
 
@@ -1632,7 +1666,6 @@
     scheduleDeckUpdate: scheduleDeckUpdate,
     initDeckAmenityOverlay: initDeckAmenityOverlay,
     updateBuildingColors: updateBuildingColors,
-    updateAccessibilityLegendLabels: updateAccessibilityLegendLabels,
     updateNeighborhoodSurfaceData: updateNeighborhoodSurfaceData,
     updateNeighborhoodColors: updateNeighborhoodColors,
   };

@@ -45,7 +45,7 @@
       ["state.getSelectedBuilding", state.getSelectedBuilding],
       ["ui.buildFilterItems", ui.buildFilterItems],
       ["ui.syncFilterUiForScoreMode", ui.syncFilterUiForScoreMode],
-      ["ui.updateShowPointsToggleLabel", ui.updateShowPointsToggleLabel],
+      ["ui.syncOverlayVisibility", ui.syncOverlayVisibility],
       ["pointDataLoader.ensureExpandedPointDataLoaded", pointDataLoader.ensureExpandedPointDataLoaded],
       ["pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad", pointDataLoader.canRefreshPointAnalysisAfterPointDataLoad],
       ["renderers.syncPointLayerVisibility or renderers.applyShowPointsToggle", pointLayerVisibilitySync],
@@ -114,7 +114,7 @@
         }, function () {
           ui.buildFilterItems();
           ui.syncFilterUiForScoreMode();
-          ui.updateShowPointsToggleLabel();
+          ui.syncOverlayVisibility();
         });
         return perfSpanAsync(
           "amenityMode.apply:ensureExpandedPointDataLoaded",

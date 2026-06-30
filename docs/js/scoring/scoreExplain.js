@@ -1,29 +1,4 @@
 (function () {
-  var SCORE_EXPLAIN_WEIGHTED_CATEGORY_ICONS = {
-    environmental_quality: "garden",
-    nature: "park",
-    play: "playground",
-    safety_mobility: "bus",
-    family_services: "heart",
-  };
-
-  var SCORE_EXPLAIN_WEIGHTED_SUB_ICONS = {
-    shade: "park-alt1",
-    trees: "park-alt1",
-    roads: "road-accident",
-    parks: "park",
-    urban_nature_areas: "park-alt1",
-    playgrounds: "playground",
-    street_lights: "lighthouse",
-    bicycle_access: "bicycle",
-    bus_stops: "bus",
-    shelters: "shelter",
-    education: "school",
-    community: "town-hall",
-    business: "shop",
-    health: "hospital",
-  };
-
   var SCORE_EXPLAIN_CLEAN_ICON_BY_KEY = {
     trees: "park-alt1",
     parks: "park",
@@ -45,7 +20,6 @@
     "Other manifest-weighted": "marker",
   };
 
-  var SCORE_EXPLAIN_ICON_NEUTRAL = "#0f172a";
   var REQUIRED_SCORE_MODEL_MEMBERS = {
     CLEAN_SCORE_COMPONENTS: "array",
     CLEAN_WEIGHTS: "object",
@@ -61,8 +35,7 @@
     getExpandedContributionForType: "function",
     formatScoreInteger: "function",
     formatMetricNumber: "function",
-    getPercentileSeriesCacheKey: "function",
-    computePercentileRank: "function"
+    computePercentileRank: "function",
   };
 
   function create(deps) {
@@ -70,13 +43,15 @@
     var scoreModel = validated.scoreModel;
     var state = validated.state;
     var iconsBase = validated.iconsBase;
+    var weightedIcons = window.Urban95WeightedIndicatorIcons.create(iconsBase);
+    var iconNeutral = weightedIcons.ICON_NEUTRAL;
 
     function getWeightedCategoryIcon(stem) {
-      return SCORE_EXPLAIN_WEIGHTED_CATEGORY_ICONS[stem] || "marker";
+      return weightedIcons.getCategoryIcon(stem);
     }
 
     function getWeightedSubcategoryIcon(stem) {
-      return SCORE_EXPLAIN_WEIGHTED_SUB_ICONS[stem] || "marker";
+      return weightedIcons.getSubcategoryIcon(stem);
     }
 
     function getCleanComponentIcon(key) {
@@ -94,24 +69,15 @@
     }
 
     function renderHorizonIcon(iconName, color) {
-      var name = iconName || "marker";
-      var iconColor = color || "#64748b";
-      var url = iconsBase + "/" + encodeURIComponent(name) + ".svg";
-      return (
-        '<span class="horizon-icon" role="img" aria-hidden="true" style="--horizon-icon-color:' +
-        escapeHtml(iconColor) +
-        ";--horizon-icon-url:url('" +
-        url +
-        "')\"></span>"
-      );
+      return weightedIcons.renderIcon(iconName, color);
     }
 
     function getScoreExplainRowIconColor(row, barColor) {
-      if (!row) return SCORE_EXPLAIN_ICON_NEUTRAL;
+      if (!row) return iconNeutral;
       if (state.getScoreMode() === "weighted" && !row.amenityType && !row.cleanKey) {
         return barColor || "#64748b";
       }
-      return SCORE_EXPLAIN_ICON_NEUTRAL;
+      return iconNeutral;
     }
 
     function getScoreExplainPartialFilterSet() {
@@ -140,6 +106,12 @@
     }
 
     function isScoreExplainCategoryFilterHighlighted(cat) {
+      if (state.getScoreMode() === "weighted") {
+        var metric = validated.getActiveMetric();
+        if (!metric || !cat) return false;
+        if (metric.selectedWeightedStem !== cat.stem) return false;
+        return metric.kind === "weighted-category" || metric.kind === "weighted-subcategory";
+      }
       var active = getScoreExplainPartialFilterSet();
       if (!active || !cat) return false;
       return active.has(cat.stem);
@@ -229,7 +201,7 @@
     }
 
     function renderHorizonSubLabelCell(label, iconName, color) {
-      var iconColor = color != null && color !== "" ? color : SCORE_EXPLAIN_ICON_NEUTRAL;
+      var iconColor = color != null && color !== "" ? color : iconNeutral;
       var html = '<span class="horizon-sub-label"';
       if (color != null && color !== "") html += ' style="color:' + escapeHtml(color) + '"';
       html += ">";
@@ -238,21 +210,6 @@
       html += '<span class="horizon-label-text">' + escapeHtml(label) + "</span>";
       html += "</span></span>";
       return html;
-    }
-
-    function getSelectedWeightedCategoryStem() {
-      if (state.getScoreMode() !== "weighted") return null;
-      var selected = state.getSelectedAmenityTypes();
-      if (!selected || selected.size !== 1) return null;
-      var stem = Array.from(selected)[0];
-      return scoreModel.WEIGHTED_CATEGORY_BY_STEM[stem] ? stem : null;
-    }
-
-    function getSelectedWeightedCategoryLabel() {
-      var stem = getSelectedWeightedCategoryStem();
-      if (!stem) return "Urban95";
-      var component = scoreModel.WEIGHTED_CATEGORY_BY_STEM[stem];
-      return component ? component.label : "Urban95";
     }
 
     function buildFilteredFormulaLine(useAll) {
@@ -266,14 +223,22 @@
       return "Default score = " + terms.join(" + ");
     }
 
+    function getSelectedTypesArray() {
+      return Array.from(state.getSelectedAmenityTypes() || []);
+    }
+
+    function isUsingAllSelectedTypes(selectedTypes, allTypes) {
+      return !!selectedTypes && selectedTypes.length > 0 && selectedTypes.length === allTypes.length;
+    }
+
     function fillExplainSeries(series, features, minutes) {
       var explain = {};
       var explainAmenity = {};
       var suffix = "_" + minutes + "min";
-      var selected = state.getSelectedAmenityTypes();
       var allTypes = state.getAllFilterTypes();
-      var useAll = !selected || selected.size === allTypes.length;
-      var activeTypes = useAll ? allTypes : Array.from(selected);
+      var selectedTypes = getSelectedTypesArray();
+      var useAll = isUsingAllSelectedTypes(selectedTypes, allTypes);
+      var activeTypes = useAll ? allTypes : selectedTypes;
 
       function pushMetric(id, getter) {
         var values = [];
@@ -422,11 +387,7 @@
     }
 
     function getPercentileSeriesForMinutes(minutes) {
-      var cacheKey = scoreModel.getPercentileSeriesCacheKey(minutes, {
-        scoreMode: state.getScoreMode(),
-        selectedAmenityTypes: Array.from(state.getSelectedAmenityTypes() || []),
-        allFilterTypes: state.getAllFilterTypes(),
-      });
+      var cacheKey = state.getPercentileSeriesCacheKey(minutes);
       if (state.hasPercentileSeries(cacheKey)) {
         return state.getPercentileSeries(cacheKey);
       }
@@ -449,12 +410,12 @@
 
     function buildPercentileMetrics(buildingProps) {
       if (!buildingProps) return null;
-      var selected = state.getSelectedAmenityTypes();
-      if (!selected || selected.size === 0) return null;
       var overallScore = state.getBuildingOverallScore(buildingProps, state.getWalkMinutes());
       if (state.getScoreMode() === "weighted") {
         return { overallPercentile: null, overallScore: overallScore };
       }
+      var selected = state.getSelectedAmenityTypes();
+      if (!selected || selected.size === 0) return null;
       var series = getPercentileSeriesForMinutes(state.getWalkMinutes());
       if (!series || !series.overall || series.overall.length === 0) return null;
       return {
@@ -468,13 +429,77 @@
       return scoreModel.computePercentileRank(values, value);
     }
 
+    function buildPartialCleanRows(rows, props, minutes, series, activeTypes) {
+      activeTypes.forEach(function (type) {
+        var value = scoreModel.getFilteredContributionForType(props, minutes, type);
+        var config = scoreModel.getAmenityConfig(type);
+        var weightKey = scoreModel.filterTypeToCleanWeightKey(type);
+        var detail = "";
+        if (type === "trees") {
+          detail = "×" + scoreModel.CLEAN_WEIGHTS.trees + " per tree in range";
+        } else if (type === "street-lights") {
+          detail = "×" + scoreModel.CLEAN_WEIGHTS["street-lights"] + " per street light in range";
+        }
+        rows.push({
+          label: config.label,
+          amenityType: type,
+          cleanKey: weightKey,
+          detail: detail,
+          value: value,
+          valueLabel: scoreModel.formatMetricNumber(value) + " pts",
+          percentile: percentileForSeries(series.explain["flt_sel_" + type], value),
+        });
+      });
+    }
+
+    function buildPartialExpandedRows(rows, props, minutes, suffix, series, activeTypes) {
+      activeTypes.forEach(function (type) {
+        var value = scoreModel.getExpandedContributionForType(props, minutes, type);
+        if (type === "trees") {
+          rows.push({
+            label: "Trees (\u00d7\u00bc)",
+            amenityType: type,
+            detail: "",
+            value: value,
+            valueLabel: scoreModel.formatMetricNumber(value),
+            percentile: percentileForSeries(series.explain["exp_sel_" + type], value),
+          });
+          return;
+        }
+        if (type === "street-lights") {
+          rows.push({
+            label: "Street lights (\u00d7\u00bc)",
+            amenityType: type,
+            detail: "",
+            value: value,
+            valueLabel: scoreModel.formatMetricNumber(value),
+            percentile: percentileForSeries(series.explain["exp_sel_" + type], value),
+          });
+          return;
+        }
+
+        var statKey = scoreModel.amenityTypeToBuildingStatKey(type);
+        var count = Number(props["amen_" + statKey + suffix]) || 0;
+        var config = scoreModel.getAmenityConfig(type);
+        rows.push({
+          label: config.label,
+          amenityType: type,
+          detail: "",
+          value: count,
+          valueLabel: scoreModel.formatMetricNumber(count),
+          percentile: percentileForSeries(series.explain["exp_sel_" + type], value),
+        });
+      });
+    }
+
     function buildExplainScoreBreakdown(buildingProps) {
       var props = buildingProps || {};
       var minutes = state.getScoreMinutes();
       var suffix = "_" + minutes + "min";
-      var selected = state.getSelectedAmenityTypes();
+      var selectedTypes = getSelectedTypesArray();
       var allTypes = state.getAllFilterTypes();
-      var useAll = selected && selected.size === allTypes.length;
+      var useAll = isUsingAllSelectedTypes(selectedTypes, allTypes);
+      var activeTypes = useAll ? allTypes : selectedTypes;
       var overallScore = state.getBuildingOverallScore(props, minutes);
       var rows = [];
       var isWeighted = state.getScoreMode() === "weighted";
@@ -529,7 +554,9 @@
 
       if (isClean) {
         rows.push({ sectionTitle: "Weighted components" });
-        if (scoreModel.hasCleanPtsBreakdown(props, minutes)) {
+        if (!useAll) {
+          buildPartialCleanRows(rows, props, minutes, series, activeTypes);
+        } else if (scoreModel.hasCleanPtsBreakdown(props, minutes)) {
           (scoreModel.CLEAN_SCORE_COMPONENTS || []).forEach(function (component) {
             var column = scoreModel.cleanPtsPropertyName(component.key, minutes);
             var value = Number(props[column]) || 0;
@@ -565,65 +592,69 @@
         }
       } else {
         rows.push({ sectionTitle: "Main components" });
-        var amenityCount = Number(props["num_amenities" + suffix]) || 0;
-        var treeQuarter = (Number(props["num_trees" + suffix]) || 0) * 0.25;
-        var streetLightQuarter = (Number(props["num_street_lights" + suffix]) || 0) * 0.25;
-        rows.push({
-          label: "Amenity POIs (count)",
-          detail: "1 point per POI in range",
-          value: amenityCount,
-          valueLabel: scoreModel.formatMetricNumber(amenityCount),
-          percentile: percentileForSeries(series.explain.exp_amen, amenityCount),
-        });
-        rows.push({
-          label: "Trees (\u00d7\u00bc)",
-          detail: "",
-          value: treeQuarter,
-          valueLabel: scoreModel.formatMetricNumber(treeQuarter),
-          percentile: percentileForSeries(series.explain.exp_tree_w, treeQuarter),
-        });
-        rows.push({
-          label: "Street lights (\u00d7\u00bc)",
-          detail: "",
-          value: streetLightQuarter,
-          valueLabel: scoreModel.formatMetricNumber(streetLightQuarter),
-          percentile: percentileForSeries(series.explain.exp_sl_w, streetLightQuarter),
-        });
+        if (!useAll) {
+          buildPartialExpandedRows(rows, props, minutes, suffix, series, activeTypes);
+        } else {
+          var amenityCount = Number(props["num_amenities" + suffix]) || 0;
+          var treeQuarter = (Number(props["num_trees" + suffix]) || 0) * 0.25;
+          var streetLightQuarter = (Number(props["num_street_lights" + suffix]) || 0) * 0.25;
+          rows.push({
+            label: "Amenity POIs (count)",
+            detail: "1 point per POI in range",
+            value: amenityCount,
+            valueLabel: scoreModel.formatMetricNumber(amenityCount),
+            percentile: percentileForSeries(series.explain.exp_amen, amenityCount),
+          });
+          rows.push({
+            label: "Trees (\u00d7\u00bc)",
+            detail: "",
+            value: treeQuarter,
+            valueLabel: scoreModel.formatMetricNumber(treeQuarter),
+            percentile: percentileForSeries(series.explain.exp_tree_w, treeQuarter),
+          });
+          rows.push({
+            label: "Street lights (\u00d7\u00bc)",
+            detail: "",
+            value: streetLightQuarter,
+            valueLabel: scoreModel.formatMetricNumber(streetLightQuarter),
+            percentile: percentileForSeries(series.explain.exp_sl_w, streetLightQuarter),
+          });
 
-        var availableStatKeys = state.getBuildingAmenityStatKeysForMinutes(minutes);
-        var amenityRows = [];
-        allTypes
-          .filter(function (type) {
-            return type !== "trees" && type !== "street-lights";
-          })
-          .forEach(function (type) {
-            var statKey = scoreModel.amenityTypeToBuildingStatKey(type);
-            var metricId = "exp_amen_" + statKey;
-            var values = series.explainAmenity[metricId];
-            if (!values) return;
-            var hasBuildingColumn = availableStatKeys.has(statKey);
-            var count = hasBuildingColumn
-              ? Number(props["amen_" + statKey + suffix]) || 0
-              : Number(state.getLatestRadiusCounts()[type]) || 0;
-            var config = scoreModel.getAmenityConfig(type);
-            amenityRows.push({
-              label: config.label,
-              amenityType: type,
-              detail: "",
-              value: count,
-              valueLabel: scoreModel.formatMetricNumber(count),
-              percentile: hasBuildingColumn ? percentileForSeries(values, count) : null,
+          var availableStatKeys = state.getBuildingAmenityStatKeysForMinutes(minutes);
+          var amenityRows = [];
+          allTypes
+            .filter(function (type) {
+              return type !== "trees" && type !== "street-lights";
+            })
+            .forEach(function (type) {
+              var statKey = scoreModel.amenityTypeToBuildingStatKey(type);
+              var metricId = "exp_amen_" + statKey;
+              var values = series.explainAmenity[metricId];
+              if (!values) return;
+              var hasBuildingColumn = availableStatKeys.has(statKey);
+              var count = hasBuildingColumn
+                ? Number(props["amen_" + statKey + suffix]) || 0
+                : Number(state.getLatestRadiusCounts()[type]) || 0;
+              var config = scoreModel.getAmenityConfig(type);
+              amenityRows.push({
+                label: config.label,
+                amenityType: type,
+                detail: "",
+                value: count,
+                valueLabel: scoreModel.formatMetricNumber(count),
+                percentile: hasBuildingColumn ? percentileForSeries(values, count) : null,
+              });
             });
+          amenityRows.sort(function (left, right) {
+            if (right.value !== left.value) return right.value - left.value;
+            return left.label.localeCompare(right.label);
           });
-        amenityRows.sort(function (left, right) {
-          if (right.value !== left.value) return right.value - left.value;
-          return left.label.localeCompare(right.label);
-        });
-        if (amenityRows.length > 0) {
-          rows.push({ sectionTitle: "POI categories (count in range)" });
-          amenityRows.forEach(function (row) {
-            rows.push(row);
-          });
+          if (amenityRows.length > 0) {
+            rows.push({ sectionTitle: "POI categories (count in range)" });
+            amenityRows.forEach(function (row) {
+              rows.push(row);
+            });
+          }
         }
       }
 
@@ -679,9 +710,7 @@
       buildExplainScoreBreakdown: buildExplainScoreBreakdown,
       buildPercentileMetrics: buildPercentileMetrics,
       renderWeightedSubcategoryComparisonList: renderWeightedSubcategoryComparisonList,
-      getSelectedWeightedCategoryStem: getSelectedWeightedCategoryStem,
-      getSelectedWeightedCategoryLabel: getSelectedWeightedCategoryLabel,
-      scoreExplainIconNeutral: SCORE_EXPLAIN_ICON_NEUTRAL,
+      scoreExplainIconNeutral: iconNeutral,
     };
   }
 
@@ -719,6 +748,9 @@
     if (!deps.state || typeof deps.state !== "object") {
       throw new Error("Urban95ScoreExplain.create requires state");
     }
+    if (typeof deps.getActiveMetric !== "function") {
+      throw new Error("Urban95ScoreExplain.create requires getActiveMetric");
+    }
     [
       "getScoreMode",
       "getScoreMinutes",
@@ -730,6 +762,7 @@
       "hasPercentileSeries",
       "getPercentileSeries",
       "setPercentileSeries",
+      "getPercentileSeriesCacheKey",
       "getBuildingAmenityStatKeysForMinutes",
       "getBuildingOverallScore",
     ].forEach(function (memberName) {

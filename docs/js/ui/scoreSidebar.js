@@ -256,7 +256,12 @@
 
   function getScoreExplainHeroLabel() {
     var d = requireDeps();
-    if (d.getScoreMode() === "weighted") return d.getScoreModeLabel() + " score";
+    if (d.getScoreMode() === "weighted") {
+      var metric = typeof d.getActiveMetric === "function" ? d.getActiveMetric() : null;
+      var weightedLabel =
+        !metric || metric.kind === "weighted-overall" ? "Urban95" : metric.label || "Urban95";
+      return weightedLabel + " score";
+    }
     return "Citywide percentile";
   }
 
@@ -601,7 +606,11 @@
       hideScoreExplainSidebar();
       return;
     }
-    if (selectedAmenityTypes && selectedAmenityTypes.size === 0) {
+    if (
+      d.getScoreMode() === "expanded" &&
+      selectedAmenityTypes &&
+      selectedAmenityTypes.size === 0
+    ) {
       if (emptyEl) {
         emptyEl.hidden = false;
         emptyEl.textContent = "Select amenity types in the filter to see a score breakdown.";
@@ -716,20 +725,5 @@
     hide: hideScoreExplainSidebar,
     sync: syncScoreExplainSidebar,
     isOpen: isScoreExplainSidebarOpen,
-    renderScoreExplainSidebarWeighted: renderScoreExplainSidebarWeighted,
-    renderScoreExplainSidebarExpanded: renderScoreExplainSidebarExpanded,
-    populateScoreExplainBuildingContext: populateScoreExplainBuildingContext,
-    populateScoreExplainSidebarHeader: populateScoreExplainSidebarHeader,
-    renderScoreExplainSidebar: renderScoreExplainSidebar,
-    resetScoreExplainSidebarFit: resetScoreExplainSidebarFit,
-    applyScoreExplainContentScale: applyScoreExplainContentScale,
-    fitScoreExplainSidebarToViewport: fitScoreExplainSidebarToViewport,
-    scheduleFitScoreExplainSidebar: scheduleFitScoreExplainSidebar,
-    bindScoreExplainSidebarInteractions: bindScoreExplainSidebarInteractions,
-    isScoreExplainSidebarOpen: isScoreExplainSidebarOpen,
-    showScoreExplainSidebar: showScoreExplainSidebar,
-    showScoreExplainSidebarShell: showScoreExplainSidebarShell,
-    hideScoreExplainSidebar: hideScoreExplainSidebar,
-    syncScoreExplainSidebar: syncScoreExplainSidebar,
   };
 })();
