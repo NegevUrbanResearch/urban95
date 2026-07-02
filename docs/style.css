@@ -1215,6 +1215,117 @@ body.desktop-only-blocked {
   white-space: nowrap;
 }
 
+.score-explain-demographics {
+  flex: 0 0 auto;
+  margin-top: var(--sidebar-note-gap, 12px);
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
+}
+
+.score-explain-demographics-kicker {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  color: #1d4ed8;
+}
+
+.score-explain-demographics-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.demo-chip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.demo-chip--ages {
+  flex: 1.65;
+}
+
+.demo-chip:not(.demo-chip--ages) {
+  align-items: center;
+  text-align: center;
+}
+
+.demo-chip-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  color: #3b82f6;
+}
+
+.demo-chip-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: #1d4ed8;
+}
+
+.demo-chip-meta {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #64748b;
+}
+
+.demo-chip:not(.demo-chip--ages) .demo-chip-meta {
+  width: 100%;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(37, 99, 235, 0.12);
+}
+
+.demo-chip-ages {
+  display: flex;
+  align-items: stretch;
+}
+
+.demo-chip-age {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+}
+
+.demo-chip-divider {
+  width: 1px;
+  margin: 1px 6px;
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.demo-chip-foot {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(37, 99, 235, 0.12);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #64748b;
+  text-align: center;
+}
+
 .score-explain-sidebar .score-explain-formula-fold summary {
   font-size: var(--sidebar-note-font, 13px);
   font-weight: 800;

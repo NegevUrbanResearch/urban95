@@ -314,6 +314,7 @@ Urban95ScoreSidebar.configure({
   },
   formatMetricNumber: formatMetricNumber,
   formatScoreInteger: formatScoreInteger,
+  buildBuildingDemographicContext: buildBuildingDemographicContext,
   setSidebarPadding: scoreSidebarChrome.setSidebarPadding,
   restoreFocusAfterHide: scoreSidebarChrome.restoreFocusAfterHide,
   scoreExplainIconNeutral: scoreExplain.scoreExplainIconNeutral,
@@ -351,6 +352,8 @@ const SOCIOECONOMIC_OUTLINE_LAYER_ID = "socioeconomic-statareas-outline";
 const SOCIOECONOMIC_LABEL_LAYER_ID = "socioeconomic-statareas-labels";
 const KIDS_AGE_0_4_KEY = "גיל0_4";
 const KIDS_AGE_5_9_KEY = "גיל5_9";
+let populationGridLookupFeatures = [];
+let socioeconomicLookupFeatures = [];
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
@@ -386,6 +389,7 @@ let _lastDeckClickTime = 0;
 let buildingCentroidGridIndex = new Map();
 let schoolsHoverBound = false;
 let busStopsHoverBound = false;
+const demographicOverlayBoundLayers = new Set();
 const pointDataLoader = createPointDataLoader({
   urls: {
     trees: TREES_URL,
@@ -1223,6 +1227,57 @@ function getKids0To9Count(props) {
   const kids5to9 = safeNumber(p[KIDS_AGE_5_9_KEY]) || 0;
   return kids0to4 + kids5to9;
 }
+function formatPopulationGridAreaLabel(areaSqM) {
+  const area = Number.isFinite(areaSqM) && areaSqM > 0 ? areaSqM : 40000;
+  const sideM = Math.round(Math.sqrt(area));
+  return sideM + " m \u00d7 " + sideM + " m (" + formatArea(area) + ")";
+}
+function isPolygonFeatureGeometry(geometry) {
+  return !!geometry && (geometry.type === "Polygon" || geometry.type === "MultiPolygon");
+}
+function findPolygonFeatureAtLngLat(features, lng, lat) {
+  if (!features || !features.length || lng == null || lat == null || typeof turf === "undefined") return null;
+  const point = turf.point([lng, lat]);
+  for (let i = 0; i < features.length; i++) {
+    const feature = features[i];
+    if (!feature || !isPolygonFeatureGeometry(feature.geometry)) continue;
+    try {
+      if (turf.booleanPointInPolygon(point, feature)) return feature;
+    } catch (_error) {}
+  }
+  return null;
+}
+function buildBuildingDemographicContext(lng, lat) {
+  const context = { population: null, socioeconomic: null };
+  const popFeature = findPolygonFeatureAtLngLat(populationGridLookupFeatures, lng, lat);
+  if (popFeature) {
+    const props = popFeature.properties || {};
+    const areaSqM = safeNumber(props.Shape_Area) || 40000;
+    context.population = {
+      kids0to4: safeNumber(props[KIDS_AGE_0_4_KEY]),
+      kids5to9: safeNumber(props[KIDS_AGE_5_9_KEY]),
+      areaSqM: areaSqM,
+      areaLabel: formatPopulationGridAreaLabel(areaSqM),
+    };
+  }
+  const sesFeature = findPolygonFeatureAtLngLat(socioeconomicLookupFeatures, lng, lat);
+  if (sesFeature) {
+    const props = sesFeature.properties || {};
+    const cluster = safeNumber(
+      props.socio_cluster != null ? props.socio_cluster : props.cluster_2021
+    );
+    let tractAreaSqM = null;
+    try {
+      tractAreaSqM = turf.area(sesFeature);
+    } catch (_error) {}
+    context.socioeconomic = {
+      cluster: Number.isFinite(cluster) ? Math.round(cluster) : null,
+      statArea: props.stat_area != null ? props.stat_area : props.yishuv_stat || null,
+      areaSqM: Number.isFinite(tractAreaSqM) ? tractAreaSqM : null,
+    };
+  }
+  return context;
+}
 function normalizeKidsPopulationGrid(rawFeatureCollection) {
   const features = (rawFeatureCollection && rawFeatureCollection.features) || [];
   const normalized = [];
@@ -1231,13 +1286,19 @@ function normalizeKidsPopulationGrid(rawFeatureCollection) {
     const geometry = feature && feature.geometry ? feature.geometry : null;
     if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return;
     const props = feature && feature.properties ? feature.properties : {};
+    const kids0to4 = safeNumber(props[KIDS_AGE_0_4_KEY]);
+    const kids5to9 = safeNumber(props[KIDS_AGE_5_9_KEY]);
     const kids0to9 = getKids0To9Count(props);
     if (!Number.isFinite(kids0to9)) return;
+    const safeKids0to4 = kids0to4 != null ? Math.max(0, kids0to4) : null;
+    const safeKids5to9 = kids5to9 != null ? Math.max(0, kids5to9) : null;
     const safeKids0to9 = Math.max(0, kids0to9);
     if (safeKids0to9 > maxKids) maxKids = safeKids0to9;
     normalized.push({
       type: "Feature",
       properties: {
+        kids_0_4: safeKids0to4,
+        kids_5_9: safeKids5to9,
         kids_0_9: safeKids0to9,
       },
       geometry: geometry,
@@ -1325,6 +1386,9 @@ async function loadKidsPopulationGridLayer() {
     const source = map.getSource(KIDS_POPULATION_SOURCE_ID);
     if (!source || !raw) return;
     const normalized = normalizeKidsPopulationGrid(raw);
+    populationGridLookupFeatures = ((raw && raw.features) || []).filter(function (feature) {
+      return feature && isPolygonFeatureGeometry(feature.geometry);
+    });
     source.setData(normalized.featureCollection);
     map.setPaintProperty(
       KIDS_POPULATION_LAYER_ID,
@@ -1336,6 +1400,7 @@ async function loadKidsPopulationGridLayer() {
       "fill-opacity",
       kidsPopulationFillOpacityExpression(normalized.maxKids)
     );
+    bindDemographicOverlayHover();
     applyKidsPopulationVisibility();
   } catch (err) {
     console.error("Failed to load kids population grid:", err);
@@ -1451,40 +1516,91 @@ function applySocioeconomicVisibility() {
     }
   });
 }
-function formatSocioeconomicTooltip(feature) {
+function formatKidsPopulationTooltipLines(feature) {
   const properties = (feature && feature.properties) || {};
-  const indexValue = safeNumber(
-    properties.socio_index != null ? properties.socio_index : properties.index_value
-  );
+  const kids0to4 = safeNumber(properties.kids_0_4);
+  const kids5to9 = safeNumber(properties.kids_5_9);
+  const lines = [];
+  if (Number.isFinite(kids0to4)) lines.push("Ages 0–4: " + Math.round(kids0to4));
+  if (Number.isFinite(kids5to9)) lines.push("Ages 5–9: " + Math.round(kids5to9));
+  return lines;
+}
+function formatSocioeconomicTooltipLines(feature) {
+  const properties = (feature && feature.properties) || {};
   const clusterValue = safeNumber(
     properties.socio_cluster != null ? properties.socio_cluster : properties.cluster_2021
   );
-  const rankValue = safeNumber(properties.socio_rank != null ? properties.socio_rank : properties.rank_2021);
-  const areaCode = properties.yishuv_stat || properties.stat_area || null;
-  const lines = [];
-  if (areaCode) lines.push("Stat area: " + areaCode);
-  if (Number.isFinite(clusterValue)) lines.push("Cluster: " + Math.round(clusterValue));
-  if (Number.isFinite(indexValue)) lines.push("Socioeconomic index: " + indexValue.toFixed(3));
-  if (Number.isFinite(rankValue)) lines.push("National rank: " + Math.round(rankValue));
-  return lines.join("\n");
+  if (!Number.isFinite(clusterValue)) return [];
+  return ["SES cluster: " + Math.round(clusterValue)];
 }
-function bindSocioeconomicHover() {
-  if (!map.getLayer(SOCIOECONOMIC_FILL_LAYER_ID)) return;
-  map.on("mouseenter", SOCIOECONOMIC_FILL_LAYER_ID, function () {
-    map.getCanvas().style.cursor = "pointer";
+function getDemographicOverlayQueryLayers() {
+  const layers = [];
+  if (
+    overlayVisibility.isCanonicalLayerVisible("kids-population", false) &&
+    map.getLayer(KIDS_POPULATION_LAYER_ID)
+  ) {
+    layers.push(KIDS_POPULATION_LAYER_ID);
+  }
+  if (
+    overlayVisibility.isCanonicalLayerVisible("socioeconomic", false) &&
+    map.getLayer(SOCIOECONOMIC_FILL_LAYER_ID)
+  ) {
+    layers.push(SOCIOECONOMIC_FILL_LAYER_ID);
+  }
+  return layers;
+}
+function getDemographicOverlayFeaturesAtPoint(point) {
+  const layers = getDemographicOverlayQueryLayers();
+  if (!layers.length || !point) {
+    return { kidsFeature: null, sesFeature: null };
+  }
+  const features = map.queryRenderedFeatures(point, { layers: layers });
+  let kidsFeature = null;
+  let sesFeature = null;
+  features.forEach(function (feature) {
+    if (!feature || !feature.layer || !feature.layer.id) return;
+    if (feature.layer.id === KIDS_POPULATION_LAYER_ID && !kidsFeature) kidsFeature = feature;
+    if (feature.layer.id === SOCIOECONOMIC_FILL_LAYER_ID && !sesFeature) sesFeature = feature;
   });
-  map.on("mousemove", SOCIOECONOMIC_FILL_LAYER_ID, function (e) {
-    if (!e || !e.features || !e.features[0] || !e.point) return;
-    const label = formatSocioeconomicTooltip(e.features[0]);
-    if (!label) return;
-    tooltip.textContent = label;
-    tooltip.style.display = "block";
-    tooltip.style.left = e.point.x + 12 + "px";
-    tooltip.style.top = e.point.y + 12 + "px";
-  });
-  map.on("mouseleave", SOCIOECONOMIC_FILL_LAYER_ID, function () {
-    map.getCanvas().style.cursor = "";
-    tooltip.style.display = "none";
+  return { kidsFeature: kidsFeature, sesFeature: sesFeature };
+}
+function formatDemographicOverlayTooltip(kidsFeature, sesFeature) {
+  const lines = [];
+  if (kidsFeature) lines.push.apply(lines, formatKidsPopulationTooltipLines(kidsFeature));
+  if (sesFeature) lines.push.apply(lines, formatSocioeconomicTooltipLines(sesFeature));
+  return lines.length ? lines.join("\n") : "";
+}
+function buildDemographicOverlayTooltip(point) {
+  const features = getDemographicOverlayFeaturesAtPoint(point);
+  return formatDemographicOverlayTooltip(features.kidsFeature, features.sesFeature);
+}
+function bindDemographicOverlayHover() {
+  [KIDS_POPULATION_LAYER_ID, SOCIOECONOMIC_FILL_LAYER_ID].forEach(function (layerId) {
+    if (!map.getLayer(layerId) || demographicOverlayBoundLayers.has(layerId)) return;
+    demographicOverlayBoundLayers.add(layerId);
+    map.on("mousemove", layerId, function (e) {
+      if (!e || !e.point) return;
+      if (_deckHovering) {
+        map.getCanvas().style.cursor = "";
+        tooltip.style.display = "none";
+        return;
+      }
+      const label = buildDemographicOverlayTooltip(e.point);
+      if (!label) {
+        tooltip.style.display = "none";
+        return;
+      }
+      map.getCanvas().style.cursor = "pointer";
+      tooltip.textContent = label;
+      tooltip.style.display = "block";
+      tooltip.style.left = e.point.x + 12 + "px";
+      tooltip.style.top = e.point.y + 12 + "px";
+    });
+    map.on("mouseleave", layerId, function (e) {
+      if (e && e.point && buildDemographicOverlayTooltip(e.point)) return;
+      map.getCanvas().style.cursor = "";
+      tooltip.style.display = "none";
+    });
   });
 }
 async function loadSocioeconomicLayer() {
@@ -1494,8 +1610,9 @@ async function loadSocioeconomicLayer() {
     const source = map.getSource(SOCIOECONOMIC_SOURCE_ID);
     if (!source || !raw) return;
     const normalized = normalizeSocioeconomicLayer(raw);
+    socioeconomicLookupFeatures = normalized.featureCollection.features || [];
     source.setData(normalized.featureCollection);
-    bindSocioeconomicHover();
+    bindDemographicOverlayHover();
     applySocioeconomicVisibility();
   } catch (err) {
     console.error("Failed to load socioeconomic layer:", err);

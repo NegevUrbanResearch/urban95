@@ -29,6 +29,7 @@
     getOrdinalSuffix: "function",
     formatMetricNumber: "function",
     formatScoreInteger: "function",
+    buildBuildingDemographicContext: "function",
     setSidebarPadding: "function",
     restoreFocusAfterHide: "function",
     referenceRadiusMeters: "number",
@@ -136,6 +137,73 @@
     return d.sidebarEl.getBoundingClientRect().width || 400;
   }
 
+  function formatDemographicKidsCount(value) {
+    if (!Number.isFinite(value)) return null;
+    return Math.round(value);
+  }
+
+  function renderBuildingDemographicContextNote(context) {
+    var d = requireDeps();
+    if (!context || (!context.population && !context.socioeconomic)) return "";
+
+    var chips = [];
+    if (context.socioeconomic && context.socioeconomic.cluster != null) {
+      chips.push(
+        '<div class="demo-chip">' +
+        '<span class="demo-chip-label">SES cluster</span>' +
+        '<span class="demo-chip-value">' +
+        d.escapeHtml(String(context.socioeconomic.cluster)) +
+        "</span>" +
+        '<span class="demo-chip-meta">census tract</span>' +
+        "</div>"
+      );
+    }
+
+    if (context.population) {
+      var kids0to4 = formatDemographicKidsCount(context.population.kids0to4);
+      var kids5to9 = formatDemographicKidsCount(context.population.kids5to9);
+      if (kids0to4 != null || kids5to9 != null) {
+        var ageCols = "";
+        if (kids0to4 != null) {
+          ageCols +=
+            '<div class="demo-chip-age">' +
+            '<span class="demo-chip-label">Ages 0\u20134</span>' +
+            '<span class="demo-chip-value">' +
+            d.escapeHtml(String(kids0to4)) +
+            "</span></div>";
+        }
+        if (kids0to4 != null && kids5to9 != null) {
+          ageCols += '<span class="demo-chip-divider" aria-hidden="true"></span>';
+        }
+        if (kids5to9 != null) {
+          ageCols +=
+            '<div class="demo-chip-age">' +
+            '<span class="demo-chip-label">Ages 5\u20139</span>' +
+            '<span class="demo-chip-value">' +
+            d.escapeHtml(String(kids5to9)) +
+            "</span></div>";
+        }
+        chips.push(
+          '<div class="demo-chip demo-chip--ages">' +
+          '<div class="demo-chip-ages">' +
+          ageCols +
+          "</div>" +
+          '<span class="demo-chip-foot">200 m \u00d7 200 m grid cell</span>' +
+          "</div>"
+        );
+      }
+    }
+    if (!chips.length) return "";
+
+    return (
+      '<div class="score-explain-demographics">' +
+      '<p class="score-explain-demographics-kicker">Demographics</p>' +
+      '<div class="score-explain-demographics-row">' +
+      chips.join("") +
+      "</div></div>"
+    );
+  }
+
   function renderUrban95ReferenceRadiusNote() {
     var d = requireDeps();
     return (
@@ -146,7 +214,7 @@
     );
   }
 
-  function renderScoreExplainSidebarWeighted(categories) {
+  function renderScoreExplainSidebarWeighted(categories, demographicContext) {
     var d = requireDeps();
     var partialFilter = d.getScoreExplainPartialFilterSet();
     var html =
@@ -191,11 +259,12 @@
       html += "</div></div></div>";
     });
     html += "</div>";
+    html += renderBuildingDemographicContextNote(demographicContext);
     html += renderUrban95ReferenceRadiusNote();
     return html;
   }
 
-  function renderScoreExplainSidebarExpanded(rows) {
+  function renderScoreExplainSidebarExpanded(rows, demographicContext) {
     var d = requireDeps();
     if (!rows || rows.length === 0) return "";
 
@@ -251,6 +320,7 @@
       });
     });
     html += "</div>";
+    html += renderBuildingDemographicContextNote(demographicContext);
     return html;
   }
 
@@ -401,8 +471,8 @@
 
   function renderScoreExplainSidebar(breakdown, metrics, ctx) {
     void metrics;
-    void ctx;
     var d = requireDeps();
+    var demographicContext = ctx && ctx.demographicContext ? ctx.demographicContext : null;
     var unavailable =
       '<p class="score-explain-empty">Score breakdown is unavailable for the current selection.</p>';
 
@@ -410,13 +480,19 @@
       if (!breakdown || !Array.isArray(breakdown.weightedCategories) || breakdown.weightedCategories.length === 0) {
         return unavailable;
       }
-      return renderScoreExplainSidebarWeighted(breakdown.weightedCategories) + renderScoreExplainSidebarFormula(breakdown);
+      return (
+        renderScoreExplainSidebarWeighted(breakdown.weightedCategories, demographicContext) +
+        renderScoreExplainSidebarFormula(breakdown)
+      );
     }
 
     if (!breakdown || !Array.isArray(breakdown.rows) || breakdown.rows.length === 0) {
       return unavailable;
     }
-    return renderScoreExplainSidebarExpanded(breakdown.rows) + renderScoreExplainSidebarFormula(breakdown);
+    return (
+      renderScoreExplainSidebarExpanded(breakdown.rows, demographicContext) +
+      renderScoreExplainSidebarFormula(breakdown)
+    );
   }
 
   function resetScoreExplainSidebarFit(body, inner) {
@@ -606,6 +682,13 @@
       hideScoreExplainSidebar();
       return;
     }
+
+    var demographicContext = null;
+    if (selectedBuilding.lng != null && selectedBuilding.lat != null) {
+      demographicContext = d.buildBuildingDemographicContext(selectedBuilding.lng, selectedBuilding.lat);
+    }
+    var demographicHtml = renderBuildingDemographicContextNote(demographicContext);
+
     if (
       d.getScoreMode() === "expanded" &&
       selectedAmenityTypes &&
@@ -615,7 +698,7 @@
         emptyEl.hidden = false;
         emptyEl.textContent = "Select amenity types in the filter to see a score breakdown.";
       }
-      root.innerHTML = "";
+      root.innerHTML = demographicHtml;
       populateScoreExplainSidebarHeader(null, null);
       showScoreExplainSidebar();
       return;
@@ -632,10 +715,10 @@
 
     if (!breakdown && !metrics) {
       if (emptyEl) {
-        emptyEl.hidden = false;
+        emptyEl.hidden = !!demographicHtml;
         emptyEl.textContent = "Score data unavailable";
       }
-      root.innerHTML = "";
+      root.innerHTML = demographicHtml;
       populateScoreExplainSidebarHeader(null, null);
       showScoreExplainSidebar();
       return;
@@ -651,6 +734,7 @@
       populateScoreExplainSidebarHeader(breakdown, metrics);
       root.innerHTML = renderScoreExplainSidebar(breakdown, metrics, {
         building: selectedBuilding,
+        demographicContext: demographicContext,
         scoreKind: d.getScoreModeLabel(),
         minutes: d.getScoreMinutes(),
       });
