@@ -354,6 +354,7 @@ const KIDS_AGE_0_4_KEY = "גיל0_4";
 const KIDS_AGE_5_9_KEY = "גיל5_9";
 let populationGridLookupFeatures = [];
 let socioeconomicLookupFeatures = [];
+let kidsPopulationMaxKids = 0;
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
@@ -1011,6 +1012,12 @@ controlsBinding = Urban95Controls.bind({
   showRegistry: Urban95WeightedMetricShowRegistry,
   scoreContext: scoreContext,
   getActiveMetric: scoreContext.getActiveMetric,
+  getKidsPopulationLegend: function () {
+    return {
+      visible: overlayVisibility.isCanonicalLayerVisible("kids-population", false),
+      maxKids: kidsPopulationMaxKids,
+    };
+  },
   isTouchDevice: isTouchDevice,
   getState: function () {
     return {
@@ -1386,6 +1393,7 @@ async function loadKidsPopulationGridLayer() {
     const source = map.getSource(KIDS_POPULATION_SOURCE_ID);
     if (!source || !raw) return;
     const normalized = normalizeKidsPopulationGrid(raw);
+    kidsPopulationMaxKids = normalized.maxKids;
     populationGridLookupFeatures = ((raw && raw.features) || []).filter(function (feature) {
       return feature && isPolygonFeatureGeometry(feature.geometry);
     });
@@ -1402,6 +1410,9 @@ async function loadKidsPopulationGridLayer() {
     );
     bindDemographicOverlayHover();
     applyKidsPopulationVisibility();
+    if (controlsBinding && typeof controlsBinding.refreshLegend === "function") {
+      controlsBinding.refreshLegend();
+    }
   } catch (err) {
     console.error("Failed to load kids population grid:", err);
   }

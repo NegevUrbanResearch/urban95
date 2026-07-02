@@ -27,6 +27,8 @@
     var getState = requireFunction(config.getState, "getState");
     var getActiveMetric =
       typeof config.getActiveMetric === "function" ? config.getActiveMetric : null;
+    var getKidsPopulationLegend =
+      typeof config.getKidsPopulationLegend === "function" ? config.getKidsPopulationLegend : null;
     var setScoreMode = requireFunction(config.setScoreMode, "setScoreMode");
     var setWalkMinutes = requireFunction(config.setWalkMinutes, "setWalkMinutes");
     var setSelectedAmenityTypes = requireFunction(
@@ -182,7 +184,8 @@
     function renderLegend() {
       if (!elements.legendEl) return;
       var metric = getActiveMetric ? getActiveMetric() : null;
-      elements.legendEl.innerHTML = markup.renderLegendHtml(metric);
+      var kidsLegend = getKidsPopulationLegend ? getKidsPopulationLegend() : null;
+      elements.legendEl.innerHTML = markup.renderLegendHtml(metric, kidsLegend);
     }
 
     function setLegendVisible(visible) {

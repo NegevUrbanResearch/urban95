@@ -594,11 +594,28 @@
   color: #6b7280;
 }
 
+.legend-block + .legend-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
 .legend-gradient {
   height: 8px;
   border-radius: 4px;
   background: linear-gradient(to right, #ef4444, #f97316, #eab308, #84cc16, #22c55e);
   margin-bottom: 4px;
+}
+
+.legend-gradient--kids-population {
+  background: linear-gradient(
+    to right,
+    #bfdbfe,
+    #93c5fd 15%,
+    #60a5fa 35%,
+    #2563eb 60%,
+    #1e3a8a
+  );
 }
 
 .legend-labels {

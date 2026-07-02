@@ -448,9 +448,28 @@
     );
   }
 
-  function renderLegendHtml(metric) {
+  function renderKidsPopulationLegendHtml(maxKids) {
+    var max = Number.isFinite(maxKids) && maxKids > 0 ? maxKids : 1;
+    var labels = [0, 0.25, 0.5, 0.75, 1]
+      .map(function (fraction) {
+        return "<span>" + Math.round(max * fraction) + "</span>";
+      })
+      .join("");
+
+    return (
+      '<div class="legend-block">' +
+      '<div class="legend-title">Pop. Kids</div>' +
+      '<div class="legend-subtitle">Ages 0\u20139 \u00b7 200 m grid cell</div>' +
+      '<div class="legend-gradient legend-gradient--kids-population"></div>' +
+      '<div class="legend-labels">' +
+      labels +
+      "</div></div>"
+    );
+  }
+
+  function renderScoreLegendHtml(metric) {
     if (!metric) {
-      return '<div class="legend-empty">No heatmap active</div>';
+      return '<div class="legend-block"><div class="legend-empty">No heatmap active</div></div>';
     }
 
     var subtitle =
@@ -459,6 +478,7 @@
         : "Urban95 · weighted score (0-100)";
 
     return (
+      '<div class="legend-block">' +
       '<div class="legend-title">' +
       escapeHtml(metric.label) +
       "</div>" +
@@ -466,8 +486,18 @@
       escapeHtml(subtitle) +
       "</div>" +
       '<div class="legend-gradient"></div>' +
-      '<div id="legend-labels" class="legend-labels"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>'
+      '<div id="legend-labels" class="legend-labels"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>' +
+      "</div>"
     );
+  }
+
+  function renderLegendHtml(metric, kidsLegend) {
+    var parts = [];
+    if (kidsLegend && kidsLegend.visible) {
+      parts.push(renderKidsPopulationLegendHtml(kidsLegend.maxKids));
+    }
+    parts.push(renderScoreLegendHtml(metric));
+    return parts.join("");
   }
 
   window.Urban95ControlSidebarMarkup = {
