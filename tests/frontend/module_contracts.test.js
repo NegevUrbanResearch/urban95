@@ -120,12 +120,14 @@ function runAppScript(browser) {
   loadNeighborhoodSidebarModules(browser);
   runBrowserScript("docs/js/ui/amenityMode.js", browser);
   runBrowserScript("docs/js/ui/controlActions.js", browser);
+  runBrowserScript("docs/js/map/staticPolygonCompanions.js", browser);
   runBrowserScript("docs/js/map/mapShell.js", browser);
   runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
   runBrowserScript("docs/js/map/renderState.js", browser);
   runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
+  runBrowserScript("docs/js/map/auxiliaryOverlays.js", browser);
   runBrowserScript("docs/js/ui/overlayVisibility.js", browser);
   runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
   runBrowserScript("docs/js/core/appDependencies.js", browser);
@@ -175,6 +177,10 @@ test("index loads core frontend modules before app.js", () => {
   const scoreSidebarChromeIndex = requireScriptIndex(scripts, "./js/ui/scoreSidebarChrome.js");
   const scoreSidebarIndex = requireScriptIndex(scripts, "./js/ui/scoreSidebar.js");
   const mapLayersIndex = requireScriptIndex(scripts, "./js/map/mapLayers.js");
+  const staticPolygonCompanionsIndex = requireScriptIndex(
+    scripts,
+    "./js/map/staticPolygonCompanions.js"
+  );
   const mapShellIndex = requireScriptIndex(scripts, "./js/map/mapShell.js");
   assert.ok(requireScriptIndex(scripts, "./js/scoring/scoreModel.js") < scoreContextIndex);
   assert.ok(scoreContextIndex < weightedIndicatorIconsIndex);
@@ -185,6 +191,8 @@ test("index loads core frontend modules before app.js", () => {
   const neighborhoodScoresIndex = requireScriptIndex(scripts, "./js/map/neighborhoodScores.js");
   const iconLoaderIndex = requireScriptIndex(scripts, "./js/map/iconLoader.js");
   assert.ok(mapLayersIndex < iconLoaderIndex);
+  assert.ok(mapLayersIndex < staticPolygonCompanionsIndex);
+  assert.ok(staticPolygonCompanionsIndex < mapShellIndex);
   assert.ok(mapShellIndex < neighborhoodScoresIndex);
   assert.ok(neighborhoodScoresIndex < iconLoaderIndex);
   assert.ok(mapLayersIndex < appIndex);
@@ -224,10 +232,12 @@ test("index loads core frontend modules before app.js", () => {
   assert.ok(modeControllerIndex < appIndex);
   assert.ok(dashboardsIndex < modeControllerIndex);
   const mapEventsIndex = requireScriptIndex(scripts, "./js/map/mapEvents.js");
+  const auxiliaryOverlaysIndex = requireScriptIndex(scripts, "./js/map/auxiliaryOverlays.js");
   assert.ok(modeControllerIndex < mapEventsIndex);
-  assert.ok(mapEventsIndex < appIndex);
+  assert.ok(mapEventsIndex < auxiliaryOverlaysIndex);
+  assert.ok(auxiliaryOverlaysIndex < appIndex);
   const appDependenciesIndex = requireScriptIndex(scripts, "./js/core/appDependencies.js");
-  assert.ok(mapEventsIndex < appDependenciesIndex);
+  assert.ok(auxiliaryOverlaysIndex < appDependenciesIndex);
   assert.ok(appDependenciesIndex < appIndex);
 });
 
@@ -2277,6 +2287,7 @@ test("startup validates nested grouped dependencies with helpful errors", async 
           buildings: "./data/buildings_accessibility.geojson",
           parks: "./data/parks.geojson",
           urbanNatureAreas: "./data/urban_nature_areas.geojson",
+          shadeSi: "./data/shade_si.geojson",
         },
       });
     },
@@ -5127,6 +5138,7 @@ test("config exposes authoritative runtime and fallback URLs", () => {
   assert.equal(browser.window.Urban95Config.urls.buildings, "./data/buildings_accessibility.geojson");
   assert.equal(browser.window.Urban95Config.urls.trees, "./data/trees.geojson");
   assert.equal(browser.window.Urban95Config.urls.streetLights, "./data/street_lights.geojson");
+  assert.equal(browser.window.Urban95Config.urls.shadeSi, "./data/shade_si.geojson");
   assert.equal(browser.window.Urban95Config.generatedFallbacks.buildingsLookup, "./data/buildings_lookup.json");
   assert.equal(browser.window.Urban95Config.generatedFallbacks.isochronesLookup, "./data/isochrones_lookup.json");
   assert.equal(browser.window.Urban95Config.generatedFallbacks.pointsLookup, "./data/points_lookup.json");
@@ -5912,7 +5924,7 @@ test("control actions uses explicit modal accessors instead of document lookups"
 
   assert.match(
     appSource,
-    /ui:\s*\{\s*getCitywideModal:\s*function \(\) \{\s*return citywideModalEl;\s*\},\s*\}/s
+    /ui:\s*\{\s*getCitywideModal:\s*function \(\) \{\s*return citywideModalEl;\s*\},\s*clearTooltip:\s*function \(\) \{\s*tooltip\.textContent = "";\s*tooltip\.style\.display = "none";\s*\},\s*\}/s
   );
   assert.match(controlActionsSource, /\["neighborhoodSidebar\.show", neighborhoodSidebar\.show\]/);
   assert.match(controlActionsSource, /\["neighborhoodSidebar\.sync", neighborhoodSidebar\.sync\]/);
@@ -5920,6 +5932,8 @@ test("control actions uses explicit modal accessors instead of document lookups"
   assert.match(controlActionsSource, /\["neighborhoodSidebar\.isOpen", neighborhoodSidebar\.isOpen\]/);
   assert.match(controlActionsSource, /\["ui\.getCitywideModal", ui\.getCitywideModal\]/);
   assert.match(controlActionsSource, /var getCitywideModal = ui\.getCitywideModal;/);
+  assert.match(controlActionsSource, /var clearTooltip =\s*typeof ui\.clearTooltip === "function" \? ui\.clearTooltip : function \(\) \{\};/);
+  assert.match(controlActionsSource, /clearTooltip\(\);\s*clearDerivedCaches\(\);/);
   assert.doesNotMatch(controlActionsSource, /documentRef/);
   assert.doesNotMatch(controlActionsSource, /getElementById/);
   assert.doesNotMatch(controlActionsSource, /["']neighborhood-modal["']/);
@@ -8271,6 +8285,9 @@ test("score sidebar shell records opt-in perf span without building breakdown co
     },
     formatScoreInteger(value) {
       return String(value);
+    },
+    buildBuildingDemographicContext() {
+      return null;
     },
     setSidebarPadding() {},
     restoreFocusAfterHide() {},

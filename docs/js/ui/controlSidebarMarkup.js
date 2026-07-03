@@ -467,34 +467,121 @@
     );
   }
 
+  function renderCompanionLegendHtml(spec) {
+    if (!spec) return "";
+
+    var axisGroups = Array.isArray(spec.axisGroups) ? spec.axisGroups : [];
+    var axisGroupsHtml = axisGroups.length
+      ? '<div class="legend-axis-groups">' +
+          axisGroups
+            .map(function (group) {
+              var start = Number(group.start);
+              var end = Number(group.end);
+              var span = Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : 0;
+              var basis = span > 0 ? span * 100 : 0;
+              var bucketName = String(group.bucketName || "");
+              var hoverLabel = bucketName
+                ? String(group.label || "") + " " + bucketName
+                : String(group.label || "");
+              return (
+                '<span class="legend-axis-group" style="flex-basis:' +
+                basis +
+                '%" title="' +
+                escapeHtml(hoverLabel) +
+                '" aria-label="' +
+                escapeHtml(hoverLabel) +
+                '">' +
+                escapeHtml(String(group.label || "")) +
+                (bucketName
+                  ? '<span class="legend-axis-tooltip" role="presentation">' +
+                    escapeHtml(bucketName) +
+                    "</span>"
+                  : "") +
+                "</span>"
+              );
+            })
+            .join("") +
+        "</div>"
+      : "";
+    var labels = Array.isArray(spec.labels) && spec.labels.length
+      ? spec.labels
+          .map(function (label) {
+            return "<span>" + escapeHtml(String(label)) + "</span>";
+          })
+          .join("")
+      : "";
+    var itemsHtml = Array.isArray(spec.items) && spec.items.length
+      ? '<div class="legend-items">' +
+          spec.items
+            .map(function (item) {
+              return '<span class="legend-item-chip">' + escapeHtml(String(item)) + "</span>";
+            })
+            .join("") +
+        "</div>"
+      : "";
+
+    var gradientStyle = spec.gradientStyle || "";
+
+    return (
+      '<div class="legend-block">' +
+      '<div class="legend-title">' +
+      escapeHtml(spec.title || "") +
+      "</div>" +
+      '<div class="legend-subtitle">' +
+      escapeHtml(spec.subtitle || "") +
+      "</div>" +
+      '<div class="legend-gradient"' +
+      (gradientStyle ? ' style="' + gradientStyle + '"' : "") +
+      "></div>" +
+      itemsHtml +
+      (axisGroupsHtml || '<div class="legend-labels">' + labels + "</div>") +
+      "</div>"
+    );
+  }
+
   function renderScoreLegendHtml(metric) {
     if (!metric) {
       return '<div class="legend-block"><div class="legend-empty">No heatmap active</div></div>';
     }
 
+    var legendSpec = metric.legendSpec || {};
+    var title = legendSpec.title || metric.label;
     var subtitle =
-      metric.scale === "percentile"
-        ? "Amenities Focus · percentile rank"
-        : "Urban95 · weighted score (0-100)";
+      legendSpec.subtitle ||
+      (metric.scale === "percentile"
+        ? "Amenities Focus \u00b7 percentile rank"
+        : "Urban95 \u00b7 weighted score (0-100)");
+    var labels = Array.isArray(legendSpec.labels) && legendSpec.labels.length
+      ? legendSpec.labels
+      : ["0", "25", "50", "75", "100"];
+    var labelsHtml = labels
+      .map(function (label) {
+        return "<span>" + escapeHtml(String(label)) + "</span>";
+      })
+      .join("");
 
     return (
       '<div class="legend-block">' +
       '<div class="legend-title">' +
-      escapeHtml(metric.label) +
+      escapeHtml(title) +
       "</div>" +
       '<div class="legend-subtitle">' +
       escapeHtml(subtitle) +
       "</div>" +
       '<div class="legend-gradient"></div>' +
-      '<div id="legend-labels" class="legend-labels"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>' +
+      '<div id="legend-labels" class="legend-labels">' +
+      labelsHtml +
+      "</div>" +
       "</div>"
     );
   }
-
-  function renderLegendHtml(metric, kidsLegend) {
+  function renderLegendHtml(metric, kidsLegend, companionLegendHtml) {
     var parts = [];
     if (kidsLegend && kidsLegend.visible) {
       parts.push(renderKidsPopulationLegendHtml(kidsLegend.maxKids));
+    }
+    if (companionLegendHtml) {
+      parts.push(companionLegendHtml);
     }
     parts.push(renderScoreLegendHtml(metric));
     return parts.join("");
@@ -516,5 +603,6 @@
     renderIndicatorRow: renderIndicatorRow,
     renderAuxiliarySegmentedRow: renderAuxiliarySegmentedRow,
     renderLegendHtml: renderLegendHtml,
+    renderCompanionLegendHtml: renderCompanionLegendHtml,
   };
 })();

@@ -1,6 +1,6 @@
 (function () {
   var SUBCATEGORY_ACTIONS = {
-    shade: { disabled: "No shade layer" },
+    shade: { actions: [{ kind: "point-layer", layer: "shade-si" }] },
     bicycle_access: { disabled: "No bicycle-access point layer" },
     trees: { actions: [{ kind: "point-layer", layer: "trees" }] },
     roads: { actions: [{ kind: "point-layer", layer: "roads" }] },

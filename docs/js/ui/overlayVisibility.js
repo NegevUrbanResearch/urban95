@@ -127,6 +127,20 @@
       );
     }
 
+    function applyStaticPolygonCompanionsVisibility() {
+      var companions = window.Urban95StaticPolygonCompanions;
+      if (!map || typeof map.getLayer !== "function" || !companions || typeof companions.forEachEntry !== "function") {
+        return;
+      }
+      var mode = getCurrentMode();
+      companions.forEachEntry(function (entry) {
+        if (!map.getLayer(entry.fillLayerId)) return;
+        var modeOk = (entry.visibilityModes || []).indexOf(mode) >= 0;
+        var visible = isCanonicalLayerVisible(entry.sourceId, false) && modeOk;
+        map.setLayoutProperty(entry.fillLayerId, "visibility", visible ? "visible" : "none");
+      });
+    }
+
     return {
       buildDefaultLayerVisibility: buildDefaultLayerVisibility,
       isCanonicalLayerVisible: isCanonicalLayerVisible,
@@ -135,6 +149,7 @@
       applyCanonicalMetricShowAction: applyCanonicalMetricShowAction,
       applyOverlayToggleRowChange: applyOverlayToggleRowChange,
       applyParksVisibility: applyParksVisibility,
+      applyStaticPolygonCompanionsVisibility: applyStaticPolygonCompanionsVisibility,
     };
   }
 

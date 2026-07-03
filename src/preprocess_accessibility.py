@@ -1,7 +1,6 @@
 import logging
 import os
 import warnings
-import math
 import re
 import gzip
 from pathlib import Path
@@ -34,6 +33,15 @@ import requests
 from dotenv import load_dotenv
 from shapely.geometry import shape as shapely_shape
 from tqdm.auto import tqdm
+
+from preprocess_geojson_utils import (
+    export_buildings_web_layer,
+    reduce_coordinate_precision,
+    simplify_geometries,
+    write_gzip_copy,
+    write_minimal_geojson,
+)
+from shade_si import BUILDING_SI_FIELD, attach_summer_si_to_buildings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
@@ -121,16 +129,23 @@ def _weighted_component_stem(name: str) -> str:
 def append_weighted_urban95_scores(
     buildings: gpd.GeoDataFrame,
     data_dir: Path,
+    shade_si_dir: Path | None = None,
     workers: int = INDEX_SCORE_WORKERS,
 ) -> gpd.GeoDataFrame:
     """Appends Urban95 weighted score columns using src/index calculation.py methodology."""
     module_path = REPO_ROOT / "src" / "index calculation.py"
     mod = runpy.run_path(str(module_path))
-    build_layers = mod["build_layers_from_docs_data"]
+    build_layers = mod["build_layers"]
     calculate_master_index = mod["calculate_master_index"]
     subcategory_weight_map = mod.get("CATEGORY_SUBCATEGORY_WEIGHTS", {}) or {}
 
-    layers = build_layers(data_dir=data_dir, target_epsg=2039)
+    shade_si_dir = shade_si_dir or (OUTPUT_DIR / "shade_si")
+    layers = build_layers(data_dir=data_dir, shade_si_dir=shade_si_dir, target_epsg=2039)
+    buildings = attach_summer_si_to_buildings(
+        buildings,
+        layers.get("shade_streets"),
+        layers.get("shade_open_spaces"),
+    )
     centroids = buildings.geometry.centroid
 
     total = len(buildings)
@@ -150,9 +165,14 @@ def append_weighted_urban95_scores(
         for _, cat_stem, _, sub_stem in subcategory_defs
     }
 
-    def _score_one(idx: int, x: float, y: float):
+    def _score_one(idx: int, x: float, y: float, summer_si: float):
         try:
-            result = calculate_master_index(x, y, layers)
+            result = calculate_master_index(
+                x,
+                y,
+                layers,
+                precomputed={"summer_si": summer_si},
+            )
             weighted = float(result.get("final_index", 0.0))
             cat = result.get("category_scores", {}) or {}
             sub = result.get("subcategory_scores", {}) or {}
@@ -170,10 +190,18 @@ def append_weighted_urban95_scores(
             out_sub = {k: 0.0 for k in subcategory_scores.keys()}
         return idx, weighted, out_cat, out_sub
 
+    summer_si_values = buildings[BUILDING_SI_FIELD].astype(float).tolist()
+
     if total > 0:
         with ThreadPoolExecutor(max_workers=max(1, int(workers))) as executor:
             futures = [
-                executor.submit(_score_one, idx, float(pt.x), float(pt.y))
+                executor.submit(
+                    _score_one,
+                    idx,
+                    float(pt.x),
+                    float(pt.y),
+                    float(summer_si_values[idx]),
+                )
                 for idx, pt in enumerate(centroids)
             ]
             for future in tqdm(
@@ -336,158 +364,6 @@ def load_layer(path: Path, target_crs: int) -> gpd.GeoDataFrame:
     if gdf.crs.to_epsg() != target_crs:
         gdf = gdf.to_crs(epsg=target_crs)
     return gdf
-
-
-def simplify_geometries(gdf: gpd.GeoDataFrame, tolerance_m: float) -> gpd.GeoDataFrame:
-    """Simplifies polygon geometries using Douglas-Peucker algorithm.
-    
-    Args:
-        gdf: GeoDataFrame with polygon geometries (should be in a metric CRS for accurate tolerance)
-        tolerance_m: Simplification tolerance in meters. Higher = more simplification.
-    
-    Returns:
-        GeoDataFrame with simplified geometries
-    """
-    simplified = gdf.copy()
-    original_crs = simplified.crs
-    
-    # Convert to metric CRS if not already (EPSG:2039 is Israel TM Grid)
-    if original_crs and original_crs.to_epsg() == 4326:
-        simplified = simplified.to_crs(epsg=2039)
-    
-    # Make geometries valid before simplifying (fixes self-intersections, etc.)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        simplified["geometry"] = simplified.geometry.make_valid()
-        # Simplify geometries, preserving topology
-        simplified["geometry"] = simplified.geometry.simplify(tolerance_m, preserve_topology=True)
-    
-    # Convert back to original CRS if we changed it
-    if original_crs and original_crs.to_epsg() == 4326:
-        simplified = simplified.to_crs(original_crs)
-    
-    return simplified
-
-
-def write_minimal_geojson(gdf: gpd.GeoDataFrame, path: Path, precision: int = 5) -> None:
-    """Writes GeoJSON with minimal overhead (no CRS, reduced precision).
-    
-    This produces smaller files than geopandas default output by:
-    - Omitting the CRS property (web maps default to WGS84)
-    - Omitting the 'name' property
-    - Using reduced coordinate precision
-    """
-    import json
-    from shapely.geometry import mapping
-    
-    def _sanitize_json_value(value):
-        """Converts pandas/numpy values to JSON-safe primitives."""
-        if hasattr(value, "item"):
-            value = value.item()
-        if value is None:
-            return None
-        if isinstance(value, float):
-            return value if math.isfinite(value) else 0.0
-        if isinstance(value, dict):
-            return {k: _sanitize_json_value(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [_sanitize_json_value(v) for v in value]
-        try:
-            if pd.isna(value):
-                return None
-        except Exception:
-            pass
-        return value
-
-    features = []
-    for _, row in gdf.iterrows():
-        geom = row.geometry
-        if geom is None or geom.is_empty:
-            continue
-        
-        geom_json = mapping(geom)
-        geom_json = _round_geojson_coords(geom_json, precision)
-        
-        props = {}
-        for k, v in row.items():
-            if k == gdf.geometry.name:
-                continue
-            sanitized = _sanitize_json_value(v)
-            if sanitized is not None:
-                props[k] = sanitized
-        
-        features.append({
-            "type": "Feature",
-            "properties": props,
-            "geometry": geom_json
-        })
-    
-    geojson = {
-        "type": "FeatureCollection",
-        "features": features
-    }
-    
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(geojson, f, separators=(",", ":"), allow_nan=False)
-
-
-def write_gzip_copy(path: Path, compresslevel: int = 6) -> Path | None:
-    """Writes a .gz compressed sibling file for a GeoJSON/JSON payload."""
-    if not path.exists() or path.suffix.lower() not in {".geojson", ".json"}:
-        return None
-    gz_path = path.with_suffix(path.suffix + ".gz")
-    with open(path, "rb") as src, gzip.open(gz_path, "wb", compresslevel=compresslevel) as dst:
-        dst.write(src.read())
-    return gz_path
-
-
-def reduce_coordinate_precision(gdf: gpd.GeoDataFrame, precision: int = 6) -> gpd.GeoDataFrame:
-    """Reduces coordinate precision to save file size.
-    
-    Args:
-        gdf: GeoDataFrame in WGS84 (EPSG:4326)
-        precision: Number of decimal places (6 = ~10cm precision, 5 = ~1m precision)
-    
-    Returns:
-        GeoDataFrame with rounded coordinates
-    """
-    from shapely import wkt
-    from shapely.geometry import shape, mapping
-    import json
-    
-    reduced = gdf.copy()
-    
-    def round_coords(geom):
-        if geom is None or geom.is_empty:
-            return geom
-        # Convert to GeoJSON, round coordinates, convert back
-        geojson = mapping(geom)
-        rounded = _round_geojson_coords(geojson, precision)
-        return shape(rounded)
-    
-    reduced["geometry"] = reduced.geometry.apply(round_coords)
-    return reduced
-
-
-def _round_geojson_coords(geojson: dict, precision: int) -> dict:
-    """Recursively rounds coordinates in a GeoJSON geometry dict."""
-    geom_type = geojson.get("type")
-    coords = geojson.get("coordinates")
-    
-    if coords is None:
-        return geojson
-    
-    def round_coord(c):
-        if isinstance(c, (list, tuple)):
-            if len(c) >= 2 and isinstance(c[0], (int, float)):
-                # This is a coordinate pair/triple
-                return [round(x, precision) for x in c]
-            else:
-                # This is a list of coordinates or rings
-                return [round_coord(x) for x in c]
-        return c
-    
-    return {"type": geom_type, "coordinates": round_coord(coords)}
 
 
 _thread_local = threading.local()
@@ -1195,13 +1071,15 @@ def compute_building_accessibility(
     
     # Simplify building geometries for web (reduces file size significantly)
     logging.info("Simplifying building geometries (tolerance: %.1fm)...", BUILDING_SIMPLIFY_TOLERANCE_M)
-    buildings_web = simplify_geometries(buildings_wgs84, BUILDING_SIMPLIFY_TOLERANCE_M)
-    buildings_web = reduce_coordinate_precision(buildings_web, precision=5)
-    
-    # Drop unused columns from buildings
-    cols_to_drop = [c for c in BUILDING_DROP_COLUMNS if c in buildings_web.columns]
+    cols_to_drop = [c for c in BUILDING_DROP_COLUMNS if c in buildings_wgs84.columns]
+    buildings_web = export_buildings_web_layer(
+        buildings_wgs84,
+        DOCS_DATA_DIR / "buildings_accessibility.geojson",
+        simplify_tolerance_m=BUILDING_SIMPLIFY_TOLERANCE_M,
+        drop_columns=BUILDING_DROP_COLUMNS,
+        precision=5,
+    )
     if cols_to_drop:
-        buildings_web = buildings_web.drop(columns=cols_to_drop)
         logging.info("Dropped %d unused columns from buildings: %s", len(cols_to_drop), cols_to_drop)
     
     # Remove zero-value amenity columns to reduce file size

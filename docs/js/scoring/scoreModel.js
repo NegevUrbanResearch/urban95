@@ -89,6 +89,15 @@
     ],
   };
 
+  var DEFAULT_SCORE_LEGEND_LABELS = ["0", "25", "50", "75", "100"];
+  var SHADE_EXPLAIN_NOTE =
+    "Official SI interpretation bands: <0.10 severe lack; 0.10-<0.20 significant lack; 0.20-<0.40 needs improvement; 0.40-<0.60 good shade; >=0.60 excellent shade. Building summer_SI is the 300 m area-weighted summer_SI mean around the building centroid, rounded to 1 decimal with standard half-up ties before storage, display, and scoring (0.15 -> 0.2, 0.35 -> 0.4). Urban95 keeps a ternary building shade sub-score on that rounded summer_SI: <0.20 = 0, 0.20-<0.40 = 50, >=0.40 = 100.";
+  var WEIGHTED_METRIC_METADATA = {
+    "u95.sub.environmental_quality.shade": {
+      explainNote: SHADE_EXPLAIN_NOTE,
+    },
+  };
+
   var WEIGHTED_CATEGORY_LABEL_BY_STEM = WEIGHTED_CATEGORY_COMPONENTS.reduce(function (acc, comp) {
     acc[comp.stem] = comp.label;
     return acc;
@@ -110,6 +119,49 @@
 
   function weightedRegistrySuffix() {
     return "_" + URBAN95_REGISTRY_MINUTES + "min";
+  }
+
+  function buildDefaultMetricLegendSpec(metric) {
+    if (!metric) return null;
+    return {
+      title: metric.label || "",
+      subtitle:
+        metric.scale === "percentile"
+          ? "Amenities Focus \u00b7 percentile rank"
+          : "Urban95 \u00b7 weighted score (0-100)",
+      labels: DEFAULT_SCORE_LEGEND_LABELS.slice(),
+    };
+  }
+
+  function buildMetricLegendSpec(metric) {
+    if (!metric) return null;
+    var base = buildDefaultMetricLegendSpec(metric) || {};
+    var override = metric.legendSpec || {};
+    return {
+      title: override.title || base.title || "",
+      subtitle: override.subtitle || base.subtitle || "",
+      labels: Array.isArray(override.labels) && override.labels.length
+        ? override.labels.slice()
+        : (base.labels || []).slice(),
+    };
+  }
+
+  function getMetricExplainNote(metric) {
+    if (!metric || typeof metric.explainNote !== "string") return "";
+    return metric.explainNote;
+  }
+
+  function applyWeightedMetricMetadata(metric) {
+    if (!metric || !metric.id) return metric;
+    var metadata = WEIGHTED_METRIC_METADATA[metric.id];
+    if (!metadata) return metric;
+    if (metadata.legendSpec) {
+      metric.legendSpec = Object.assign({}, metadata.legendSpec);
+    }
+    if (typeof metadata.explainNote === "string") {
+      metric.explainNote = metadata.explainNote;
+    }
+    return metric;
   }
 
   function buildWeightedMetricRegistry() {
@@ -146,7 +198,7 @@
 
       (WEIGHTED_SUBCATEGORY_COMPONENTS[category.stem] || []).forEach(function (sub) {
         var subId = "u95.sub." + category.stem + "." + sub.stem;
-        registry[subId] = {
+        registry[subId] = applyWeightedMetricMetadata({
           id: subId,
           kind: "weighted-subcategory",
           label: sub.label,
@@ -156,7 +208,7 @@
           buildingPropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
           surfacePropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem,
           neighborhoodAverageKey: "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
-        };
+        });
       });
     });
 
@@ -189,6 +241,7 @@
         neighborhoodAverageKey: null,
         selectedWeightedStem: null,
         selectedWeightedSubStem: null,
+        legendSpec: null,
       };
     }
 
@@ -201,6 +254,7 @@
       neighborhoodAverageKey: null,
       selectedWeightedStem: null,
       selectedWeightedSubStem: null,
+      legendSpec: null,
     };
   }
 
@@ -752,6 +806,8 @@
     normalizeSurfaceFilterKey: normalizeSurfaceFilterKey,
     buildWeightedMetricRegistry: buildWeightedMetricRegistry,
     getWeightedMetric: getWeightedMetric,
+    buildMetricLegendSpec: buildMetricLegendSpec,
+    getMetricExplainNote: getMetricExplainNote,
     resolveExpandedMetric: resolveExpandedMetric,
     resolveActiveMetric: resolveActiveMetric,
   };

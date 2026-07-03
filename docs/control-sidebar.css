@@ -618,11 +618,105 @@
   );
 }
 
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.legend-item-chip {
+  font-size: var(--control-sidebar-font-micro);
+  color: #4b5563;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  padding: 2px 6px;
+  line-height: 1.2;
+}
+
 .legend-labels {
   display: flex;
   justify-content: space-between;
   font-size: var(--control-sidebar-font-micro);
   color: #9ca3af;
+}
+
+.legend-axis-groups {
+  display: flex;
+  width: 100%;
+  font-size: var(--control-sidebar-font-micro);
+  color: #8b97aa;
+  line-height: 1.2;
+}
+
+.legend-axis-group {
+  position: relative;
+  min-width: 0;
+  padding-top: 8px;
+  text-align: center;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.legend-axis-group::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  border-top: 1px solid rgba(100, 116, 139, 0.42);
+}
+
+.legend-axis-group::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 5px;
+  background: rgba(100, 116, 139, 0.46);
+}
+
+.legend-axis-group:last-child::after {
+  box-shadow: calc(100% - 1px) 0 0 rgba(100, 116, 139, 0.46);
+}
+
+.legend-axis-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  display: block;
+  max-width: 120px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(17, 24, 39, 0.94);
+  color: #fff;
+  font-size: var(--control-sidebar-font-micro);
+  font-weight: 600;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  white-space: normal;
+}
+
+.legend-axis-tooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: rgba(17, 24, 39, 0.94);
+}
+
+.legend-axis-group:hover .legend-axis-tooltip,
+.legend-axis-group:focus .legend-axis-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 @media (max-width: 480px) {

@@ -203,6 +203,19 @@
           logger.error("Failed to load urban nature areas:", error);
         });
 
+      runtime.fetchJsonWithGzipFallback(urls.shadeSi, { required: false })
+        .then(function (featureCollection) {
+          if (featureCollection && map.getSource("shade-si")) {
+            map.getSource("shade-si").setData(featureCollection);
+          }
+          if (typeof callbacks.applyStaticPolygonCompanionsVisibility === "function") {
+            callbacks.applyStaticPolygonCompanionsVisibility();
+          }
+        })
+        .catch(function (error) {
+          logger.error("Failed to load shade SI:", error);
+        });
+
       loading.setStatus("Loading amenities...");
       var amenitiesStartedAt = performanceApi.now();
       callbacks.loadPointsLookup()

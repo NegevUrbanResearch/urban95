@@ -97,6 +97,7 @@ BUILDING_LOOKUP_EXACT_FIELDS = {
     "neighborhood_name",
     "Name",
     "name",
+    "summer_si",
 }
 
 

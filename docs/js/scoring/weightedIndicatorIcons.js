@@ -8,7 +8,7 @@
   };
 
   var WEIGHTED_SUB_ICONS = {
-    shade: "park-alt1",
+    shade: "garden",
     trees: "park-alt1",
     roads: "road-accident",
     parks: "park",

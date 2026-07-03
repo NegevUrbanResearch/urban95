@@ -443,11 +443,11 @@
     var d = requireDeps();
     if (breakdown && breakdown.formulaLine) {
       if (d.getScoreMode() === "weighted") {
-        return (
-          '<details class="score-explain-formula-fold score-explain-formula-bottom"><summary>Score equation</summary>' +
-          '<div class="score-explain-formula-tiles" aria-label="' +
-          d.escapeHtml(breakdown.formulaLine) +
-          '">' +
+      return (
+        '<details class="score-explain-formula-fold score-explain-formula-bottom"><summary>Score equation</summary>' +
+        '<div class="score-explain-formula-tiles" aria-label="' +
+        d.escapeHtml(breakdown.formulaLine) +
+        '">' +
           '<span class="formula-chip formula-chip-env">20% <b>Environmental</b></span>' +
           '<span class="formula-plus">+</span>' +
           '<span class="formula-chip formula-chip-nature">15% <b>Nature</b></span>' +
@@ -457,7 +457,9 @@
           '<span class="formula-chip formula-chip-safety">25% <b>Safety</b></span>' +
           '<span class="formula-plus">+</span>' +
           '<span class="formula-chip formula-chip-family">25% <b>Family</b></span>' +
-          "</div></details>"
+          "</div>" +
+          renderMetricMethodologyNote() +
+          "</details>"
         );
       }
       return (
@@ -467,6 +469,24 @@
       );
     }
     return "";
+  }
+
+  function getActiveMetricForMethodologyNote() {
+    var d = requireDeps();
+    if (typeof d.getActiveMetric !== "function") return false;
+    return d.getActiveMetric();
+  }
+
+  function renderMetricMethodologyNote() {
+    var d = requireDeps();
+    var metric = getActiveMetricForMethodologyNote();
+    var note = metric && typeof metric.explainNote === "string" ? metric.explainNote : "";
+    if (!note) return "";
+    return (
+      '<p class="score-explain-shade-note">' +
+      d.escapeHtml(note) +
+      "</p>"
+    );
   }
 
   function renderScoreExplainSidebar(breakdown, metrics, ctx) {

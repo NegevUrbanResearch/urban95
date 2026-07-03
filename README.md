@@ -61,7 +61,7 @@ Urban95 total score is a weighted sum of five category scores. It is a methodolo
 Each category is itself built from subcategory weights in `src/index calculation.py`:
 
 - **Environmental Quality**
-  - Shade: 40%
+  - Shade: 40% — Beer Sheva BDAR **Spatial Shade Index (`summer_SI`)** from the [Derech Tzel shading metrics guide](https://tzel.org.il/wp-content/uploads/2025/08/Shade-Indicators_eng-2.6.pdf). Values are used as-is (**SI, not SAI**; not recalculated). Each building gets a **300 m area-weighted mean `summer_SI` around the building centroid**, then stored/displayed `summer_si` is **rounded to 1 decimal place with standard half-up ties before output and scoring** (`0.15 → 0.2`, `0.35 → 0.4`). The map shows continuous 0–1 SI using the official interpretation buckets (`<0.10 severe lack`, `0.10–<0.20 significant lack`, `0.20–<0.40 needs improvement`, `0.40–<0.60 good shade`, `≥0.60 excellent shade`). The Urban95 shade sub-score keeps a project-specific ternary mapping on that **rounded** building SI: `<0.20 → 0`, `0.20–<0.40 → 50`, `≥0.40 → 100`.
   - Trees: 20%
   - Distance from fast roads: 40%
 - **Nature**
@@ -99,6 +99,7 @@ Amenities Focus map coloring and percentile displays are rank-based relative to 
 ### 1. Prerequisites
 
 - Raw GIS under `data/` (see `src/preprocess_accessibility.py` for expected inputs — e.g. `buildings.geojson`, `amenities.geojson`, `sidewalks_and_trees.geojson`, parks).
+- **`data/arcgis_shade/bsv_street_summer_shade_index.geojson`** and **`data/arcgis_shade/bsv_open_spaces_summer_shade_index.geojson`** — raw ArcGIS summer SI layers for shade scoring and the web map layer.
 - **`docs/data/amenities_new.geojson`** — merged points from the curated manifest (and optionally **`docs/data/street_lights.geojson`**) used by Urban95/clean-manifest inventory views.
 - **`.env`** in the repo root with a Mapbox token used only for isochrone generation:
 
@@ -106,7 +107,17 @@ Amenities Focus map coloring and percentile displays are rank-based relative to 
   mapbox_access_token=YOUR_TOKEN
   ```
 
-### 2. Building-level metrics and web GeoJSON
+### 2. Shade SI layers (before building accessibility)
+
+Prepares metric scoring layers under `output/shade_si/` and a simplified web-only display layer at `docs/data/shade_si.geojson` (+ `.gz`):
+
+```bash
+python src/preprocess_shade.py
+```
+
+Scoring reads the prepared layers in `output/shade_si/`; the simplified `docs/data/shade_si.geojson` is for map display only.
+
+### 3. Building-level metrics and web GeoJSON
 
 Writes full-precision copy to `output/` and an optimized copy to `docs/data/` (buildings, amenities, trees, parks, isochrones, etc.):
 
@@ -114,7 +125,15 @@ Writes full-precision copy to `output/` and an optimized copy to `docs/data/` (b
 python src/preprocess_accessibility.py
 ```
 
-### 3. Neighborhood and citywide aggregates
+To recompute Urban95 weighted columns (including shade SI) on existing buildings without Mapbox or isochrones:
+
+```bash
+python src/rescore_urban95_weighted.py
+```
+
+This refreshes **`docs/data/buildings_accessibility.geojson`** and **`docs/data/buildings_lookup.json`** only. Run `python src/preprocess_neighborhoods.py` immediately afterward so **`docs/data/neighborhoods.geojson`**, **`neighborhood_charts.json`**, and **`citywide_stats.json`** stay in sync with the rescored building fields.
+
+### 4. Neighborhood and citywide aggregates
 
 Run after `buildings_accessibility.geojson` (and related layers) exist in `docs/data/`:
 
@@ -124,7 +143,7 @@ python src/preprocess_neighborhoods.py
 
 This updates **`docs/data/neighborhoods.geojson`**, **`neighborhood_charts.json`**, and **`citywide_stats.json`**.
 
-### 4. Spatial syntax layer (street network)
+### 5. Spatial syntax layer (street network)
 
 Builds segment and zone-level spatial syntax layers from `docs/data/roads.geojson`:
 
@@ -152,6 +171,7 @@ urban95/
 ├── data/                    # Source GIS for preprocessing
 ├── src/
 │   ├── preprocess_accessibility.py
+│   ├── preprocess_shade.py
 │   ├── preprocess_neighborhoods.py
 │   ├── generate_spatial_syntax.py
 │   └── filter.py            # Optional spatial filter to `filtered/`

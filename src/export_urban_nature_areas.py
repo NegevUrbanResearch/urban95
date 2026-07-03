@@ -10,7 +10,7 @@ from pathlib import Path
 
 import geopandas as gpd
 
-from preprocess_accessibility import write_gzip_copy, write_minimal_geojson
+from preprocess_geojson_utils import write_gzip_copy, write_minimal_geojson
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GDB_PATH = REPO_ROOT / "docs" / "data" / "SekerTevaIroni.gdb"

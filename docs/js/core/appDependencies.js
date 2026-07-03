@@ -16,6 +16,7 @@ var POPULATION_GRID_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls",
 var SOCIOECONOMIC_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "socioeconomic");
 var BUILDINGS_LOOKUP_URL = requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "buildingsLookup");
 var PARKS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "parks");
+var SHADE_SI_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "shadeSi");
 var URBAN_NATURE_AREAS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "urbanNatureAreas");
 var TREES_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "trees");
 var STREET_LIGHTS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "streetLights");
@@ -316,6 +317,8 @@ var Urban95ModeController = requireNamespace(window, "Urban95ModeController");
 requireNamespaceMember(Urban95ModeController, "Urban95ModeController", "create", "function");
 var Urban95MapEvents = requireNamespace(window, "Urban95MapEvents");
 requireNamespaceMember(Urban95MapEvents, "Urban95MapEvents", "bind", "function");
+var Urban95AuxiliaryOverlays = requireNamespace(window, "Urban95AuxiliaryOverlays");
+requireNamespaceMember(Urban95AuxiliaryOverlays, "Urban95AuxiliaryOverlays", "create", "function");
 var Urban95OverlayVisibility = requireNamespace(window, "Urban95OverlayVisibility");
 requireNamespaceMember(Urban95OverlayVisibility, "Urban95OverlayVisibility", "create", "function");
 var Urban95MapRenderers = requireNamespace(window, "Urban95MapRenderers");
@@ -385,6 +388,7 @@ window.Urban95AppDependencies = {
   SOCIOECONOMIC_URL: SOCIOECONOMIC_URL,
   BUILDINGS_LOOKUP_URL: BUILDINGS_LOOKUP_URL,
   PARKS_URL: PARKS_URL,
+  SHADE_SI_URL: SHADE_SI_URL,
   URBAN_NATURE_AREAS_URL: URBAN_NATURE_AREAS_URL,
   TREES_URL: TREES_URL,
   STREET_LIGHTS_URL: STREET_LIGHTS_URL,
@@ -461,6 +465,7 @@ window.Urban95AppDependencies = {
   Urban95Dashboards: Urban95Dashboards,
   Urban95ModeController: Urban95ModeController,
   Urban95MapEvents: Urban95MapEvents,
+  Urban95AuxiliaryOverlays: Urban95AuxiliaryOverlays,
   Urban95OverlayVisibility: Urban95OverlayVisibility,
   Urban95MapRenderers: Urban95MapRenderers,
   Urban95Selection: Urban95Selection,

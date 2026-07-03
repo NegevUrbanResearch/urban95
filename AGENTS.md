@@ -45,10 +45,12 @@ Optional tuning (see `src/preprocess_accessibility.py`): `INDEX_SCORE_WORKERS`, 
 ### Regenerating site data (order matters)
 
 1. **Optional (usually first if you use it):** `python src/filter.py` — clips `data/*.geojson` into `filtered/`. Run before preprocessing when you want a bounded study area. Resolution order is **per layer** in `compute_building_accessibility`: **`buildings.geojson` tries `filtered/` before `data/`**; legacy amenities, trees, and parks try **`data/` before `filtered/`** (see the `*_candidates` lists in `src/preprocess_accessibility.py`).
-2. Raw GIS in `data/` and/or `filtered/` as expected by `src/preprocess_accessibility.py`, plus **`docs/data/amenities_new.geojson`** when you rely on the merged/clean amenity inventory (same prerequisite called out in **`README.md`** — without it, parts of the pipeline log warnings or produce incomplete metrics).
-3. `python src/preprocess_accessibility.py` — writes `output/` and `docs/data/` layers.
-4. `python src/preprocess_neighborhoods.py` — requires building-level outputs in `docs/data/`; updates neighborhoods GeoJSON, `neighborhood_charts.json`, `citywide_stats.json`.
-5. **Roads + spatial syntax (optional):** `python src/download_osm_roads.py` → `docs/data/roads.geojson`, then `python src/generate_spatial_syntax.py` → segment/zone GeoJSON under `docs/data/`.
+2. Raw GIS in `data/` and/or `filtered/` as expected by `src/preprocess_accessibility.py`, plus **`data/arcgis_shade/bsv_street_summer_shade_index.geojson`** and **`data/arcgis_shade/bsv_open_spaces_summer_shade_index.geojson`** for shade SI, and **`docs/data/amenities_new.geojson`** when you rely on the merged/clean amenity inventory (same prerequisite called out in **`README.md`** — without it, parts of the pipeline log warnings or produce incomplete metrics).
+3. **`python src/preprocess_shade.py`** — validates raw ArcGIS SI inputs, writes metric prepared scoring layers to **`output/shade_si/`**, calibration to **`output/shade_si_calibration.json`**, and a simplified web-only **`docs/data/shade_si.geojson`** (+ `.gz`). Run **before** building accessibility scoring.
+4. `python src/preprocess_accessibility.py` — writes `output/` and `docs/data/` layers; attaches building `summer_si` from prepared `output/shade_si/` layers (not from the simplified web GeoJSON).
+5. **`python src/rescore_urban95_weighted.py`** — recompute Urban95 weighted columns (incl. shade SI) on existing buildings without Mapbox/isochrones. This refreshes `docs/data/buildings_accessibility.geojson` + `docs/data/buildings_lookup.json` only; rerun `python src/preprocess_neighborhoods.py` immediately afterward to refresh neighborhood/city aggregates.
+6. `python src/preprocess_neighborhoods.py` — requires building-level outputs in `docs/data/`; updates neighborhoods GeoJSON, `neighborhood_charts.json`, `citywide_stats.json`.
+7. **Roads + spatial syntax (optional):** `python src/download_osm_roads.py` → `docs/data/roads.geojson`, then `python src/generate_spatial_syntax.py` → segment/zone GeoJSON under `docs/data/`.
 
 ### Quirks agents must respect
 
@@ -74,7 +76,7 @@ Optional tuning (see `src/preprocess_accessibility.py`): `INDEX_SCORE_WORKERS`, 
 | `output/` | Full-precision pipeline outputs (gitignored) |
 | `filtered/` | Optional clipped inputs (gitignored) |
 
-**`src/` modules:** `preprocess_accessibility.py`, `preprocess_neighborhoods.py`, `generate_spatial_syntax.py`, `filter.py`, `download_osm_roads.py`, and `index calculation.py` (Urban95 weights — loaded by preprocessing, not the usual CLI entry).
+**`src/` modules:** `preprocess_accessibility.py`, `preprocess_shade.py`, `preprocess_neighborhoods.py`, `generate_spatial_syntax.py`, `filter.py`, `download_osm_roads.py`, `shade_si.py`, `rescore_urban95_weighted.py`, and `index calculation.py` (Urban95 weights — loaded by preprocessing, not the usual CLI entry).
 
 ## Tooling expectations
 
@@ -84,6 +86,7 @@ Optional tuning (see `src/preprocess_accessibility.py`): `INDEX_SCORE_WORKERS`, 
 ## Scoring models (high level)
 
 - **Urban95:** weighted category/subcategory model; weights live in `src/index calculation.py` (see README for percentages).
+- **Shade (Environmental Quality sub-score):** uses Beer Sheva BDAR **`summer_SI`** from Derech Tzel ([shading metrics guide PDF](https://tzel.org.il/wp-content/uploads/2025/08/Shade-Indicators_eng-2.6.pdf)) as-is — **SI, not SAI**, not recalculated. Building SI = **300 m area-weighted mean `summer_SI` around each building centroid**, then stored/displayed `summer_si` is **rounded to 1 decimal place with standard half-up ties before scoring/output** (`0.15 → 0.2`, `0.35 → 0.4`). Official SI interpretation buckets are `<0.10 severe lack`, `0.10–<0.20 significant lack`, `0.20–<0.40 needs improvement`, `0.40–<0.60 good shade`, `≥0.60 excellent shade`. Urban95 keeps a project-specific ternary sub-score mapping on that **rounded** building SI: `<0.20 → 0`, `0.20–<0.40 → 50`, `≥0.40 → 100`. **Scoring source:** prepared layers in **`output/shade_si/`**. **Web display only:** simplified **`docs/data/shade_si.geojson`** (+ gzip).
 - **Amenities Focus (`expanded`):** amenity-count-style model tied closely to amenity filters in the UI.
 
 For field names and `_5min/_10min/_15min` columns, follow **`README.md`** and the columns referenced in `docs/app.js`.

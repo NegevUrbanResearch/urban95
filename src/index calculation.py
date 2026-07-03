@@ -6,6 +6,8 @@ from shapely.geometry import Point
 from pathlib import Path
 import warnings
 
+from shade_si import load_prepared_si_layers, round_building_summer_si, summer_si_to_subscore
+
 # ==========================================
 # הגדרות ומשקלים
 # ==========================================
@@ -46,6 +48,9 @@ CATEGORY_SUBCATEGORY_WEIGHTS = {
 }
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "docs" / "data"
+DEFAULT_SHADE_SI_DIR = Path(__file__).resolve().parent.parent / "output" / "shade_si"
+STREET_SI_FILENAME = "street_summer_si.geojson"
+OPEN_SPACE_SI_FILENAME = "open_space_summer_si.geojson"
 
 
 def _sanitize_layer(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -79,30 +84,21 @@ def _features_intersecting(layer: gpd.GeoDataFrame, geom):
 # פונקציות הקטגוריות (Geo-Spatial Logic)
 # ==========================================
 
-def calc_environmental_quality(point: Point, layers: dict, include_details: bool = False):
+def calc_environmental_quality(
+    point: Point,
+    layers: dict,
+    include_details: bool = False,
+    precomputed_summer_si=None,
+):
     """
     חישוב איכות סביבה: צל, עצים, וכבישים מהירים.
     """
-    buffer_300m = point.buffer(300)
     buffer_20m = point.buffer(20)
-    
+
     # 1. צל (Shade) - משקל 0.4
-    shade_score = 0.0
-    if "shade" in layers and not layers["shade"].empty:
-        shade_in_buffer = _features_intersecting(layers["shade"], buffer_300m)
-        if not shade_in_buffer.empty:
-            # חישוב אחוז הכיסוי (שטח הצל חלקי שטח הבאפר)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
-                shade_area = shade_in_buffer.geometry.intersection(buffer_300m).area.sum()
-            buffer_area = buffer_300m.area
-            shade_percent = (shade_area / buffer_area) * 100
-            
-            if shade_percent > 30:
-                shade_score = 1.0
-            elif 15 <= shade_percent <= 30:
-                shade_score = 0.5
-    
+    summer_si = round_building_summer_si(precomputed_summer_si)
+    shade_score = summer_si_to_subscore(summer_si) / 100.0
+
     # 2. עצים (Trees) - משקל 0.2
     trees_score = 0.0
     if "trees" in layers and not layers["trees"].empty:
@@ -146,6 +142,7 @@ def calc_environmental_quality(point: Point, layers: dict, include_details: bool
         return final_score
     return final_score, {
         "shade": shade_score * 100,
+        "summer_si": summer_si,
         "trees": trees_score * 100,
         "roads": roads_score * 100,
     }
@@ -172,7 +169,6 @@ def build_layers_from_docs_data(data_dir: Path | str = DEFAULT_DATA_DIR, target_
     """
     data_dir = Path(data_dir)
     layers = {
-        "shade": _load_geojson(data_dir / "shade.geojson", target_epsg),
         "trees": _load_geojson(data_dir / "trees.geojson", target_epsg),
         "roads": _load_geojson(data_dir / "roads.geojson", target_epsg),
         "parks": _load_geojson(data_dir / "parks.geojson", target_epsg),
@@ -208,6 +204,25 @@ def build_layers_from_docs_data(data_dir: Path | str = DEFAULT_DATA_DIR, target_
         else:
             layers[target_name] = amenities_new.iloc[0:0].copy()
 
+    return layers
+
+
+def build_layers(
+    data_dir: Path | str = DEFAULT_DATA_DIR,
+    shade_si_dir: Path | str | None = DEFAULT_SHADE_SI_DIR,
+    target_epsg: int = 2039,
+) -> dict:
+    """Load scoring layers from docs/data and prepared ArcGIS SI artifacts."""
+    layers = build_layers_from_docs_data(data_dir=data_dir, target_epsg=target_epsg)
+    if shade_si_dir is None:
+        return layers
+
+    shade_si_dir = Path(shade_si_dir)
+    street_path = shade_si_dir / STREET_SI_FILENAME
+    open_space_path = shade_si_dir / OPEN_SPACE_SI_FILENAME
+    streets, open_spaces = load_prepared_si_layers(street_path, open_space_path)
+    layers["shade_streets"] = streets
+    layers["shade_open_spaces"] = open_spaces
     return layers
 
 
@@ -378,15 +393,27 @@ def calc_family_services(point: Point, layers: dict, include_details: bool = Fal
 # פונקציית ה-MAIN ליצירת האינדקס והגרף
 # ==========================================
 
-def calculate_master_index(x_coord: float, y_coord: float, layers: dict):
+def calculate_master_index(
+    x_coord: float,
+    y_coord: float,
+    layers: dict,
+    precomputed: dict | None = None,
+):
     """
     הפונקציה הראשית. מופעלת בלחיצה על המפה.
     הקואורדינטות צריכות להיות ברשת ישראל החדשה (EPSG:2039) או להמיר אותן.
     """
     clicked_point = Point(x_coord, y_coord)
-    
+    precomputed = precomputed or {}
+    summer_si = precomputed.get("summer_si")
+
     # 1. שליחת הנקודה והשכבות לכל קטגוריה וקבלת ציונים
-    env_score, env_sub = calc_environmental_quality(clicked_point, layers, include_details=True)
+    env_score, env_sub = calc_environmental_quality(
+        clicked_point,
+        layers,
+        include_details=True,
+        precomputed_summer_si=summer_si,
+    )
     nature_score, nature_sub = calc_nature(clicked_point, layers, include_details=True)
     play_score, play_sub = calc_play(clicked_point, layers, include_details=True)
     safety_score, safety_sub = calc_safety_and_mobility(clicked_point, layers, include_details=True)

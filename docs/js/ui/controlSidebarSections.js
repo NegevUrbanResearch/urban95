@@ -29,6 +29,8 @@
       typeof config.getActiveMetric === "function" ? config.getActiveMetric : null;
     var getKidsPopulationLegend =
       typeof config.getKidsPopulationLegend === "function" ? config.getKidsPopulationLegend : null;
+    var isCanonicalLayerVisible =
+      typeof config.isCanonicalLayerVisible === "function" ? config.isCanonicalLayerVisible : null;
     var setScoreMode = requireFunction(config.setScoreMode, "setScoreMode");
     var setWalkMinutes = requireFunction(config.setWalkMinutes, "setWalkMinutes");
     var setSelectedAmenityTypes = requireFunction(
@@ -181,11 +183,34 @@
       iconsBase: iconsBase,
     });
 
+    function buildCompanionLegendHtml() {
+      var companions = window.Urban95StaticPolygonCompanions;
+      if (!companions || typeof companions.forEachEntry !== "function") return "";
+      var state = readState();
+      var mode = state.currentMode || "house";
+      var parts = [];
+      companions.forEachEntry(function (entry, key) {
+        var modeOk = (entry.visibilityModes || []).indexOf(mode) >= 0;
+        var visible = isCanonicalLayerVisible
+          ? isCanonicalLayerVisible(entry.sourceId, false)
+          : false;
+        if (!visible || !modeOk) return;
+        var spec =
+          typeof companions.getLegendSpec === "function" ? companions.getLegendSpec(key) : null;
+        if (spec) parts.push(markup.renderCompanionLegendHtml(spec));
+      });
+      return parts.join("");
+    }
+
     function renderLegend() {
       if (!elements.legendEl) return;
       var metric = getActiveMetric ? getActiveMetric() : null;
       var kidsLegend = getKidsPopulationLegend ? getKidsPopulationLegend() : null;
-      elements.legendEl.innerHTML = markup.renderLegendHtml(metric, kidsLegend);
+      elements.legendEl.innerHTML = markup.renderLegendHtml(
+        metric,
+        kidsLegend,
+        buildCompanionLegendHtml()
+      );
     }
 
     function setLegendVisible(visible) {

@@ -31,6 +31,8 @@
     var map = deps.map || {};
     var ui = deps.ui || {};
     var controls = deps.controls || {};
+    var clearTooltip =
+      typeof ui.clearTooltip === "function" ? ui.clearTooltip : function () {};
     var setIsochronesDeferred =
       typeof state.setIsochronesDeferred === "function" ? state.setIsochronesDeferred : null;
     var requestAnimationFrameFn =
@@ -307,6 +309,7 @@
 
     function setActiveHeatmap(nextHeatmapId) {
       state.setActiveHeatmapId(nextHeatmapId);
+      clearTooltip();
       clearDerivedCaches();
       applyScoreStateChange();
     }

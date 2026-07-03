@@ -9,6 +9,7 @@ const {
   POPULATION_GRID_URL,
   SOCIOECONOMIC_URL,
   PARKS_URL,
+  SHADE_SI_URL,
   URBAN_NATURE_AREAS_URL,
   TREES_URL,
   STREET_LIGHTS_URL,
@@ -78,6 +79,7 @@ const {
   Urban95Dashboards,
   Urban95ModeController,
   Urban95MapEvents,
+  Urban95AuxiliaryOverlays,
   Urban95OverlayVisibility,
   Urban95MapRenderers,
   Urban95Selection,
@@ -252,6 +254,13 @@ const getCurrentBuildingAmenityStatKeysForMinutes =
 function getActiveMetricState() {
   return scoreContext.getActiveMetric();
 }
+function getBuildingHoverProperties(renderedProperties) {
+  const rendered = renderedProperties || {};
+  const buildingId = rendered.building_id;
+  const stored = buildingId == null ? null : buildingPropertiesById.get(String(buildingId));
+  return stored ? Object.assign({}, rendered, stored) : rendered;
+}
+let auxiliaryOverlays = null;
 const scoreExplain = Urban95ScoreExplain.create({
   scoreModel: Urban95ScoreModel,
   getActiveMetric: scoreContext.getActiveMetric,
@@ -314,7 +323,11 @@ Urban95ScoreSidebar.configure({
   },
   formatMetricNumber: formatMetricNumber,
   formatScoreInteger: formatScoreInteger,
-  buildBuildingDemographicContext: buildBuildingDemographicContext,
+  buildBuildingDemographicContext: function (lng, lat) {
+    return auxiliaryOverlays
+      ? auxiliaryOverlays.buildBuildingDemographicContext(lng, lat)
+      : { population: null, socioeconomic: null };
+  },
   setSidebarPadding: scoreSidebarChrome.setSidebarPadding,
   restoreFocusAfterHide: scoreSidebarChrome.restoreFocusAfterHide,
   scoreExplainIconNeutral: scoreExplain.scoreExplainIconNeutral,
@@ -333,34 +346,11 @@ Urban95ScoreSidebar.configure({
 const TREE_LAYER_IDS = ["tree-icons", "tree-icons-vector"];
 const STREET_LIGHT_LAYER_IDS = ["street-light-icons", "street-light-icons-vector"];
 const TREES_AND_LIGHTS_LAYER_IDS = TREE_LAYER_IDS.concat(STREET_LIGHT_LAYER_IDS);
-const ROAD_LAYER_IDS = [
-  "roads-casing",
-  "roads-fill",
-  "roads-labels-major",
-  "roads-labels-local",
-];
-const SCHOOLS_SOURCE_ID = "schools";
-const SCHOOLS_LAYER_ID = "schools-points";
-const BUS_STOPS_SOURCE_ID = "bus-stops";
-const BUS_STOPS_LAYER_ID = "bus-stops-points";
-const KIDS_POPULATION_SOURCE_ID = "kids-population-grid";
-const KIDS_POPULATION_LAYER_ID = "kids-population-grid-fill";
-const URBAN_NATURE_LAYER_ID = "urban-nature-fill";
-const SOCIOECONOMIC_SOURCE_ID = "socioeconomic-statareas";
-const SOCIOECONOMIC_FILL_LAYER_ID = "socioeconomic-statareas-fill";
-const SOCIOECONOMIC_OUTLINE_LAYER_ID = "socioeconomic-statareas-outline";
-const SOCIOECONOMIC_LABEL_LAYER_ID = "socioeconomic-statareas-labels";
-const KIDS_AGE_0_4_KEY = "גיל0_4";
-const KIDS_AGE_5_9_KEY = "גיל5_9";
-let populationGridLookupFeatures = [];
-let socioeconomicLookupFeatures = [];
-let kidsPopulationMaxKids = 0;
 const AMENITY_CLUSTER_MIN_ZOOM = 13;
 const AMENITY_CLUSTER_PIXEL_RADIUS = 36;
 const AMENITY_CLUSTER_DISSOLVE_ZOOM = 16;
 const AMENITY_CLUSTER_MAX_COUNT = 50;
 const URBAN95_DETAIL_POINTS_MIN_ZOOM = Urban95Config.detailPointsMinZoom || 15;
-const SCHOOLS_DETAIL_POINTS_MIN_ZOOM = Math.max(0, URBAN95_DETAIL_POINTS_MIN_ZOOM - 1);
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches || 
                       window.matchMedia("(max-width: 480px)").matches;
 let allAmenityTypes = [];
@@ -373,6 +363,7 @@ let allAmenityTypesLegacy = [];
 let typesWithDataClean = new Set();
 let typesWithDataLegacy = new Set();
 let buildingsData = null;
+let buildingPropertiesById = new Map();
 let buildingCentroids = [];
 let selectedBuildingCentroid = null;
 let selectedBuildingVectorId = null;
@@ -388,9 +379,6 @@ let _deckUpdateTimer = null;
 let _deckHovering = false;
 let _lastDeckClickTime = 0;
 let buildingCentroidGridIndex = new Map();
-let schoolsHoverBound = false;
-let busStopsHoverBound = false;
-const demographicOverlayBoundLayers = new Set();
 const pointDataLoader = createPointDataLoader({
   urls: {
     trees: TREES_URL,
@@ -697,6 +685,34 @@ const overlayVisibility = Urban95OverlayVisibility.create({
   },
   map: map,
 });
+auxiliaryOverlays = Urban95AuxiliaryOverlays.create({
+  map: map,
+  turf: turf,
+  overlayVisibility: overlayVisibility,
+  fetchJsonWithGzipFallback: fetchJsonWithGzipFallback,
+  getCurrentMode: function () {
+    return currentMode;
+  },
+  getScoreMode: getScoreModeState,
+  getDeckHovering: function () {
+    return _deckHovering;
+  },
+  refreshLegend: function () {
+    if (controlsBinding && typeof controlsBinding.refreshLegend === "function") {
+      controlsBinding.refreshLegend();
+    }
+  },
+  formatArea: formatArea,
+  mapRenderers: Urban95MapRenderers,
+  tooltip: tooltip,
+  detailPointsMinZoom: URBAN95_DETAIL_POINTS_MIN_ZOOM,
+  urls: {
+    populationGrid: POPULATION_GRID_URL,
+    socioeconomic: SOCIOECONOMIC_URL,
+    education: EDUCATION_URL,
+    busStops: BUS_STOPS_URL,
+  },
+});
 Urban95Dashboards.configure({
   map: map,
   fetchJsonWithGzipFallback: fetchJsonWithGzipFallback,
@@ -975,6 +991,10 @@ const controlActions = Urban95ControlActions.create({
     getCitywideModal: function () {
       return citywideModalEl;
     },
+    clearTooltip: function () {
+      tooltip.textContent = "";
+      tooltip.style.display = "none";
+    },
   },
   controls: {
     refreshLegend: function () {
@@ -991,13 +1011,14 @@ controlSidebarAdapter = Urban95ControlSidebarAdapter.create({
     onScoreModeChanged: controlActions.onScoreModeChanged,
   },
   syncers: {
-    syncRoadsVisibility: applyRoadSymbologyVisibility,
-    syncUrbanNatureVisibility: applyUrbanNatureVisibility,
-    syncKidsPopulationVisibility: applyKidsPopulationVisibility,
-    syncSocioeconomicVisibility: applySocioeconomicVisibility,
-    syncSchoolsVisibility: applySchoolsLayerVisibility,
-    syncBusStopsVisibility: applyBusStopsLayerVisibility,
+    syncRoadsVisibility: auxiliaryOverlays.applyRoadSymbologyVisibility,
+    syncUrbanNatureVisibility: auxiliaryOverlays.applyUrbanNatureVisibility,
+    syncKidsPopulationVisibility: auxiliaryOverlays.applyKidsPopulationVisibility,
+    syncSocioeconomicVisibility: auxiliaryOverlays.applySocioeconomicVisibility,
+    syncSchoolsVisibility: auxiliaryOverlays.applySchoolsLayerVisibility,
+    syncBusStopsVisibility: auxiliaryOverlays.applyBusStopsLayerVisibility,
     syncParksVisibility: overlayVisibility.applyParksVisibility,
+    syncStaticPolygonCompanionsVisibility: overlayVisibility.applyStaticPolygonCompanionsVisibility,
   },
 });
 controlsBinding = Urban95Controls.bind({
@@ -1012,11 +1033,9 @@ controlsBinding = Urban95Controls.bind({
   showRegistry: Urban95WeightedMetricShowRegistry,
   scoreContext: scoreContext,
   getActiveMetric: scoreContext.getActiveMetric,
-  getKidsPopulationLegend: function () {
-    return {
-      visible: overlayVisibility.isCanonicalLayerVisible("kids-population", false),
-      maxKids: kidsPopulationMaxKids,
-    };
+  getKidsPopulationLegend: auxiliaryOverlays.getKidsPopulationLegend,
+  isCanonicalLayerVisible: function (layerId, fallback) {
+    return overlayVisibility.isCanonicalLayerVisible(layerId, fallback);
   },
   isTouchDevice: isTouchDevice,
   getState: function () {
@@ -1139,6 +1158,13 @@ Urban95AppStartupBridge.bindStartup({
   logger: Urban95Logger,
   setBuildingsData: function (value) {
     buildingsData = value;
+    buildingPropertiesById = new Map();
+    ((value && value.features) || []).forEach(function (feature) {
+      const props = (feature && feature.properties) || {};
+      if (props.building_id != null) {
+        buildingPropertiesById.set(String(props.building_id), props);
+      }
+    });
   },
   setBuildingCentroids: function (value) {
     buildingCentroids = value;
@@ -1185,7 +1211,10 @@ Urban95AppStartupBridge.bindStartup({
       applyScoreModeAmenities: amenityMode.apply,
       clearDerivedCaches: clearDerivedCachesState,
       applyHouseModeHexBackground: modeController.applyHouseModeHexBackground.bind(modeController),
-      applyUrbanNatureVisibility: applyUrbanNatureVisibility,
+      applyUrbanNatureVisibility: auxiliaryOverlays.applyUrbanNatureVisibility,
+      applyStaticPolygonCompanionsVisibility: overlayVisibility.applyStaticPolygonCompanionsVisibility.bind(
+        overlayVisibility
+      ),
     },
     renderers: {
       applyParkDotPattern: applyParkDotPattern,
@@ -1200,6 +1229,7 @@ Urban95AppStartupBridge.bindStartup({
     urls: {
       buildings: BUILDINGS_URL,
       parks: PARKS_URL,
+      shadeSi: SHADE_SI_URL,
       urbanNatureAreas: URBAN_NATURE_AREAS_URL,
     },
 });
@@ -1222,584 +1252,10 @@ Urban95MapEvents.bind({
     return _lastDeckClickTime;
   },
   getScoreMode: getScoreModeState,
+  getActiveHeatmapId: getActiveHeatmapIdState,
+  getBuildingHoverProperties: getBuildingHoverProperties,
   formatArea: formatArea,
 });
-function safeNumber(value) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-}
-function getKids0To9Count(props) {
-  const p = props || {};
-  const kids0to4 = safeNumber(p[KIDS_AGE_0_4_KEY]) || 0;
-  const kids5to9 = safeNumber(p[KIDS_AGE_5_9_KEY]) || 0;
-  return kids0to4 + kids5to9;
-}
-function formatPopulationGridAreaLabel(areaSqM) {
-  const area = Number.isFinite(areaSqM) && areaSqM > 0 ? areaSqM : 40000;
-  const sideM = Math.round(Math.sqrt(area));
-  return sideM + " m \u00d7 " + sideM + " m (" + formatArea(area) + ")";
-}
-function isPolygonFeatureGeometry(geometry) {
-  return !!geometry && (geometry.type === "Polygon" || geometry.type === "MultiPolygon");
-}
-function findPolygonFeatureAtLngLat(features, lng, lat) {
-  if (!features || !features.length || lng == null || lat == null || typeof turf === "undefined") return null;
-  const point = turf.point([lng, lat]);
-  for (let i = 0; i < features.length; i++) {
-    const feature = features[i];
-    if (!feature || !isPolygonFeatureGeometry(feature.geometry)) continue;
-    try {
-      if (turf.booleanPointInPolygon(point, feature)) return feature;
-    } catch (_error) {}
-  }
-  return null;
-}
-function buildBuildingDemographicContext(lng, lat) {
-  const context = { population: null, socioeconomic: null };
-  const popFeature = findPolygonFeatureAtLngLat(populationGridLookupFeatures, lng, lat);
-  if (popFeature) {
-    const props = popFeature.properties || {};
-    const areaSqM = safeNumber(props.Shape_Area) || 40000;
-    context.population = {
-      kids0to4: safeNumber(props[KIDS_AGE_0_4_KEY]),
-      kids5to9: safeNumber(props[KIDS_AGE_5_9_KEY]),
-      areaSqM: areaSqM,
-      areaLabel: formatPopulationGridAreaLabel(areaSqM),
-    };
-  }
-  const sesFeature = findPolygonFeatureAtLngLat(socioeconomicLookupFeatures, lng, lat);
-  if (sesFeature) {
-    const props = sesFeature.properties || {};
-    const cluster = safeNumber(
-      props.socio_cluster != null ? props.socio_cluster : props.cluster_2021
-    );
-    let tractAreaSqM = null;
-    try {
-      tractAreaSqM = turf.area(sesFeature);
-    } catch (_error) {}
-    context.socioeconomic = {
-      cluster: Number.isFinite(cluster) ? Math.round(cluster) : null,
-      statArea: props.stat_area != null ? props.stat_area : props.yishuv_stat || null,
-      areaSqM: Number.isFinite(tractAreaSqM) ? tractAreaSqM : null,
-    };
-  }
-  return context;
-}
-function normalizeKidsPopulationGrid(rawFeatureCollection) {
-  const features = (rawFeatureCollection && rawFeatureCollection.features) || [];
-  const normalized = [];
-  let maxKids = 0;
-  features.forEach(function (feature) {
-    const geometry = feature && feature.geometry ? feature.geometry : null;
-    if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return;
-    const props = feature && feature.properties ? feature.properties : {};
-    const kids0to4 = safeNumber(props[KIDS_AGE_0_4_KEY]);
-    const kids5to9 = safeNumber(props[KIDS_AGE_5_9_KEY]);
-    const kids0to9 = getKids0To9Count(props);
-    if (!Number.isFinite(kids0to9)) return;
-    const safeKids0to4 = kids0to4 != null ? Math.max(0, kids0to4) : null;
-    const safeKids5to9 = kids5to9 != null ? Math.max(0, kids5to9) : null;
-    const safeKids0to9 = Math.max(0, kids0to9);
-    if (safeKids0to9 > maxKids) maxKids = safeKids0to9;
-    normalized.push({
-      type: "Feature",
-      properties: {
-        kids_0_4: safeKids0to4,
-        kids_5_9: safeKids5to9,
-        kids_0_9: safeKids0to9,
-      },
-      geometry: geometry,
-    });
-  });
-  return {
-    featureCollection: {
-      type: "FeatureCollection",
-      features: normalized,
-    },
-    maxKids: maxKids,
-  };
-}
-function kidsPopulationFillColorExpression(maxKids) {
-  const maxValue = Number.isFinite(maxKids) && maxKids > 0 ? maxKids : 1;
-  return [
-    "interpolate",
-    ["linear"],
-    ["coalesce", ["to-number", ["get", "kids_0_9"]], 0],
-    0, "#bfdbfe",
-    maxValue * 0.15, "#93c5fd",
-    maxValue * 0.35, "#60a5fa",
-    maxValue * 0.6, "#2563eb",
-    maxValue, "#1e3a8a",
-  ];
-}
-function kidsPopulationFillOpacityExpression(maxKids) {
-  const maxValue = Number.isFinite(maxKids) && maxKids > 0 ? maxKids : 1;
-  return [
-    "interpolate",
-    ["linear"],
-    ["coalesce", ["to-number", ["get", "kids_0_9"]], 0],
-    0, 0.28,
-    maxValue * 0.1, 0.38,
-    maxValue * 0.4, 0.58,
-    maxValue, 0.82,
-  ];
-}
-function ensureKidsPopulationLayer() {
-  if (!map.getSource(KIDS_POPULATION_SOURCE_ID)) {
-    map.addSource(KIDS_POPULATION_SOURCE_ID, {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) {
-    map.addLayer(
-      {
-        id: KIDS_POPULATION_LAYER_ID,
-        type: "fill",
-        source: KIDS_POPULATION_SOURCE_ID,
-        layout: {
-          visibility: "none",
-        },
-        paint: {
-          "fill-color": "#60a5fa",
-          "fill-opacity": 0.5,
-          "fill-outline-color": "rgba(59, 130, 246, 0.45)",
-        },
-      },
-      "selected-building-outline"
-    );
-  }
-}
-function applyUrbanNatureVisibility() {
-  if (!map.getLayer(URBAN_NATURE_LAYER_ID)) return;
-  const enabled = overlayVisibility.isCanonicalLayerVisible("urban-nature", false);
-  const showInMode = currentMode === "house" || currentMode === "citywide";
-  map.setLayoutProperty(
-    URBAN_NATURE_LAYER_ID,
-    "visibility",
-    enabled && showInMode ? "visible" : "none"
-  );
-}
-
-function applyKidsPopulationVisibility() {
-  if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) return;
-  const visible = overlayVisibility.isCanonicalLayerVisible("kids-population", false);
-  map.setLayoutProperty(KIDS_POPULATION_LAYER_ID, "visibility", visible ? "visible" : "none");
-}
-async function loadKidsPopulationGridLayer() {
-  try {
-    const raw = await fetchJsonWithGzipFallback(POPULATION_GRID_URL, { required: false });
-    ensureKidsPopulationLayer();
-    const source = map.getSource(KIDS_POPULATION_SOURCE_ID);
-    if (!source || !raw) return;
-    const normalized = normalizeKidsPopulationGrid(raw);
-    kidsPopulationMaxKids = normalized.maxKids;
-    populationGridLookupFeatures = ((raw && raw.features) || []).filter(function (feature) {
-      return feature && isPolygonFeatureGeometry(feature.geometry);
-    });
-    source.setData(normalized.featureCollection);
-    map.setPaintProperty(
-      KIDS_POPULATION_LAYER_ID,
-      "fill-color",
-      kidsPopulationFillColorExpression(normalized.maxKids)
-    );
-    map.setPaintProperty(
-      KIDS_POPULATION_LAYER_ID,
-      "fill-opacity",
-      kidsPopulationFillOpacityExpression(normalized.maxKids)
-    );
-    bindDemographicOverlayHover();
-    applyKidsPopulationVisibility();
-    if (controlsBinding && typeof controlsBinding.refreshLegend === "function") {
-      controlsBinding.refreshLegend();
-    }
-  } catch (err) {
-    console.error("Failed to load kids population grid:", err);
-  }
-}
-function normalizeSocioeconomicLayer(rawFeatureCollection) {
-  const features = (rawFeatureCollection && rawFeatureCollection.features) || [];
-  const normalized = [];
-  features.forEach(function (feature) {
-    const geometry = feature && feature.geometry ? feature.geometry : null;
-    if (!geometry || (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")) return;
-    const properties = Object.assign({}, (feature && feature.properties) || {});
-    const rawIndex = safeNumber(properties.socio_index != null ? properties.socio_index : properties.index_value);
-    if (!Number.isFinite(rawIndex)) return;
-    properties.socio_index = rawIndex;
-    const rawCluster = safeNumber(
-      properties.socio_cluster != null ? properties.socio_cluster : properties.cluster_2021
-    );
-    if (Number.isFinite(rawCluster)) properties.socio_cluster = Math.round(rawCluster);
-    const rawRank = safeNumber(properties.socio_rank != null ? properties.socio_rank : properties.rank_2021);
-    if (Number.isFinite(rawRank)) properties.socio_rank = Math.round(rawRank);
-    normalized.push({
-      type: "Feature",
-      properties: properties,
-      geometry: geometry,
-    });
-  });
-  return {
-    featureCollection: {
-      type: "FeatureCollection",
-      features: normalized,
-    },
-  };
-}
-function ensureSocioeconomicLayer() {
-  if (!map.getSource(SOCIOECONOMIC_SOURCE_ID)) {
-    map.addSource(SOCIOECONOMIC_SOURCE_ID, {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer(SOCIOECONOMIC_FILL_LAYER_ID)) {
-    const beforeLayerId = map.getLayer("selected-building-outline")
-      ? "selected-building-outline"
-      : undefined;
-    map.addLayer(
-      {
-        id: SOCIOECONOMIC_FILL_LAYER_ID,
-        type: "fill",
-        source: SOCIOECONOMIC_SOURCE_ID,
-        layout: {
-          visibility: "none",
-        },
-        paint: {
-          "fill-color": "rgba(0, 0, 0, 0)",
-          "fill-opacity": 0,
-        },
-      },
-      beforeLayerId
-    );
-  }
-  if (!map.getLayer(SOCIOECONOMIC_OUTLINE_LAYER_ID)) {
-    map.addLayer({
-      id: SOCIOECONOMIC_OUTLINE_LAYER_ID,
-      type: "line",
-      source: SOCIOECONOMIC_SOURCE_ID,
-      layout: {
-        visibility: "none",
-      },
-      paint: {
-        "line-color": "rgba(68, 64, 60, 0.7)",
-        "line-width": 0.9,
-      },
-    });
-  }
-  if (!map.getLayer(SOCIOECONOMIC_LABEL_LAYER_ID)) {
-    map.addLayer({
-      id: SOCIOECONOMIC_LABEL_LAYER_ID,
-      type: "symbol",
-      source: SOCIOECONOMIC_SOURCE_ID,
-      minzoom: 12,
-      layout: {
-        visibility: "none",
-        "text-field": [
-          "case",
-          ["has", "socio_cluster"],
-          ["concat", "Cluster ", ["to-string", ["get", "socio_cluster"]]],
-          ["has", "cluster_2021"],
-          ["concat", "Cluster ", ["to-string", ["round", ["to-number", ["get", "cluster_2021"]]]]],
-          "",
-        ],
-        "text-size": 11,
-        "text-font": ["Noto Sans Regular"],
-      },
-      paint: {
-        "text-color": "#1f2937",
-        "text-halo-color": "rgba(255, 255, 255, 0.85)",
-        "text-halo-width": 1.2,
-      },
-    });
-  }
-}
-function applySocioeconomicVisibility() {
-  const visible = overlayVisibility.isCanonicalLayerVisible("socioeconomic", false);
-  const nextVisibility = visible ? "visible" : "none";
-  [
-    SOCIOECONOMIC_FILL_LAYER_ID,
-    SOCIOECONOMIC_OUTLINE_LAYER_ID,
-    SOCIOECONOMIC_LABEL_LAYER_ID,
-  ].forEach(function (layerId) {
-    if (map.getLayer(layerId)) {
-      map.setLayoutProperty(layerId, "visibility", nextVisibility);
-    }
-  });
-}
-function formatKidsPopulationTooltipLines(feature) {
-  const properties = (feature && feature.properties) || {};
-  const kids0to4 = safeNumber(properties.kids_0_4);
-  const kids5to9 = safeNumber(properties.kids_5_9);
-  const lines = [];
-  if (Number.isFinite(kids0to4)) lines.push("Ages 0–4: " + Math.round(kids0to4));
-  if (Number.isFinite(kids5to9)) lines.push("Ages 5–9: " + Math.round(kids5to9));
-  return lines;
-}
-function formatSocioeconomicTooltipLines(feature) {
-  const properties = (feature && feature.properties) || {};
-  const clusterValue = safeNumber(
-    properties.socio_cluster != null ? properties.socio_cluster : properties.cluster_2021
-  );
-  if (!Number.isFinite(clusterValue)) return [];
-  return ["SES cluster: " + Math.round(clusterValue)];
-}
-function getDemographicOverlayQueryLayers() {
-  const layers = [];
-  if (
-    overlayVisibility.isCanonicalLayerVisible("kids-population", false) &&
-    map.getLayer(KIDS_POPULATION_LAYER_ID)
-  ) {
-    layers.push(KIDS_POPULATION_LAYER_ID);
-  }
-  if (
-    overlayVisibility.isCanonicalLayerVisible("socioeconomic", false) &&
-    map.getLayer(SOCIOECONOMIC_FILL_LAYER_ID)
-  ) {
-    layers.push(SOCIOECONOMIC_FILL_LAYER_ID);
-  }
-  return layers;
-}
-function getDemographicOverlayFeaturesAtPoint(point) {
-  const layers = getDemographicOverlayQueryLayers();
-  if (!layers.length || !point) {
-    return { kidsFeature: null, sesFeature: null };
-  }
-  const features = map.queryRenderedFeatures(point, { layers: layers });
-  let kidsFeature = null;
-  let sesFeature = null;
-  features.forEach(function (feature) {
-    if (!feature || !feature.layer || !feature.layer.id) return;
-    if (feature.layer.id === KIDS_POPULATION_LAYER_ID && !kidsFeature) kidsFeature = feature;
-    if (feature.layer.id === SOCIOECONOMIC_FILL_LAYER_ID && !sesFeature) sesFeature = feature;
-  });
-  return { kidsFeature: kidsFeature, sesFeature: sesFeature };
-}
-function formatDemographicOverlayTooltip(kidsFeature, sesFeature) {
-  const lines = [];
-  if (kidsFeature) lines.push.apply(lines, formatKidsPopulationTooltipLines(kidsFeature));
-  if (sesFeature) lines.push.apply(lines, formatSocioeconomicTooltipLines(sesFeature));
-  return lines.length ? lines.join("\n") : "";
-}
-function buildDemographicOverlayTooltip(point) {
-  const features = getDemographicOverlayFeaturesAtPoint(point);
-  return formatDemographicOverlayTooltip(features.kidsFeature, features.sesFeature);
-}
-function bindDemographicOverlayHover() {
-  [KIDS_POPULATION_LAYER_ID, SOCIOECONOMIC_FILL_LAYER_ID].forEach(function (layerId) {
-    if (!map.getLayer(layerId) || demographicOverlayBoundLayers.has(layerId)) return;
-    demographicOverlayBoundLayers.add(layerId);
-    map.on("mousemove", layerId, function (e) {
-      if (!e || !e.point) return;
-      if (_deckHovering) {
-        map.getCanvas().style.cursor = "";
-        tooltip.style.display = "none";
-        return;
-      }
-      const label = buildDemographicOverlayTooltip(e.point);
-      if (!label) {
-        tooltip.style.display = "none";
-        return;
-      }
-      map.getCanvas().style.cursor = "pointer";
-      tooltip.textContent = label;
-      tooltip.style.display = "block";
-      tooltip.style.left = e.point.x + 12 + "px";
-      tooltip.style.top = e.point.y + 12 + "px";
-    });
-    map.on("mouseleave", layerId, function (e) {
-      if (e && e.point && buildDemographicOverlayTooltip(e.point)) return;
-      map.getCanvas().style.cursor = "";
-      tooltip.style.display = "none";
-    });
-  });
-}
-async function loadSocioeconomicLayer() {
-  try {
-    const raw = await fetchJsonWithGzipFallback(SOCIOECONOMIC_URL, { required: false });
-    ensureSocioeconomicLayer();
-    const source = map.getSource(SOCIOECONOMIC_SOURCE_ID);
-    if (!source || !raw) return;
-    const normalized = normalizeSocioeconomicLayer(raw);
-    socioeconomicLookupFeatures = normalized.featureCollection.features || [];
-    source.setData(normalized.featureCollection);
-    bindDemographicOverlayHover();
-    applySocioeconomicVisibility();
-  } catch (err) {
-    console.error("Failed to load socioeconomic layer:", err);
-  }
-}
-function ensureSchoolsLayer() {
-  if (!map.getSource(SCHOOLS_SOURCE_ID)) {
-    map.addSource(SCHOOLS_SOURCE_ID, {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer(SCHOOLS_LAYER_ID)) {
-    const beforeLayerId = map.getLayer("selected-building-outline")
-      ? "selected-building-outline"
-      : undefined;
-    map.addLayer(
-      {
-        id: SCHOOLS_LAYER_ID,
-        type: "symbol",
-        source: SCHOOLS_SOURCE_ID,
-        minzoom: SCHOOLS_DETAIL_POINTS_MIN_ZOOM,
-        layout: {
-          "icon-image": "town-hall",
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 1.1, 14, 1.45, 18, 2],
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true,
-          visibility: "none",
-        },
-        paint: {
-          "icon-color": "#dc2626",
-          "icon-opacity": 0.95,
-        },
-      },
-      beforeLayerId
-    );
-  }
-}
-function applySchoolsLayerVisibility() {
-  if (!map.getLayer(SCHOOLS_LAYER_ID)) return;
-  const isUrban95 = getScoreModeState() === "weighted";
-  const visible =
-    overlayVisibility.isCanonicalLayerVisible("schools", false) &&
-    isUrban95 &&
-    currentMode === "house" &&
-    map.getZoom() >= SCHOOLS_DETAIL_POINTS_MIN_ZOOM;
-  map.setLayoutProperty(SCHOOLS_LAYER_ID, "visibility", visible ? "visible" : "none");
-}
-function ensureBusStopsLayer() {
-  if (!map.getSource(BUS_STOPS_SOURCE_ID)) {
-    map.addSource(BUS_STOPS_SOURCE_ID, {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-  }
-  if (!map.getLayer(BUS_STOPS_LAYER_ID)) {
-    const beforeLayerId = map.getLayer("selected-building-outline")
-      ? "selected-building-outline"
-      : undefined;
-    map.addLayer(
-      {
-        id: BUS_STOPS_LAYER_ID,
-        type: "symbol",
-        source: BUS_STOPS_SOURCE_ID,
-        minzoom: SCHOOLS_DETAIL_POINTS_MIN_ZOOM,
-        layout: {
-          "icon-image": "bus",
-          "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 1.0, 14, 1.3, 18, 1.8],
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true,
-          visibility: "none",
-        },
-        paint: {
-          "icon-color": "#2563EB",
-          "icon-opacity": 0.95,
-        },
-      },
-      beforeLayerId
-    );
-  }
-}
-function applyBusStopsLayerVisibility() {
-  if (!map.getLayer(BUS_STOPS_LAYER_ID)) return;
-  const isUrban95 = getScoreModeState() === "weighted";
-  const visible =
-    overlayVisibility.isCanonicalLayerVisible("bus-stops", false) &&
-    isUrban95 &&
-    currentMode === "house" &&
-    map.getZoom() >= SCHOOLS_DETAIL_POINTS_MIN_ZOOM;
-  map.setLayoutProperty(BUS_STOPS_LAYER_ID, "visibility", visible ? "visible" : "none");
-}
-function bindBusStopsHover() {
-  if (busStopsHoverBound || !map.getLayer(BUS_STOPS_LAYER_ID)) return;
-  Urban95MapRenderers.bindPointHoverLayer(BUS_STOPS_LAYER_ID, function (feature) {
-    const props = (feature && feature.properties) || {};
-    return props.stop_name || props.name || "Bus stop";
-  });
-  busStopsHoverBound = true;
-}
-async function loadBusStopsLayer() {
-  try {
-    const busStops = await fetchJsonWithGzipFallback(BUS_STOPS_URL, { required: false });
-    ensureBusStopsLayer();
-    const source = map.getSource(BUS_STOPS_SOURCE_ID);
-    if (!source) return;
-    source.setData(
-      busStops && busStops.type === "FeatureCollection"
-        ? busStops
-        : { type: "FeatureCollection", features: [] }
-    );
-    bindBusStopsHover();
-    applyBusStopsLayerVisibility();
-  } catch (err) {
-    console.error("Failed to load bus stops layer:", err);
-  }
-}
-async function loadSchoolsLayer() {
-  try {
-    const schools = await fetchJsonWithGzipFallback(EDUCATION_URL, { required: false });
-    ensureSchoolsLayer();
-    const source = map.getSource(SCHOOLS_SOURCE_ID);
-    if (!source) return;
-    source.setData(
-      schools && schools.type === "FeatureCollection"
-        ? schools
-        : { type: "FeatureCollection", features: [] }
-    );
-    bindSchoolsHover();
-    applySchoolsLayerVisibility();
-  } catch (err) {
-    console.error("Failed to load schools layer:", err);
-  }
-}
-function getSchoolHoverName(properties) {
-  if (!properties) return "School";
-  return (
-    properties.Institutio ||
-    properties.institution ||
-    properties.name ||
-    properties.NAME ||
-    properties.school_name ||
-    properties.oldName ||
-    "School"
-  );
-}
-function decodeLikelyMojibakeUtf8(value) {
-  const text = String(value || "");
-  if (!text || text.indexOf("×") === -1) return text;
-  try {
-    const bytes = Uint8Array.from(Array.from(text, function (char) {
-      return char.charCodeAt(0) & 0xff;
-    }));
-    const decoded = new TextDecoder("utf-8").decode(bytes);
-    return decoded && decoded.indexOf("�") === -1 ? decoded : text;
-  } catch (_error) {
-    return text;
-  }
-}
-function bindSchoolsHover() {
-  if (schoolsHoverBound || !map.getLayer(SCHOOLS_LAYER_ID)) return;
-  Urban95MapRenderers.bindPointHoverLayer(SCHOOLS_LAYER_ID, function (feature) {
-    const props = (feature && feature.properties) || {};
-    const name = decodeLikelyMojibakeUtf8(getSchoolHoverName(props));
-    const type = decodeLikelyMojibakeUtf8(props.type || "");
-    return type ? name + "\n" + type : name;
-  });
-  schoolsHoverBound = true;
-}
-function applyRoadSymbologyVisibility() {
-  const visibility = overlayVisibility.isCanonicalLayerVisible("roads", false) ? "visible" : "none";
-  ROAD_LAYER_IDS.forEach(function (layerId) {
-    if (map.getLayer(layerId)) {
-      map.setLayoutProperty(layerId, "visibility", visibility);
-    }
-  });
-}
 map.on("load", function () {
   if (controlSidebarAdapter) {
     setLayerVisibilityState(
@@ -1808,8 +1264,8 @@ map.on("load", function () {
     controlSidebarAdapter.syncMapLayers();
   }
 });
-map.on("load", loadKidsPopulationGridLayer);
-map.on("load", loadSocioeconomicLayer);
-map.on("load", loadSchoolsLayer);
-map.on("load", loadBusStopsLayer);
+map.on("load", auxiliaryOverlays.loadKidsPopulationGridLayer);
+map.on("load", auxiliaryOverlays.loadSocioeconomicLayer);
+map.on("load", auxiliaryOverlays.loadSchoolsLayer);
+map.on("load", auxiliaryOverlays.loadBusStopsLayer);
 Urban95InfoModal.bind({ infoModal: document.getElementById("info-modal"), infoBtn: document.getElementById("info-btn"), modalClose: document.getElementById("modal-close"), modalStart: document.getElementById("modal-start"), modalTabs: document.querySelectorAll(".modal-tab"), tabContents: document.querySelectorAll(".modal-tab-content") });

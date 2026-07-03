@@ -349,13 +349,23 @@
 
     var selectedLayer =
       hasGeneratedArtifact("buildings") && opts.buildingsSelectedLayer ? [opts.buildingsSelectedLayer] : [];
+    var staticPolygonCompanions = window.Urban95StaticPolygonCompanions;
+    var companionSources =
+      staticPolygonCompanions && typeof staticPolygonCompanions.buildSources === "function"
+        ? staticPolygonCompanions.buildSources(emptyFeatureCollection())
+        : {};
+    var companionLayers =
+      staticPolygonCompanions && typeof staticPolygonCompanions.buildLayers === "function"
+        ? staticPolygonCompanions.buildLayers()
+        : [];
     var map = new maplibreglRef.Map({
       container: opts.container || "map",
       collectResourceTiming: !!(window.urban95Perf && window.urban95Perf.enabled),
       style: {
         version: 8,
         glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-        sources: {
+        sources: Object.assign(
+          {
           osm: {
             type: "raster",
             tiles: [
@@ -396,7 +406,9 @@
             opts.neighborhoodSurfacePmtilesUrl
           ),
           "neighborhood-labels": { type: "geojson", data: emptyFeatureCollection() },
-        },
+          },
+          companionSources
+        ),
         layers: [
           { id: BASEMAP_STREET_LAYER_ID, type: "raster", source: "osm" },
           {
@@ -419,6 +431,7 @@
               },
               layout: { visibility: "none" },
             },
+          ].concat(companionLayers, [
             {
               id: "parks-fill",
               type: "fill",
@@ -431,7 +444,7 @@
               layout: { visibility: "visible" },
             },
             opts.buildingsFillLayer,
-          ],
+          ]),
           selectedLayer,
           createRoadLabelLayers(),
           [

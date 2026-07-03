@@ -6,6 +6,7 @@
     buildings: BASE + "/buildings_accessibility.geojson",
     roads: BASE + "/roads.geojson",
     parks: BASE + "/parks.geojson",
+    shadeSi: BASE + "/shade_si.geojson",
     urbanNatureAreas: BASE + "/urban_nature_areas.geojson",
     education: BASE + "/education.geojson",
     busStops: BASE + "/bus_stops.geojson",

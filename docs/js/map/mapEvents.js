@@ -83,6 +83,12 @@
     var getDeckHovering = requireFunction(deps.getDeckHovering, "deps.getDeckHovering");
     var getLastDeckClickTime = requireFunction(deps.getLastDeckClickTime, "deps.getLastDeckClickTime");
     var getScoreMode = requireFunction(deps.getScoreMode, "deps.getScoreMode");
+    var getActiveHeatmapId =
+      typeof deps.getActiveHeatmapId === "function" ? deps.getActiveHeatmapId : function () { return null; };
+    var getBuildingHoverProperties =
+      typeof deps.getBuildingHoverProperties === "function"
+        ? deps.getBuildingHoverProperties
+        : function (properties) { return properties || {}; };
     var formatArea = requireFunction(deps.formatArea, "deps.formatArea");
     var perfMark = typeof perf.mark === "function" ? perf.mark : function () {};
     var perfSpan =
@@ -93,6 +99,15 @@
             void meta;
             return callback();
           };
+
+    function hideTooltip() {
+      tooltip.textContent = "";
+      tooltip.style.display = "none";
+    }
+
+    function clearHoverCursor() {
+      if (!getDeckHovering()) map.getCanvas().style.cursor = "";
+    }
 
     function mapEventMeta(eventName, e) {
       return {
@@ -147,7 +162,39 @@
     });
 
     map.on("mouseleave", buildingsFillLayerId, function () {
-      if (!getDeckHovering()) map.getCanvas().style.cursor = "";
+      clearHoverCursor();
+      hideTooltip();
+    });
+
+    map.on("mousemove", buildingsFillLayerId, function (e) {
+      if (getDeckHovering()) {
+        map.getCanvas().style.cursor = "";
+        hideTooltip();
+        return;
+      }
+      if (!e || !e.features || !e.features[0] || !e.features[0].properties || !e.point) return;
+      var staticPolygonCompanions = window.Urban95StaticPolygonCompanions;
+      if (
+        !staticPolygonCompanions ||
+        typeof staticPolygonCompanions.formatBuildingTooltipForMetric !== "function"
+      ) {
+        return;
+      }
+      var hoverProperties = getBuildingHoverProperties(e.features[0].properties);
+      var lines = staticPolygonCompanions.formatBuildingTooltipForMetric(
+        getActiveHeatmapId(),
+        hoverProperties
+      );
+      if (!Array.isArray(lines) || lines.length === 0) {
+        clearHoverCursor();
+        hideTooltip();
+        return;
+      }
+      map.getCanvas().style.cursor = "pointer";
+      tooltip.textContent = lines.join("\n");
+      tooltip.style.display = "block";
+      tooltip.style.left = e.point.x + 12 + "px";
+      tooltip.style.top = e.point.y + 12 + "px";
     });
 
     map.on("mousemove", "urban-nature-fill", function (e) {
@@ -208,6 +255,34 @@
       if (!getDeckHovering()) map.getCanvas().style.cursor = "";
       tooltip.style.display = "none";
     });
+
+    var staticPolygonCompanions = window.Urban95StaticPolygonCompanions;
+    if (staticPolygonCompanions && typeof staticPolygonCompanions.forEachEntry === "function") {
+      staticPolygonCompanions.forEachEntry(function (entry) {
+        map.on("mousemove", entry.fillLayerId, function (e) {
+          if (getDeckHovering()) {
+            map.getCanvas().style.cursor = "";
+            tooltip.style.display = "none";
+            return;
+          }
+          if (!e || !e.features || !e.features[0] || !e.features[0].properties || !e.point) return;
+          map.getCanvas().style.cursor = "pointer";
+          var lines =
+            typeof entry.formatTooltip === "function"
+              ? entry.formatTooltip(e.features[0].properties)
+              : [];
+          tooltip.textContent = lines.join("\n");
+          tooltip.style.display = "block";
+          tooltip.style.left = e.point.x + 12 + "px";
+          tooltip.style.top = e.point.y + 12 + "px";
+        });
+
+        map.on("mouseleave", entry.fillLayerId, function () {
+          if (!getDeckHovering()) map.getCanvas().style.cursor = "";
+          tooltip.style.display = "none";
+        });
+      });
+    }
 
     map.on("zoomend", function () {
       perfMark("map:zoomend", function () {

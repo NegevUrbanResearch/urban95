@@ -257,6 +257,11 @@
                 <strong>1. Urban95:</strong>
                 Uses the Urban95 methodology: five weighted categories, each built from weighted subcategories. Building-level values are shown on a 0-100 weighted score scale.
               </p>
+              <p>
+                <strong>Shade (Environmental Quality):</strong>
+                Uses Beer Sheva BDAR <strong>summer_SI</strong> from the Derech Tzel Spatial Shade Index (SI, not SAI; values are not recalculated). Each building gets a <strong>300 m area-weighted mean summer_SI</strong> around the building centroid, then stored/displayed <strong>summer_si</strong> is <strong>rounded to 1 decimal place with standard half-up ties before scoring and output</strong> (<strong>0.15 → 0.2</strong>, <strong>0.35 → 0.4</strong>). The shade map layer shows continuous 0–1 SI with the official interpretation bands: <strong>&lt;0.10 severe lack</strong>, <strong>0.10–&lt;0.20 significant lack</strong>, <strong>0.20–&lt;0.40 needs improvement</strong>, <strong>0.40–&lt;0.60 good shade</strong>, and <strong>≥0.60 excellent shade</strong>. The Urban95 shade sub-score keeps a project-specific ternary mapping on that <strong>rounded</strong> building SI: <strong>&lt;0.20 → 0</strong>, <strong>0.20–&lt;0.40 → 50</strong>, <strong>≥0.40 → 100</strong>.
+                <a href="https://tzel.org.il/wp-content/uploads/2025/08/Shade-Indicators_eng-2.6.pdf" target="_blank" rel="noopener noreferrer">Derech Tzel shading metrics guide (PDF)</a>.
+              </p>
 
               <p>
                 <strong>2. Amenities Focus:</strong>
@@ -304,6 +309,7 @@
     <script src="./js/ui/controlSidebarSections.js"></script>
     <script src="./js/ui/controlSidebarAdapter.js"></script>
     <script src="./js/map/mapLayers.js"></script>
+    <script src="./js/map/staticPolygonCompanions.js"></script>
     <script src="./js/map/mapShell.js"></script>
     <script src="./js/map/neighborhoodScores.js"></script>
     <script src="./js/map/renderState.js"></script>
@@ -319,6 +325,7 @@
     <script src="./js/ui/dashboards.js"></script>
     <script src="./js/map/modeController.js"></script>
     <script src="./js/map/mapEvents.js"></script>
+    <script src="./js/map/auxiliaryOverlays.js"></script>
     <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
     <script src="./js/core/appDependencies.js"></script>
     <script src="./app.js"></script>
