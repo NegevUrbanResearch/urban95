@@ -354,7 +354,8 @@
       var cityAverageScore = getRenderStateHelper("getWeightedNeighborhoodMetricValue")(
         stats,
         sfx,
-        activeMetric
+        activeMetric,
+        stats && stats.neighborhood_ranking_weighted
       );
       var selectedStem = weightedInfo ? weightedInfo.selectedStem : null;
       var highlights = d.weightedCategoryHighlightsFromSource(stats, sfx);

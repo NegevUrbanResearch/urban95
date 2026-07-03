@@ -527,17 +527,6 @@ body.desktop-only-blocked {
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.08);
 }
 
-.building-ctx-dot {
-  flex-shrink: 0;
-  width: 10px;
-  height: 10px;
-  margin-top: 0;
-  border-radius: 50%;
-  background: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
-  animation: building-ctx-dot-pulse 1.8s ease-in-out infinite;
-}
-
 .building-ctx-text {
   display: flex;
   flex-direction: row;
@@ -569,24 +558,6 @@ body.desktop-only-blocked {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
   line-height: 1.35;
-}
-
-@keyframes building-ctx-dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.65;
-    transform: scale(0.92);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .building-ctx-dot {
-    animation: none;
-  }
 }
 
 .horizon-chart {
@@ -1086,13 +1057,6 @@ body.desktop-only-blocked {
   gap: 6px;
   padding: 6px 8px;
   border-radius: 8px;
-}
-
-.score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-dot {
-  width: 7px;
-  height: 7px;
-  margin-top: 0;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
 .score-explain-sidebar-inner.is-chart-fit-tight .building-ctx-text {

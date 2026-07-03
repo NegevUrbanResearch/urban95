@@ -24,7 +24,6 @@
 
     meta.innerHTML =
       '<div class="score-explain-building-ctx">' +
-      '<span class="building-ctx-dot" aria-hidden="true"></span>' +
       '<div class="building-ctx-text">' +
       '<span class="building-ctx-id" dir="rtl" lang="he">' +
       renderCtx.escapeHtml((props && props.Name) || "Unknown") +
@@ -58,7 +57,6 @@
 
     meta.innerHTML =
       '<div class="score-explain-building-ctx">' +
-      '<span class="building-ctx-dot" aria-hidden="true"></span>' +
       '<div class="building-ctx-text">' +
       '<span class="building-ctx-id" dir="rtl" lang="he">' +
       renderCtx.escapeHtml((props && props.Name) || "Unknown") +

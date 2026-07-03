@@ -48,7 +48,9 @@
       getLayerVisibility: function () { return copyLayerVisibility(layerVisibility); },
       setLayerVisibility: function (value) { layerVisibility = copyLayerVisibility(value); },
       getActiveHeatmapId: function () { return activeHeatmapId; },
-      setActiveHeatmapId: function (value) { activeHeatmapId = value || "u95.overall"; },
+      setActiveHeatmapId: function (value) {
+        activeHeatmapId = value == null || value === "" ? null : value;
+      },
 
       getSelectedAmenityTypes: function () { return new Set(selectedAmenityTypes); },
       setSelectedAmenityTypes: function (value) { selectedAmenityTypes = copySet(value); },

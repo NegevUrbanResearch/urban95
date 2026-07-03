@@ -53,27 +53,47 @@
     return !!(metric && metric.kind === "weighted-subcategory" && metric.selectedWeightedSubStem);
   }
 
-  function getWeightedNeighborhoodMetricValue(source, suffix, metric) {
+  function meanFromRankingRows(rankingRows, key) {
+    if (!Array.isArray(rankingRows) || rankingRows.length === 0 || !key) return null;
+    var values = rankingRows
+      .map(function (row) {
+        return Number(row && row[key]);
+      })
+      .filter(function (value) {
+        return Number.isFinite(value);
+      });
+    if (values.length === 0) return null;
+    return values.reduce(function (sum, value) {
+      return sum + value;
+    }, 0) / values.length;
+  }
+
+  function getWeightedNeighborhoodMetricValue(source, suffix, metric, rankingRows) {
     void suffix;
     if (!metric || !metric.neighborhoodAverageKey) return null;
-    var direct = Number(source && source[metric.neighborhoodAverageKey]);
-    return Number.isFinite(direct) ? direct : null;
+    var key = metric.neighborhoodAverageKey;
+    var direct = Number(source && source[key]);
+    if (Number.isFinite(direct)) return direct;
+    if (rankingRows !== undefined) {
+      return meanFromRankingRows(rankingRows, key);
+    }
+    return null;
   }
 
   function hasWeightedNeighborhoodMetricData(metric, source, rankingRows) {
     if (!metric || metric.kind.indexOf("weighted") !== 0 || !metric.neighborhoodAverageKey) {
       return true;
     }
-    if (!hasOwnMetricValue(source, metric.neighborhoodAverageKey)) {
-      return false;
+    var key = metric.neighborhoodAverageKey;
+    if (hasOwnMetricValue(source, key)) {
+      if (rankingRows === undefined) return true;
+      if (!Array.isArray(rankingRows) || rankingRows.length === 0) return false;
+      return hasOwnMetricValue(rankingRows[0], key);
     }
-    if (rankingRows === undefined) {
-      return true;
+    if (rankingRows !== undefined && Array.isArray(rankingRows) && rankingRows.length > 0) {
+      return hasOwnMetricValue(rankingRows[0], key);
     }
-    if (!Array.isArray(rankingRows) || rankingRows.length === 0) {
-      return false;
-    }
-    return hasOwnMetricValue(rankingRows[0], metric.neighborhoodAverageKey);
+    return false;
   }
 
   function getWeightedHistogramDistribution(stats, suffix, metric, fallbackDistribution) {

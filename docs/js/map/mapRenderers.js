@@ -1401,6 +1401,14 @@
       var isWeighted = d.getScoreMode() === "weighted";
       var selectedAmenityTypes = d.getSelectedAmenityTypes();
       var hasExpandedSelection = selectedAmenityTypes.size > 0;
+      var activeMetric = getActiveMetricFromDeps(d);
+
+      if (isWeighted && !activeMetric) {
+        if (d.map.getLayer(d.buildingsFillLayerId)) {
+          d.map.setPaintProperty(d.buildingsFillLayerId, "fill-color", "#cbd5e1");
+        }
+        return;
+      }
 
       if (isWeighted || hasExpandedSelection) {
         var scores = d.collectBuildingScores();

@@ -148,12 +148,18 @@
         if (token !== renderGeneration) return;
         var citywideStats = deps.getCitywideStats();
         var activeMetric = renderCtx.getActiveMetric ? renderCtx.getActiveMetric() : null;
+        var neighborhoodRanking =
+          citywideStats && citywideStats.neighborhood_ranking_weighted;
         var missingWeightedSubcategoryData =
           !!(
             activeMetric &&
             (
               !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(activeMetric, props) ||
-              !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(activeMetric, citywideStats)
+              !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(
+                activeMetric,
+                citywideStats,
+                neighborhoodRanking
+              )
             )
           );
         var selectedCategoryLabel =
@@ -192,7 +198,8 @@
         var cityAvgScore = getRenderStateHelper("getWeightedNeighborhoodMetricValue")(
           citywideStats,
           sfx,
-          activeMetric
+          activeMetric,
+          neighborhoodRanking
         );
         Urban95NeighborhoodPanelRender.populateHeaderWeighted(
           renderCtx,

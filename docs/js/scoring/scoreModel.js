@@ -267,6 +267,7 @@
     var weightedRegistry = buildWeightedMetricRegistry();
 
     if (scoreMode === "weighted") {
+      if (activeHeatmapId == null || activeHeatmapId === "") return null;
       return weightedRegistry[activeHeatmapId] || weightedRegistry["u95.overall"];
     }
 

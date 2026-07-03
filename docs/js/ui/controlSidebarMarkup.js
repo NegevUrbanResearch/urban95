@@ -216,12 +216,29 @@
     );
   }
 
+  function renderIndicatorColumnTitlesMarkup() {
+    var viewTitle = "Show companion map layers";
+    var heatTitle = "Color the map by this indicator score";
+    return (
+      '<div class="indicator-actions-cols indicator-actions-cols--titles" aria-hidden="true">' +
+      '<span class="indicator-action-title indicator-action-title--view" title="' +
+      escapeHtml(viewTitle) +
+      '">View</span>' +
+      '<span class="indicator-action-title indicator-action-title--heat" title="' +
+      escapeHtml(heatTitle) +
+      '">Heatmap</span>' +
+      "</div>"
+    );
+  }
+
   function renderIndicatorsSectionShell() {
     return (
       '<section id="indicators-section" class="control-section">' +
       '<div id="indicators-weighted-block" class="indicators-weighted-block" hidden>' +
+      '<div class="indicators-section-head">' +
       '<div class="section-title">Indicators</div>' +
-      "</div>" +
+      renderIndicatorColumnTitlesMarkup() +
+      "</div></div>" +
       '<div id="indicators-list" class="indicators-tree" role="tree" aria-label="Urban95 indicators"></div>' +
       "</section>"
     );
@@ -334,11 +351,11 @@
     var row = options.row;
     var depthClass = row.depth > 0 ? " indicator-row--sub" : "";
     var kindClass = row.kind ? " indicator-row--" + row.kind : "";
-    var accentStyle = row.color ? ' style="--indicator-accent:' + row.color + ';"' : "";
     var showDisabled = !!options.showDisabled;
     var showActive = !!options.showActive;
     var heatActive = !!options.heatActive;
-    var showTitle = options.showTitle || "Toggle companion map layers";
+    var showTitle = options.showTitle || "Show companion map layers";
+    var heatTitle = options.heatTitle || "Color the map by this indicator score";
     var showAriaPressed = showActive ? "true" : "false";
     var heatAriaPressed = heatActive ? "true" : "false";
     var collapseMarkup = "";
@@ -385,7 +402,6 @@
       (row.parentStem ? ' data-parent-stem="' + escapeHtml(row.parentStem) + '"' : "") +
       (row.stem ? ' data-category-stem="' + escapeHtml(row.stem) + '"' : "") +
       ' role="treeitem"' +
-      accentStyle +
       ">" +
       '<span class="indicator-label-wrap">' +
       collapseMarkup +
@@ -396,6 +412,7 @@
       escapeHtml(row.label) +
       "</span></span>" +
       '<span class="indicator-actions">' +
+      '<span class="indicator-actions-cols">' +
       '<button type="button" class="indicator-btn indicator-show-btn' +
       (showDisabled ? " is-disabled" : "") +
       (showActive ? " is-active" : "") +
@@ -410,16 +427,138 @@
       '">' +
       (showActive ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
       "</button>" +
-      '<button type="button" class="indicator-btn indicator-heat-btn' +
+      '<button type="button" class="indicator-btn indicator-heat-btn indicator-btn--icon-only' +
       (heatActive ? " is-active" : "") +
-      '" data-action="heat" aria-pressed="' +
+      '" data-action="heat" title="' +
+      escapeHtml(heatTitle) +
+      '" aria-pressed="' +
       heatAriaPressed +
-      '" aria-label="Heatmap for ' +
-      escapeHtml(row.label) +
+      '" aria-label="' +
+      escapeHtml((heatActive ? "Hide" : "Show") + " heatmap for " + row.label) +
       '">' +
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' +
-      "Heat</button></span></div>"
+      "</button></span></span></div>"
     );
+  }
+
+  function renderIndicatorCategoryGroup(options) {
+    var categoryRow = options.categoryRow;
+    var subRows = options.subRows || [];
+    var expanded = !!options.expanded;
+    var categoryHtml = renderIndicatorRow({
+      row: categoryRow,
+      expanded: expanded,
+      showDisabled: options.showDisabled,
+      showActive: options.showActive,
+      showTitle: options.showTitle,
+      heatTitle: options.heatTitle,
+      heatActive: options.heatActive,
+      iconsRenderer: options.iconsRenderer,
+    });
+    var subHtml = subRows
+      .map(function (sub) {
+        var showResolution = options.resolveShow(sub.metricId);
+        return renderIndicatorRow({
+          row: sub,
+          expanded: false,
+          showDisabled: !showResolution.supported,
+          showActive: options.isShowEnabled(sub.metricId),
+          showTitle: showResolution.supported
+            ? "Show companion map layers"
+            : showResolution.reason,
+          heatTitle: options.heatTitle,
+          heatActive: !!options.activeHeatmapId && options.activeHeatmapId === sub.metricId,
+          iconsRenderer: options.iconsRenderer,
+        });
+      })
+      .join("");
+
+    return (
+      '<div class="indicator-group" data-category-stem="' +
+      escapeHtml(categoryRow.stem) +
+      '">' +
+      categoryHtml +
+      '<div class="indicator-subs' +
+      (expanded ? " is-open" : "") +
+      '">' +
+      '<div class="indicator-subs-inner">' +
+      subHtml +
+      "</div></div></div>"
+    );
+  }
+
+  function renderIndicatorsTreeMarkup(options) {
+    var rows = buildIndicatorRowsFromMetricDefinitions(options.scoreModel);
+    var expandedStems = options.expandedStems || new Set();
+    var activeHeatmapId = options.activeHeatmapId;
+    var iconsRenderer = options.iconsRenderer;
+    var resolveShow = options.resolveShow;
+    var isShowEnabled = options.isShowEnabled;
+    var heatTitle = "Color the map by this indicator score";
+    var parts = [];
+    var index = 0;
+
+    while (index < rows.length) {
+      var row = rows[index];
+      if (row.kind === "overall") {
+        var overallShow = resolveShow(row.metricId);
+        parts.push(
+          renderIndicatorRow({
+            row: row,
+            expanded: false,
+            showDisabled: !overallShow.supported,
+            showActive: isShowEnabled(row.metricId),
+            showTitle: overallShow.supported
+              ? "Show companion map layers"
+              : overallShow.reason,
+            heatTitle: heatTitle,
+            heatActive: !!activeHeatmapId && activeHeatmapId === row.metricId,
+            iconsRenderer: iconsRenderer,
+          })
+        );
+        index += 1;
+        continue;
+      }
+
+      if (row.kind === "category") {
+        var categoryStem = row.stem;
+        var subRows = [];
+        index += 1;
+        while (
+          index < rows.length &&
+          rows[index].kind === "subcategory" &&
+          rows[index].parentStem === categoryStem
+        ) {
+          subRows.push(rows[index]);
+          index += 1;
+        }
+        var categoryShow = resolveShow(row.metricId);
+        parts.push(
+          renderIndicatorCategoryGroup({
+            categoryRow: row,
+            subRows: subRows,
+            expanded: expandedStems.has(categoryStem),
+            showDisabled: !categoryShow.supported,
+            showActive: isShowEnabled(row.metricId),
+            showTitle: categoryShow.supported
+              ? "Show companion map layers"
+              : categoryShow.reason,
+            heatTitle: heatTitle,
+            heatActive: !!activeHeatmapId && activeHeatmapId === row.metricId,
+            activeHeatmapId: activeHeatmapId,
+            iconsRenderer: iconsRenderer,
+            resolveShow: resolveShow,
+            isShowEnabled: isShowEnabled,
+          })
+        );
+        continue;
+      }
+
+      index += 1;
+    }
+
+    if (!parts.length) return "";
+    return parts.join("");
   }
 
   function renderAuxiliarySegmentedRow(rows, layerVisibility) {
@@ -601,6 +740,8 @@
     getAuxiliaryRows: getAuxiliaryRows,
     buildFilterRowMarkup: buildFilterRowMarkup,
     renderIndicatorRow: renderIndicatorRow,
+    renderIndicatorCategoryGroup: renderIndicatorCategoryGroup,
+    renderIndicatorsTreeMarkup: renderIndicatorsTreeMarkup,
     renderAuxiliarySegmentedRow: renderAuxiliarySegmentedRow,
     renderLegendHtml: renderLegendHtml,
     renderCompanionLegendHtml: renderCompanionLegendHtml,

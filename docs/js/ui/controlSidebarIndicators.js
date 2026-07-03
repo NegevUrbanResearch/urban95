@@ -41,6 +41,7 @@
     var expandedCategoryStems = new Set();
 
     function ensureExpandedForActiveHeatmap(activeHeatmapId) {
+      if (!activeHeatmapId) return;
       var match = /^u95\.sub\.([^.]+)\./.exec(activeHeatmapId);
       if (match) expandedCategoryStems.add(match[1]);
     }
@@ -60,34 +61,32 @@
     function updateOverlayVisibility() {
       var state = readState();
       var el = getEl();
-      var showHouseLayers = state.currentMode === "house";
+      var showDemographicOverlays =
+        state.currentMode === "house" || state.currentMode === "neighborhood";
       if (el.indicatorsSection) {
-        el.indicatorsSection.classList.toggle("is-basemap-only", !showHouseLayers);
+        el.indicatorsSection.classList.toggle("is-basemap-only", state.currentMode === "citywide");
+        el.indicatorsSection.classList.toggle("is-neighborhood-scale", state.currentMode === "neighborhood");
       }
 
       markup.getAuxiliaryRows().forEach(function (row) {
         var auxInput = el[row.inputId];
         if (!auxInput) return;
         var auxHost = auxInput.closest(".indicator-row--aux");
-        if (auxHost) auxHost.style.display = showHouseLayers ? "" : "none";
+        if (auxHost) auxHost.style.display = showDemographicOverlays ? "" : "none";
       });
     }
 
-    function renderIndicatorRowMarkup(row, activeHeatmapId) {
-      if (row.kind === "subcategory" && !expandedCategoryStems.has(row.parentStem)) {
-        return "";
+    function syncCategoryGroupExpanded(group, expanded) {
+      var subs = group.querySelector(".indicator-subs");
+      var btn = group.querySelector(".indicator-collapse-btn");
+      var labelEl = group.querySelector(".indicator-row--category .indicator-label");
+      var label = labelEl ? labelEl.textContent.trim() : "category";
+      if (subs) subs.classList.toggle("is-open", expanded);
+      if (btn) {
+        btn.classList.toggle("is-expanded", expanded);
+        btn.setAttribute("aria-expanded", expanded ? "true" : "false");
+        btn.setAttribute("aria-label", (expanded ? "Collapse" : "Expand") + " " + label);
       }
-
-      var showResolution = showController.resolve(row.metricId);
-      return markup.renderIndicatorRow({
-        row: row,
-        expanded: row.kind === "category" ? expandedCategoryStems.has(row.stem) : false,
-        showDisabled: !showResolution.supported,
-        showActive: showController.isEnabled(row.metricId),
-        showTitle: showResolution.supported ? "Toggle companion map layers" : showResolution.reason,
-        heatActive: activeHeatmapId === row.metricId,
-        iconsRenderer: iconsRenderer,
-      });
     }
 
     function renderIndicatorsSection() {
@@ -95,27 +94,44 @@
       if (!el.indicatorsList) return;
       var activeHeatmapId = readState().activeHeatmapId;
       ensureExpandedForActiveHeatmap(activeHeatmapId);
-      var weightedRows =
+      var weightedMarkup =
         readState().scoreMode === "weighted"
-          ? markup.buildIndicatorRowsFromMetricDefinitions(scoreModel).map(function (row) {
-              return renderIndicatorRowMarkup(row, activeHeatmapId);
+          ? markup.renderIndicatorsTreeMarkup({
+              scoreModel: scoreModel,
+              expandedStems: expandedCategoryStems,
+              activeHeatmapId: activeHeatmapId,
+              iconsRenderer: iconsRenderer,
+              resolveShow: showController.resolve.bind(showController),
+              isShowEnabled: showController.isEnabled.bind(showController),
             })
-          : [];
+          : "";
       var layerVisibility = readState().layerVisibility;
       var auxiliaryMarkup = markup.renderAuxiliarySegmentedRow(
         markup.getAuxiliaryRows(),
         layerVisibility
       );
-      el.indicatorsList.innerHTML = weightedRows.concat(auxiliaryMarkup ? [auxiliaryMarkup] : []).join("");
+      el.indicatorsList.innerHTML =
+        weightedMarkup + (auxiliaryMarkup ? auxiliaryMarkup : "");
       updateOverlayVisibility();
     }
 
     function toggleCategoryExpanded(categoryStem) {
       if (!categoryStem) return;
-      if (expandedCategoryStems.has(categoryStem)) {
-        expandedCategoryStems.delete(categoryStem);
-      } else {
+      var el = getEl();
+      var group =
+        el.indicatorsList &&
+        el.indicatorsList.querySelector(
+          '.indicator-group[data-category-stem="' + categoryStem + '"]'
+        );
+      var willExpand = !expandedCategoryStems.has(categoryStem);
+      if (willExpand) {
         expandedCategoryStems.add(categoryStem);
+      } else {
+        expandedCategoryStems.delete(categoryStem);
+      }
+      if (group) {
+        syncCategoryGroupExpanded(group, willExpand);
+        return;
       }
       renderIndicatorsSection();
     }
@@ -135,7 +151,8 @@
         if (!metricId) return;
 
         if (actionBtn.getAttribute("data-action") === "heat") {
-          onHeatmapSelectionChanged(metricId);
+          var currentHeatmapId = readState().activeHeatmapId;
+          onHeatmapSelectionChanged(currentHeatmapId === metricId ? null : metricId);
           renderIndicatorsSection();
           renderLegend();
           return;
