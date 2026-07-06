@@ -210,7 +210,7 @@
       '<div class="score-explain-radius-note"><span class="score-explain-radius-note-label">Reference radius</span>' +
       "<span>Urban95 uses a fixed " +
       d.referenceRadiusMeters +
-      " m reference circle for most checks; trees and bike access use 20 m, shelters use 50 m.</span></div>"
+      " m reference circle for most checks; trees use 20 m, shelters use 50 m.</span></div>"
     );
   }
 

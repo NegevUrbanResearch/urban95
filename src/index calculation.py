@@ -287,7 +287,6 @@ def calc_safety_and_mobility(point: Point, layers: dict, include_details: bool =
     """
     buffer_300m = point.buffer(300)
     buffer_50m = point.buffer(50)
-    buffer_20m = point.buffer(20)
     
     # 1. תאורת רחוב - משקל 0.15
     lights_score = 0.0
@@ -316,7 +315,7 @@ def calc_safety_and_mobility(point: Point, layers: dict, include_details: bool =
     # 2. אופניים - משקל 0.15
     bike_score = 0.0
     if "bikes" in layers and not layers["bikes"].empty:
-        if not _features_intersecting(layers["bikes"], buffer_20m).empty:
+        if not _features_intersecting(layers["bikes"], buffer_300m).empty:
             bike_score = 1.0
             
     # 3. תחנות אוטובוס - משקל 0.3
