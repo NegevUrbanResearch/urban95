@@ -1,16 +1,14 @@
-"""Integration tests for ArcGIS shade SI scoring in index calculation and preprocessing."""
+"""Integration tests for ArcGIS shade SI scoring in urban95_weights and preprocessing."""
 
 from __future__ import annotations
 
-import runpy
 from pathlib import Path
 
 import geopandas as gpd
 import pytest
 from shapely.geometry import Point, Polygon
 
-from preprocess_accessibility import append_weighted_urban95_scores
-from shade_si import (
+from lib.shade_si import (
     BUILDING_SI_FIELD,
     LAYER_OPEN_SPACE,
     LAYER_STREET,
@@ -21,14 +19,8 @@ from shade_si import (
     round_building_summer_si,
     summer_si_to_subscore,
 )
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-INDEX_MODULE_PATH = REPO_ROOT / "src" / "index calculation.py"
-
-
-def _load_index_module():
-    return runpy.run_path(str(INDEX_MODULE_PATH))
-
+from lib.urban95_weights import calc_environmental_quality
+from stages.urban95_scoring import append_weighted_urban95_scores
 
 def _box(center_x: float, center_y: float, half_size: float = 5.0) -> Polygon:
     return Polygon(
@@ -81,9 +73,6 @@ def _building_at(x: float, y: float) -> gpd.GeoDataFrame:
 def test_calc_environmental_quality_maps_precomputed_si_to_shade_tiers(
     summer_si, expected_rounded_si, expected_shade
 ):
-    mod = _load_index_module()
-    calc_environmental_quality = mod["calc_environmental_quality"]
-
     score, details = calc_environmental_quality(
         Point(0.0, 0.0),
         {},
@@ -105,12 +94,9 @@ def test_calc_environmental_quality_maps_precomputed_si_to_shade_tiers(
 def test_append_weighted_urban95_scores_preserves_and_exports_summer_si(tmp_path: Path):
     shade_dir = _write_si_layers(tmp_path, street_score=0.12, open_space_score=0.25)
     buildings = _building_at(100.0, 100.0)
-    data_dir = tmp_path / "docs_data"
-    data_dir.mkdir()
 
     result = append_weighted_urban95_scores(
         buildings,
-        data_dir=data_dir,
         shade_si_dir=shade_dir,
         workers=1,
     )
@@ -131,7 +117,6 @@ def test_shade_subscore_columns_match_summer_si_to_subscore(tmp_path: Path):
 
     result = append_weighted_urban95_scores(
         buildings,
-        data_dir=tmp_path / "empty_docs",
         shade_si_dir=shade_dir,
         workers=1,
     )
@@ -150,13 +135,12 @@ def test_production_scoring_does_not_call_per_point_lookup(tmp_path: Path, monke
         raise AssertionError("lookup_summer_si_at_point must not run in production scoring")
 
     monkeypatch.setattr(
-        "shade_si.lookup_summer_si_at_point",
+        "lib.shade_si.lookup_summer_si_at_point",
         _forbidden_lookup,
     )
 
     result = append_weighted_urban95_scores(
         buildings,
-        data_dir=tmp_path / "empty_docs",
         shade_si_dir=shade_dir,
         workers=1,
     )

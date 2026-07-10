@@ -54,22 +54,6 @@
       }
     },
     {
-      "name": "roads",
-      "input": "docs/data/roads.geojson",
-      "output": "docs/data/roads.pmtiles",
-      "source_layer": "roads",
-      "status": "built",
-      "bytes": 5747177
-    },
-    {
-      "name": "spatial_syntax_segments",
-      "input": "docs/data/spatial_syntax_segments.geojson",
-      "output": "docs/data/spatial_syntax_segments.pmtiles",
-      "source_layer": "spatial_syntax_segments",
-      "status": "built",
-      "bytes": 14167709
-    },
-    {
       "name": "street_lights",
       "input": "docs/data/street_lights.geojson",
       "output": "docs/data/street_lights.pmtiles",

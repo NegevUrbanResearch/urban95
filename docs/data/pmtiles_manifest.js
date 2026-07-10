@@ -30,16 +30,6 @@ window.URBAN95_GENERATED_ARTIFACTS = {
     "gzip_output": "./data/points_lookup.json.gz",
     "gzip_bytes": 676253
   },
-  "roads": {
-    "status": "built",
-    "output": "./data/roads.pmtiles",
-    "source_layer": "roads"
-  },
-  "spatial_syntax_segments": {
-    "status": "built",
-    "output": "./data/spatial_syntax_segments.pmtiles",
-    "source_layer": "spatial_syntax_segments"
-  },
   "street_lights": {
     "status": "built",
     "output": "./data/street_lights.pmtiles",

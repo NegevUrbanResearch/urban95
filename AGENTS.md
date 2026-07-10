@@ -40,22 +40,26 @@ Open **http://localhost:8080/docs/index.html**
   mapbox_access_token=YOUR_TOKEN
   ```
 
-Optional tuning (see `src/preprocess_accessibility.py`): `INDEX_SCORE_WORKERS`, `ISOCHRONE_FETCH_WORKERS`.
+Optional tuning: `INDEX_SCORE_WORKERS` (Urban95 scoring), `ISOCHRONE_FETCH_WORKERS` (isochrones stage).
 
 ### Regenerating site data (order matters)
 
-1. **Optional (usually first if you use it):** `python src/filter.py` — clips `data/*.geojson` into `filtered/`. Run before preprocessing when you want a bounded study area. Resolution order is **per layer** in `compute_building_accessibility`: **`buildings.geojson` tries `filtered/` before `data/`**; legacy amenities, trees, and parks try **`data/` before `filtered/`** (see the `*_candidates` lists in `src/preprocess_accessibility.py`).
-2. Raw GIS in `data/` and/or `filtered/` as expected by `src/preprocess_accessibility.py`, plus **`data/arcgis_shade/bsv_street_summer_shade_index.geojson`** and **`data/arcgis_shade/bsv_open_spaces_summer_shade_index.geojson`** for shade SI, and **`docs/data/amenities_new.geojson`** when you rely on the merged/clean amenity inventory (same prerequisite called out in **`README.md`** — without it, parts of the pipeline log warnings or produce incomplete metrics).
-3. **`python src/preprocess_shade.py`** — validates raw ArcGIS SI inputs, writes metric prepared scoring layers to **`output/shade_si/`**, calibration to **`output/shade_si_calibration.json`**, and a simplified web-only **`docs/data/shade_si.geojson`** (+ `.gz`). Run **before** building accessibility scoring.
-4. `python src/preprocess_accessibility.py` — writes `output/` and `docs/data/` layers; attaches building `summer_si` from prepared `output/shade_si/` layers (not from the simplified web GeoJSON).
-5. **`python src/rescore_urban95_weighted.py`** — recompute Urban95 weighted columns (incl. shade SI) on existing buildings without Mapbox/isochrones. This refreshes `docs/data/buildings_accessibility.geojson` + `docs/data/buildings_lookup.json` only; rerun `python src/preprocess_neighborhoods.py` immediately afterward to refresh neighborhood/city aggregates.
-6. `python src/preprocess_neighborhoods.py` — requires building-level outputs in `docs/data/`; updates neighborhoods GeoJSON, `neighborhood_charts.json`, `citywide_stats.json`.
-7. **Roads + spatial syntax (optional):** `python src/download_osm_roads.py` → `docs/data/roads.geojson`, then `python src/generate_spatial_syntax.py` → segment/zone GeoJSON under `docs/data/`.
+```powershell
+$env:PYTHONPATH="src"
+python scripts/seed_provisional_raw.py
+python -m pipeline check
+```
+
+1. **Optional (usually first if you use it):** `python -m optional.filter` — clips layers into `filtered/` (legacy helper; `filtered/` is deprecated as a pipeline input — resolve from `data/raw/` via `core/paths.py`).
+2. Raw GIS under `data/raw/` as registered in `src/core/paths.py` (see `python -m pipeline check`), plus shade SI under `data/raw/arcgis_shade/`, and `data/raw/amenities_clean.geojson` for the clean manifest.
+3. **`python -m pipeline run shade`** — validates raw ArcGIS SI inputs, writes metric prepared scoring layers to **`output/shade_si/`**, calibration to **`output/shade_si_calibration.json`**, and a simplified web-only **`docs/data/shade_si.geojson`** (+ `.gz`). Run **before** building accessibility scoring.
+4. **`python -m pipeline run all`** (or stage-by-stage: `isochrones` → `amenity_metrics` → `score` → `export_web`) — writes `output/buildings_scored.geojson` and publishes web layers via **`stages/export_web.py`** only.
+5. **`python -m pipeline run rescore`** — recompute Urban95 weighted columns (incl. shade SI) on existing published buildings without Mapbox/isochrones. Refreshes buildings (+gz), lookup (+gz), and companion publish layers (`amenities_new`, `street_lights`, `amenities_all`, `trees`, `parks`, `isochrones` when available) via `export_web`; rerun `python -m pipeline run neighborhoods` immediately afterward.
+6. **`python -m pipeline run neighborhoods`** — requires building-level outputs in `docs/data/`; updates neighborhoods GeoJSON, `neighborhood_charts.json`, `citywide_stats.json`.
+7. **Roads + spatial syntax (optional):** `python -m optional.download_osm_roads` → `docs/data/roads.geojson`, then `python -m optional.generate_spatial_syntax` → segment/zone GeoJSON under `docs/data/`.
 
 ### Quirks agents must respect
 
-- **`src/index calculation.py` contains a space in the filename.** Normal entry is **`preprocess_accessibility.py`**, which loads it via `runpy.run_path(...)`. If you invoke it manually, use a quoted path (Windows/macOS/Linux): `python "src/index calculation.py"`.
-- **`index calculation.py` imports `plotly.graph_objects`, but `plotly` is not listed in `requirements.txt`.** A minimal `pip install -r requirements.txt` may still fail when Urban95 scoring runs unless `plotly` is installed separately. Consider adding it to `requirements.txt` if you touch dependencies.
 - **`folium` is in `requirements.txt` but is not imported by any file under `src/`** (may be legacy or notebook use).
 
 ## Frontend (`docs/`)
@@ -74,9 +78,9 @@ Optional tuning (see `src/preprocess_accessibility.py`): `INDEX_SCORE_WORKERS`, 
 | `src/` | Preprocessing and scoring scripts |
 | `data/` | Raw GIS inputs (gitignored empty checkout common) |
 | `output/` | Full-precision pipeline outputs (gitignored) |
-| `filtered/` | Optional clipped inputs (gitignored) |
+| `filtered/` | Legacy clipped outputs only (gitignored; deprecated as pipeline input) |
 
-**`src/` modules:** `preprocess_accessibility.py`, `preprocess_shade.py`, `preprocess_neighborhoods.py`, `generate_spatial_syntax.py`, `filter.py`, `download_osm_roads.py`, `shade_si.py`, `rescore_urban95_weighted.py`, and `index calculation.py` (Urban95 weights — loaded by preprocessing, not the usual CLI entry).
+**`src/` packages:** `pipeline/` (CLI), `core/` (paths, preflight, geo_io, geojson_utils), `stages/` (shade, isochrones, amenity_metrics, urban95_scoring, export_web, neighborhoods, rescore), `lib/` (shade_si, urban95_weights, buildings_prep, buildings_lookup, amenity_layers), `optional/` (filter, download_osm_roads, generate_spatial_syntax, export_urban_nature_areas).
 
 ## Tooling expectations
 
@@ -85,7 +89,7 @@ Optional tuning (see `src/preprocess_accessibility.py`): `INDEX_SCORE_WORKERS`, 
 
 ## Scoring models (high level)
 
-- **Urban95:** weighted category/subcategory model; weights live in `src/index calculation.py` (see README for percentages).
+- **Urban95:** weighted category/subcategory model; weights and category functions live in `lib/urban95_weights.py`, attached by `stages/urban95_scoring.py` (`python -m pipeline run score`; see README for percentages).
 - **Shade (Environmental Quality sub-score):** uses Beer Sheva BDAR **`summer_SI`** from Derech Tzel ([shading metrics guide PDF](https://tzel.org.il/wp-content/uploads/2025/08/Shade-Indicators_eng-2.6.pdf)) as-is — **SI, not SAI**, not recalculated. Building SI = **300 m area-weighted mean `summer_SI` around each building centroid**, then stored/displayed `summer_si` is **rounded to 1 decimal place with standard half-up ties before scoring/output** (`0.15 → 0.2`, `0.35 → 0.4`). Official SI interpretation buckets are `<0.10 severe lack`, `0.10–<0.20 significant lack`, `0.20–<0.40 needs improvement`, `0.40–<0.60 good shade`, `≥0.60 excellent shade`. Urban95 keeps a project-specific ternary sub-score mapping on that **rounded** building SI: `<0.20 → 0`, `0.20–<0.40 → 50`, `≥0.40 → 100`. **Scoring source:** prepared layers in **`output/shade_si/`**. **Web display only:** simplified **`docs/data/shade_si.geojson`** (+ gzip).
 - **Amenities Focus (`expanded`):** amenity-count-style model tied closely to amenity filters in the UI.
 
@@ -93,4 +97,4 @@ For field names and `_5min/_10min/_15min` columns, follow **`README.md`** and th
 
 ---
 
-When changing data contracts, update **both** the Python writers and **`docs/app.js`** URL constants (and gzip behavior if applicable). When changing scoring, coordinate **`src/index calculation.py`** with **`src/preprocess_accessibility.py`** and verify downstream aggregates if neighborhood/citywide stats depend on new columns.
+When changing data contracts, update **both** the Python writers and **`docs/app.js`** URL constants (and gzip behavior if applicable). When changing scoring, coordinate **`lib/urban95_weights.py`** with **`stages/urban95_scoring.py`** / **`stages/export_web.py`** and verify downstream aggregates if neighborhood/citywide stats depend on new columns.

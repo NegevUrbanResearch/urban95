@@ -584,7 +584,7 @@
           });
           rows.push({
             label: "Other manifest-weighted",
-            detail: "Regenerate data with preprocess_accessibility.py for a per-category breakdown.",
+            detail: "Regenerate data with python -m pipeline run score (or rescore) for a per-category breakdown.",
             value: rest,
             valueLabel: scoreModel.formatMetricNumber(rest) + " pts",
             percentile: percentileForSeries(series.explain.flt_rest, rest),

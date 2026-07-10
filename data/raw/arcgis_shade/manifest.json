@@ -1,0 +1,19 @@
+{
+  "pulled_at": "2026-07-02T10:59:10Z",
+  "layers": [
+    {
+      "path": "data/arcgis_shade/bsv_street_summer_shade_index.geojson",
+      "source_url": "https://services1.arcgis.com/yAQXemoDSgzdfV2A/arcgis/rest/services/BSV_street_SI/FeatureServer/83",
+      "feature_count_reported": 5803,
+      "feature_count_written": 5803,
+      "score_field": "summer_SI"
+    },
+    {
+      "path": "data/arcgis_shade/bsv_open_spaces_summer_shade_index.geojson",
+      "source_url": "https://services1.arcgis.com/yAQXemoDSgzdfV2A/arcgis/rest/services/BSV_open_space_SI/FeatureServer/80",
+      "feature_count_reported": 3901,
+      "feature_count_written": 3901,
+      "score_field": "summer_SI"
+    }
+  ]
+}

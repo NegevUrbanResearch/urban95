@@ -126,7 +126,7 @@
     }
     if (!hasWeightedSubscores) {
       console.warn(
-        "[urban95] buildings_accessibility.geojson has no score_weighted_sub_* properties. Urban95 explain details will be partial until you regenerate outputs with src/preprocess_accessibility.py."
+        "[urban95] buildings_accessibility.geojson has no score_weighted_sub_* properties. Urban95 explain details will be partial until you run python -m pipeline run score (or rescore) and export_web."
       );
     }
   }

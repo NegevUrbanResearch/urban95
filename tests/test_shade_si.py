@@ -1,4 +1,4 @@
-"""Tests for src/shade_si.py."""
+"""Tests for lib/shade_si.py."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ import pytest
 from shapely.geometry import GeometryCollection, LineString, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
-from preprocess_shade import preprocess_shade
-from shade_si import (
+from lib.shade_si import (
     BUILDING_SI_FIELD,
     BUILDING_SHADE_RADIUS_M,
     LAYER_OPEN_SPACE,
@@ -30,6 +29,7 @@ from shade_si import (
     sanitize_polygonal_finite_si_surfaces,
     summer_si_to_subscore,
 )
+from stages.shade import preprocess_shade
 
 
 def _box(center_x: float, center_y: float, half_size: float = 5.0) -> Polygon:
