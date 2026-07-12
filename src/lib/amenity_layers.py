@@ -2,12 +2,24 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import geopandas as gpd
 import pandas as pd
 
 from core.geo_io import CRS_METRIC, load_layer, repair_dataframe_encoding
 from core.paths import layer
+
+
+@dataclass(frozen=True)
+class PreparedAmenityLayers:
+    """Explicit metric-CRS amenity frames shared by run-all stage handoffs."""
+
+    amenities_legacy: gpd.GeoDataFrame
+    amenities_clean: gpd.GeoDataFrame
+    trees: gpd.GeoDataFrame | None
+    parks: gpd.GeoDataFrame | None
+    street_lights: gpd.GeoDataFrame | None
 
 
 def normalize_clean_amenity_key(value) -> str:
@@ -85,10 +97,7 @@ def load_amenity_layers(crs_metric: int = CRS_METRIC):
             sl.set_crs(epsg=4326, inplace=True)
         sl = repair_dataframe_encoding(sl)
         street_lights_gdf = sl.to_crs(epsg=crs_metric)
-        sl_tagged = street_lights_gdf.copy()
-        sl_tagged["amenity_type"] = "street-lights"
-        clean_parts.append(sl_tagged)
-        logging.info("Loaded street lights: %s (%d features)", sl_path.name, len(sl_tagged))
+        logging.info("Loaded street lights: %s (%d features)", sl_path.name, len(street_lights_gdf))
     else:
         logging.info("metric omitted: street_lights")
 
@@ -120,6 +129,30 @@ def load_amenity_layers(crs_metric: int = CRS_METRIC):
         logging.info("metric omitted: parks")
 
     return amenities_legacy, amenities_clean, trees_gdf, parks_gdf, street_lights_gdf, merged_path
+
+
+def prepare_amenity_layers(crs_metric: int = CRS_METRIC) -> PreparedAmenityLayers:
+    """Load and normalize all amenity frames once for explicit stage reuse."""
+    (
+        amenities_legacy,
+        amenities_clean,
+        trees,
+        parks,
+        street_lights,
+        merged_path,
+    ) = load_amenity_layers(crs_metric)
+    amenities_legacy, _ = prepare_legacy_amenities(
+        amenities_legacy,
+        merged_path,
+        crs_metric,
+    )
+    return PreparedAmenityLayers(
+        amenities_legacy=amenities_legacy,
+        amenities_clean=amenities_clean,
+        trees=trees,
+        parks=parks,
+        street_lights=street_lights,
+    )
 
 
 def prepare_legacy_amenities(

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 
 from tqdm.auto import tqdm
@@ -12,17 +13,30 @@ from tqdm.auto import tqdm
 import geopandas as gpd
 
 from core.geo_io import WALK_MINUTES, load_scored_buildings, write_scored_buildings
+from core.perf import logged_phase
 from core.paths import OUTPUT_DIR, SCORED_BUILDINGS
-from lib.shade_si import BUILDING_SI_FIELD, attach_summer_si_to_buildings
+from lib.shade_si import BUILDING_SI_FIELD, attach_summer_si_to_buildings, prepare_shade_overlay
 from lib.urban95_weights import (
     CATEGORY_SUBCATEGORY_WEIGHTS,
     build_layers,
     calculate_master_index,
+    discrete_layer_kwargs,
 )
+from lib.urban95_layerwise import prepare_urban95_layers, score_urban95_layerwise
 
 _DEFAULT_HIGH_WORKERS = max(16, min(64, (os.cpu_count() or 8) * 4))
 INDEX_SCORE_WORKERS = max(1, int(os.getenv("INDEX_SCORE_WORKERS", _DEFAULT_HIGH_WORKERS)))
 SI_ATTACH_CHUNK_SIZE = max(1, int(os.getenv("SI_ATTACH_CHUNK_SIZE", "2000")))
+
+
+@dataclass(frozen=True)
+class ScoringLayerOverrides:
+    """Explicit prepared frames reused by the run-all scoring handoff."""
+
+    trees: gpd.GeoDataFrame | None = None
+    parks: gpd.GeoDataFrame | None = None
+    street_lights: gpd.GeoDataFrame | None = None
+    amenities_clean: gpd.GeoDataFrame | None = None
 
 WEIGHTED_CATEGORY_STEMS = {
     "Environmental Quality": "environmental_quality",
@@ -43,15 +57,64 @@ def _weighted_component_stem(name: str) -> str:
     return s or "component"
 
 
+def _has_discrete_sources(layers: dict) -> bool:
+    for name in (
+        "trees", "roads", "parks", "urban_nature_areas", "playgrounds", "bikes",
+        "bus_stops", "shelters", "education", "community", "business", "health", "street_lights",
+    ):
+        source = layers.get(name)
+        if not isinstance(source, gpd.GeoDataFrame) or source.empty:
+            continue
+        geometry = source.geometry
+        if bool((geometry.notna() & ~geometry.is_empty).any()):
+            return True
+    return False
+
+
+def _append_layerwise_scores(
+    buildings: gpd.GeoDataFrame,
+    layers: dict,
+    workers: int,
+) -> gpd.GeoDataFrame:
+    """Attach every published score column from the exact layer-wise scorer."""
+    with logged_phase("score.discrete.prepare"):
+        prepared_discrete = prepare_urban95_layers(**discrete_layer_kwargs(layers))
+    with logged_phase("score.shade.prepare"):
+        prepared_shade = prepare_shade_overlay(layers.get("shade_streets"), layers.get("shade_open_spaces"))
+    scores = score_urban95_layerwise(
+        buildings,
+        prepared_discrete,
+        prepared_shade,
+        layers.get("street_lights"),
+        chunk_size=SI_ATTACH_CHUNK_SIZE,
+        workers=workers,
+    )
+    for column in scores.columns:
+        buildings[column] = scores[column].to_numpy()
+    return buildings
+
+
 def append_weighted_urban95_scores(
     buildings: gpd.GeoDataFrame,
     shade_si_dir: Path | None = None,
     workers: int = INDEX_SCORE_WORKERS,
+    reused_layers: ScoringLayerOverrides | None = None,
 ) -> gpd.GeoDataFrame:
     """Append Urban95 weighted score columns using src/urban95_weights.py methodology."""
     subcategory_weight_map = CATEGORY_SUBCATEGORY_WEIGHTS
 
-    layers = build_layers(shade_si_dir=shade_si_dir, target_epsg=2039)
+    layer_kwargs = {"shade_si_dir": shade_si_dir, "target_epsg": 2039}
+    if reused_layers is not None:
+        layer_kwargs.update(
+            trees=reused_layers.trees,
+            parks=reused_layers.parks,
+            street_lights=reused_layers.street_lights,
+            amenities_clean=reused_layers.amenities_clean,
+        )
+    with logged_phase("score.layers.load"):
+        layers = build_layers(**layer_kwargs)
+    if _has_discrete_sources(layers):
+        return _append_layerwise_scores(buildings, layers, workers)
     buildings = attach_summer_si_to_buildings(
         buildings,
         layers.get("shade_streets"),
@@ -125,6 +188,7 @@ def append_weighted_urban95_scores(
                 total=total,
                 desc="Urban95 weighted score",
                 unit="building",
+                disable=None,
             ):
                 idx, weighted, out_cat, out_sub, failed = future.result()
                 if failed:
@@ -170,6 +234,7 @@ def run_score(
     *,
     buildings: gpd.GeoDataFrame | None = None,
     write_output: bool = True,
+    reused_layers: ScoringLayerOverrides | None = None,
 ) -> gpd.GeoDataFrame:
     """Attach Urban95 weighted scores; optionally write SCORED_BUILDINGS."""
     if buildings is None:
@@ -186,7 +251,9 @@ def run_score(
         buildings,
         shade_si_dir=shade_si_dir,
         workers=INDEX_SCORE_WORKERS,
+        reused_layers=reused_layers,
     )
     if write_output:
-        write_scored_buildings(buildings, SCORED_BUILDINGS)
+        with logged_phase("score.output.write"):
+            write_scored_buildings(buildings, SCORED_BUILDINGS)
     return buildings

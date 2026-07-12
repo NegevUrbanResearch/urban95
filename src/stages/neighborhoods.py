@@ -28,6 +28,7 @@ import pandas as pd
 from shapely.geometry import Polygon, mapping as shapely_mapping
 
 from core.paths import DOCS_DATA_DIR, layer
+from lib.neighborhood_idw import IDWPlan, apply_idw_plan, build_idw_plan
 
 # Publish-read exception: neighborhood aggregates read scored buildings from docs/data.
 BUILDINGS_CANDIDATES = [
@@ -258,7 +259,6 @@ def idw_scores_batch(
         return np.zeros(0, dtype=float)
     if samples is None or len(samples) == 0:
         return np.zeros(m, dtype=float)
-
     arr = np.asarray(samples, dtype=float)
     sx = arr[:, 0]
     sy = arr[:, 1]
@@ -270,18 +270,17 @@ def idw_scores_batch(
     exact_idx = np.argmax(exact, axis=1)
     nearest_idx = np.argmin(d2, axis=1)
 
-    r2 = radius_m * radius_m
-    in_radius = d2 <= r2
+    in_radius = d2 <= radius_m * radius_m
     with np.errstate(divide="ignore", invalid="ignore"):
-        w = np.where(in_radius & ~exact, 1.0 / d2, 0.0)
-    num = np.sum(sv[None, :] * w, axis=1)
-    den = np.sum(w, axis=1)
+        weights = np.where(in_radius & ~exact, 1.0 / d2, 0.0)
+    numerator = np.sum(sv[None, :] * weights, axis=1)
+    denominator = np.sum(weights, axis=1)
 
     out = np.empty(m, dtype=float)
-    use_idw = (~has_exact) & (den > 0)
-    use_nearest = (~has_exact) & (den <= 0)
+    use_idw = (~has_exact) & (denominator > 0)
+    use_nearest = (~has_exact) & (denominator <= 0)
     out[has_exact] = sv[exact_idx[has_exact]]
-    out[use_idw] = num[use_idw] / den[use_idw]
+    out[use_idw] = numerator[use_idw] / denominator[use_idw]
     out[use_nearest] = sv[nearest_idx[use_nearest]]
     return out
 
@@ -470,35 +469,62 @@ def build_neighborhood_surface_geojson(
 
         cx_arr = np.asarray(cx_list, dtype=float)
         cy_arr = np.asarray(cy_list, dtype=float)
-        has_local = has_nearby_samples_batch(
-            cx_arr, cy_arr, local_points, HEX_LOCAL_DATA_RADIUS_METERS
+        field_keys = ["score_weighted"]
+        field_keys.extend(
+            f"score_weighted_{cat_stem}" for cat_stem in WEIGHTED_CATEGORY_STEMS
         )
-
-        def _field_idw(key: str) -> np.ndarray:
-            vals = idw_scores_batch(
-                cx_arr, cy_arr, local_scores.get(key, []), HEX_IDW_RADIUS_METERS
+        for cat_stem in WEIGHTED_CATEGORY_STEMS:
+            field_keys.extend(
+                f"score_weighted_sub_{cat_stem}_{sub_stem}"
+                for sub_stem in weighted_sub_stems.get(cat_stem, [])
             )
-            return np.where(has_local, vals, 0.0)
+        field_keys.extend(f"score_expanded_{minutes}min" for minutes in WALK_MINUTES)
+        for minutes in WALK_MINUTES:
+            for f_type in filter_types:
+                field_keys.append(
+                    f"score_filter_{normalize_surface_filter_key(f_type)}_{minutes}min"
+                )
 
-        sw_vals = _field_idw("score_weighted")
+        source_values = np.zeros((len(local_points), len(field_keys)), dtype=float)
+        for field_index, key in enumerate(field_keys):
+            samples = local_scores.get(key, [])
+            if len(samples) != len(local_points):
+                # Every generated field normally has one value per source row;
+                # retain the scalar default if a sparse optional field is absent.
+                continue
+            source_values[:, field_index] = np.asarray(
+                [float(sample[2]) for sample in samples], dtype=float
+            )
+        plan = build_idw_plan(
+            np.asarray(local_points, dtype=float).reshape((-1, 2)),
+            np.column_stack((cx_arr, cy_arr)),
+            HEX_IDW_RADIUS_METERS,
+            HEX_LOCAL_DATA_RADIUS_METERS,
+        )
+        field_values = apply_idw_plan(source_values, plan)
+        field_values_by_key = {
+            key: field_values[:, field_index] for field_index, key in enumerate(field_keys)
+        }
+        has_local = plan.local_data_mask
+        sw_vals = field_values_by_key["score_weighted"]
         cat_vals = {
-            cat_stem: _field_idw(f"score_weighted_{cat_stem}")
+            cat_stem: field_values_by_key[f"score_weighted_{cat_stem}"]
             for cat_stem in WEIGHTED_CATEGORY_STEMS
         }
         sub_vals: dict[str, np.ndarray] = {}
         for cat_stem in WEIGHTED_CATEGORY_STEMS:
             for sub_stem in weighted_sub_stems.get(cat_stem, []):
                 sub_key = f"score_weighted_sub_{cat_stem}_{sub_stem}"
-                sub_vals[sub_key] = _field_idw(sub_key)
+                sub_vals[sub_key] = field_values_by_key[sub_key]
         expanded_vals = {
-            minutes: _field_idw(f"score_expanded_{minutes}min") for minutes in WALK_MINUTES
+            minutes: field_values_by_key[f"score_expanded_{minutes}min"]
+            for minutes in WALK_MINUTES
         }
         filter_vals: dict[str, np.ndarray] = {}
         for minutes in WALK_MINUTES:
             for f_type in filter_types:
-                f_norm = normalize_surface_filter_key(f_type)
-                f_key = f"score_filter_{f_norm}_{minutes}min"
-                filter_vals[f_key] = _field_idw(f_key)
+                f_key = f"score_filter_{normalize_surface_filter_key(f_type)}_{minutes}min"
+                filter_vals[f_key] = field_values_by_key[f_key]
 
         for i, clipped in enumerate(clipped_geoms):
             out_props = {

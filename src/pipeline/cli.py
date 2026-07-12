@@ -124,6 +124,7 @@ def run_all() -> int:
     """Real entry for `python -m pipeline run all` (called from cmd_run)."""
     from stages import amenity_metrics, urban95_scoring
     from stages import export_web as export_web_mod
+    from core.geo_io import CRS_METRIC
 
     for step in ("shade", "isochrones"):
         report = preflight_stage(step)
@@ -143,21 +144,39 @@ def run_all() -> int:
         return 1
 
     iso_gdf = _load_isochrones_gdf_for_all()
+    prepared_layers = amenity_metrics.prepare_amenity_layers(CRS_METRIC)
 
     t_amenity = time.perf_counter()
     buildings = amenity_metrics.run_amenity_metrics_stage(
-        isochrones=iso_gdf, write_output=False
+        isochrones=iso_gdf,
+        write_output=False,
+        prepared_layers=prepared_layers,
     )
     logging.info(
         "stage=amenity_metrics elapsed_s=%.3f", time.perf_counter() - t_amenity
     )
 
     t_score = time.perf_counter()
-    buildings = urban95_scoring.run_score(buildings=buildings, write_output=True)
+    buildings = urban95_scoring.run_score(
+        buildings=buildings,
+        write_output=True,
+        reused_layers=urban95_scoring.ScoringLayerOverrides(
+            trees=prepared_layers.trees,
+            parks=prepared_layers.parks,
+            street_lights=prepared_layers.street_lights,
+            amenities_clean=prepared_layers.amenities_clean,
+        ),
+    )
     logging.info("stage=score elapsed_s=%.3f", time.perf_counter() - t_score)
 
     t_export = time.perf_counter()
-    export_web_mod.export_web(buildings, isochrones_gdf=iso_gdf)
+    export_web_mod.export_web(
+        buildings,
+        isochrones_gdf=iso_gdf,
+        trees_gdf=prepared_layers.trees,
+        parks_gdf=prepared_layers.parks,
+        amenities_legacy_gdf=prepared_layers.amenities_legacy,
+    )
     logging.info("stage=export_web elapsed_s=%.3f", time.perf_counter() - t_export)
 
     report = preflight_stage("neighborhoods")

@@ -1,0 +1,736 @@
+{
+  "schema_version": 1,
+  "fixture_id": "urban95-scalar-characterization-2026-07-11",
+  "crs": "EPSG:2039",
+  "geometry_encoding": "Analytic Point, EmptyPoint, LineString, Box, and Polygon specifications; scalar buffers use Shapely default quad_segs=16.",
+  "numeric_tolerances": {
+    "raw_float_abs": 1e-09,
+    "geometry_area_abs": 1e-09,
+    "near_boundary_epsilon_m": 1e-07,
+    "near_boundary_justification": "1e-7 m is more than six orders above observed double/GEOS edge noise (about 1e-14 m) while remaining negligible against the 15-315 m methodology distances."
+  },
+  "live_contract_mapping": {
+    "weighted_time_columns": "The scalar scorer calculates one centroid result and copies it unchanged to 5min, 10min, and 15min columns; it does not consume per-minute service-count columns.",
+    "street_light_tiers": "Raw local union area divided by the scalar 300 m buffer area: >50 percent gives 100; 30 through 50 inclusive gives 50; below 30 gives 0. There is no separate light rounding or capping step.",
+    "park_semantics": "Any intersecting source park gives 50; any one intersecting source geometry with full source area >=3000 m2 gives 100. Counts and overlapping areas are not aggregated.",
+    "shade_semantics": "Each sanitized source-surface intersection contributes independently and in scalar spatial-index query order; overlaps are intentionally counted once per source row before one-decimal half-up storage."
+  },
+  "capture_runtime_provenance": {
+    "python": "3.13.4",
+    "geopandas": "1.1.3",
+    "shapely": "2.1.2",
+    "geos": "3.13.1",
+    "pandas": "3.0.2"
+  },
+  "traversal_runtime_characterization": "Captured on Python 3.13.4, GeoPandas 1.1.3, Shapely 2.1.2, GEOS 3.13.1, and pandas 3.0.2. STRtree/sindex candidate emission order is runtime-sensitive; the literal order-sensitive shade cases characterize this exact capture runtime and must not be silently re-sorted.",
+  "reference_source_provenance": [
+    {
+      "path": "src/lib/urban95_weights.py",
+      "sha256": "c3340432eddac331f5aa2e3ef7b18ae356331196f4f92b73c04d9186f64a5237",
+      "lines": "17-50,66-158,240-459"
+    },
+    {
+      "path": "src/lib/shade_si.py",
+      "sha256": "abc6fb4bcd6c5df1a9e29dcae76c7d7f881063c0b233c12d31b346b8452b7928",
+      "lines": "18-82,151-349"
+    },
+    {
+      "path": "src/stages/urban95_scoring.py",
+      "sha256": "558881887011e9a2475d89cc6ef0e5c5a509d4444e429c703f7b14261344b6b6",
+      "lines": "27-43,46-154"
+    },
+    {
+      "path": "src/core/geo_io.py",
+      "sha256": "8e10a169c1558255ab958a30d13d76241caf11bace383ebf8554fbcf0ce9ce5a",
+      "lines": "13"
+    }
+  ],
+  "case_groups": {
+    "buffer_boundaries": [
+      {
+        "id": "buffer_15m_axis_diagonal_midsegment",
+        "description": "Light-buffer radius: axis and diagonal vertices include exact boundary points; mid-segment points distinguish the polygonal buffer from an exact circle.",
+        "radius_m": 15.0,
+        "center": [0.0, 0.0],
+        "candidates": [
+          {"position": "axis_inside", "point": [14.9999999, 0.0]},
+          {"position": "axis_boundary", "point": [15.0, 0.0]},
+          {"position": "axis_outside", "point": [15.0000001, 0.0]},
+          {"position": "diagonal_vertex_inside", "point": [10.606601647087535, -10.606601647087535]},
+          {"position": "diagonal_vertex_boundary", "point": [10.606601717798213, -10.606601717798213]},
+          {"position": "diagonal_vertex_outside", "point": [10.606601788508891, -10.606601788508891]},
+          {"position": "segment_midpoint_inside", "point": [14.963885350161933, -0.7351285475649372]},
+          {"position": "segment_midpoint_outside", "point": [14.963885549921022, -0.7351285573784719]}
+        ],
+        "expected": {"intersects": [true, true, false, true, true, false, true, false]}
+      },
+      {
+        "id": "buffer_20m_axis_diagonal_midsegment",
+        "description": "Tree-count buffer boundary and angular polygon chord behavior.",
+        "radius_m": 20.0,
+        "center": [0.0, 0.0],
+        "candidates": [
+          {"position": "axis_inside", "point": [19.9999999, 0.0]},
+          {"position": "axis_boundary", "point": [20.0, 0.0]},
+          {"position": "axis_outside", "point": [20.0000001, 0.0]},
+          {"position": "diagonal_vertex_inside", "point": [14.142135553020273, -14.142135553020273]},
+          {"position": "diagonal_vertex_boundary", "point": [14.142135623730951, -14.142135623730951]},
+          {"position": "diagonal_vertex_outside", "point": [14.142135694441631, -14.142135694441631]},
+          {"position": "segment_midpoint_inside", "point": [19.951847166842423, -0.9801713983888386]},
+          {"position": "segment_midpoint_outside", "point": [19.951847366601516, -0.9801714082023736]}
+        ],
+        "expected": {"intersects": [true, true, false, true, true, false, true, false]}
+      },
+      {
+        "id": "buffer_50m_axis_diagonal_midsegment",
+        "description": "Shelter buffer boundary and angular polygon chord behavior.",
+        "radius_m": 50.0,
+        "center": [0.0, 0.0],
+        "candidates": [
+          {"position": "axis_inside", "point": [49.9999999, 0.0]},
+          {"position": "axis_boundary", "point": [50.0, 0.0]},
+          {"position": "axis_outside", "point": [50.0000001, 0.0]},
+          {"position": "diagonal_vertex_inside", "point": [35.3553389886167, -35.3553389886167]},
+          {"position": "diagonal_vertex_boundary", "point": [35.35533905932738, -35.35533905932738]},
+          {"position": "diagonal_vertex_outside", "point": [35.35533913003806, -35.35533913003806]},
+          {"position": "segment_midpoint_inside", "point": [49.879618066925374, -2.4504285033322475]},
+          {"position": "segment_midpoint_outside", "point": [49.87961826668447, -2.4504285131457824]}
+        ],
+        "expected": {"intersects": [true, true, false, true, true, false, true, false]}
+      },
+      {
+        "id": "buffer_300m_axis_diagonal_midsegment",
+        "description": "Shared park, play, bike, bus, family-service, and shade building-buffer boundary.",
+        "radius_m": 300.0,
+        "center": [0.0, 0.0],
+        "candidates": [
+          {"position": "axis_inside", "point": [299.9999999, 0.0]},
+          {"position": "axis_boundary", "point": [300.0, 0.0]},
+          {"position": "axis_outside", "point": [300.0000001, 0.0]},
+          {"position": "diagonal_vertex_inside", "point": [212.13203428525358, -212.13203428525358]},
+          {"position": "diagonal_vertex_boundary", "point": [212.13203435596427, -212.13203435596427]},
+          {"position": "diagonal_vertex_outside", "point": [212.13203442667498, -212.13203442667498]},
+          {"position": "segment_midpoint_inside", "point": [299.27770890094996, -14.702571044527323]},
+          {"position": "segment_midpoint_outside", "point": [299.2777091007091, -14.70257105434086]}
+        ],
+        "expected": {"intersects": [true, true, false, true, true, false, true, false]}
+      },
+      {
+        "id": "buffer_315m_axis_diagonal_midsegment",
+        "description": "Street-light candidate-selection buffer boundary and angular polygon chord behavior.",
+        "radius_m": 315.0,
+        "center": [0.0, 0.0],
+        "candidates": [
+          {"position": "axis_inside", "point": [314.9999999, 0.0]},
+          {"position": "axis_boundary", "point": [315.0, 0.0]},
+          {"position": "axis_outside", "point": [315.0000001, 0.0]},
+          {"position": "diagonal_vertex_inside", "point": [222.7386360030518, -222.7386360030518]},
+          {"position": "diagonal_vertex_boundary", "point": [222.73863607376248, -222.73863607376248]},
+          {"position": "diagonal_vertex_outside", "point": [222.7386361444732, -222.7386361444732]},
+          {"position": "segment_midpoint_inside", "point": [314.2415943509915, -15.437699596999026]},
+          {"position": "segment_midpoint_outside", "point": [314.2415945507506, -15.437699606812565]}
+        ],
+        "expected": {"intersects": [true, true, false, true, true, false, true, false]}
+      }
+    ],
+    "street_light_coverage": [
+      {
+        "id": "lights_none",
+        "description": "No lights yields zero raw coverage and the low tier.",
+        "point": [0.0, 0.0],
+        "lights": {"features": []},
+        "expected": {"illuminated_area": 0.0, "illuminated_percentage": 0.0, "street_lights_subscore": 0.0, "isolated_category_score": 0.0}
+      },
+      {
+        "id": "lights_one_center",
+        "description": "One 15 m light buffer at the building point.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Point", "coordinates": [0.0, 0.0]}}]},
+        "expected": {"illuminated_area": 705.7234103728363, "illuminated_percentage": 0.25000000000000006, "street_lights_subscore": 0.0, "isolated_category_score": 0.0}
+      },
+      {
+        "id": "lights_duplicate_center_union",
+        "description": "Duplicate light points are unioned and do not double-count area.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Point", "coordinates": [0.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [0.0, 0.0]}}]},
+        "expected": {"illuminated_area": 705.723410372836, "illuminated_percentage": 0.25, "street_lights_subscore": 0.0, "isolated_category_score": 0.0}
+      },
+      {
+        "id": "lights_overlap_union",
+        "description": "Two overlapping 15 m buffers contribute their geometric union, not summed areas.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Point", "coordinates": [-5.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [5.0, 0.0]}}]},
+        "expected": {"illuminated_area": 999.8269617317065, "illuminated_percentage": 0.35418513366429727, "street_lights_subscore": 0.0, "isolated_category_score": 0.0}
+      },
+      {
+        "id": "lights_candidate_boundary_touch_315",
+        "description": "A point at 315 m is selected but its 15 m buffer only touches the 300 m buffer, producing zero area.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Point", "coordinates": [315.0, 0.0]}}]},
+        "expected": {"illuminated_area": 0.0, "illuminated_percentage": 0.0, "street_lights_subscore": 0.0, "isolated_category_score": 0.0}
+      },
+      {
+        "id": "lights_candidate_just_outside_315",
+        "description": "A point 1e-7 m outside the 315 m candidate buffer is excluded.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Point", "coordinates": [315.0000001, 0.0]}}]},
+        "expected": {"illuminated_area": 0.0, "illuminated_percentage": 0.0, "street_lights_subscore": 0.0, "isolated_category_score": 0.0}
+      },
+      {
+        "id": "lights_30_percent_just_below",
+        "description": "Analytic square extent one float below the exact raw 30 percent result remains low tier.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Box", "bounds": [-130.67179362729036, -130.67179362729036, 130.67179362729036, 130.67179362729036]}}]},
+        "expected": {"illuminated_area": 84686.8092447403, "illuminated_percentage": 29.999999999999993, "street_lights_subscore": 0.0, "isolated_category_score": 0.0}
+      },
+      {
+        "id": "lights_30_percent_exact",
+        "description": "Exactly 30 raw percent enters the inclusive middle tier.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Box", "bounds": [-130.67179362729038, -130.67179362729038, 130.67179362729038, 130.67179362729038]}}]},
+        "expected": {"illuminated_area": 84686.80924474033, "illuminated_percentage": 30.0, "street_lights_subscore": 50.0, "isolated_category_score": 7.5}
+      },
+      {
+        "id": "lights_30_percent_just_above",
+        "description": "One float above 30 raw percent remains in the middle tier.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Box", "bounds": [-130.6717936272904, -130.6717936272904, 130.6717936272904, 130.6717936272904]}}]},
+        "expected": {"illuminated_area": 84686.80924474036, "illuminated_percentage": 30.00000000000001, "street_lights_subscore": 50.0, "isolated_category_score": 7.5}
+      },
+      {
+        "id": "lights_50_percent_just_below",
+        "description": "Just below 50 raw percent is middle tier.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Box", "bounds": [-172.97536983883973, -172.97536983883973, 172.97536983883973, 172.97536983883973]}}]},
+        "expected": {"illuminated_area": 141144.68207456716, "illuminated_percentage": 49.99999999999998, "street_lights_subscore": 50.0, "isolated_category_score": 7.5}
+      },
+      {
+        "id": "lights_50_percent_exact",
+        "description": "Exactly 50 raw percent remains in the inclusive middle tier.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Box", "bounds": [-172.97536983883975, -172.97536983883975, 172.97536983883975, 172.97536983883975]}}]},
+        "expected": {"illuminated_area": 141144.68207456722, "illuminated_percentage": 50.0, "street_lights_subscore": 50.0, "isolated_category_score": 7.5}
+      },
+      {
+        "id": "lights_50_percent_just_above",
+        "description": "Any raw percentage above 50 enters the high tier.",
+        "point": [0.0, 0.0],
+        "lights": {"features": [{"geometry": {"type": "Box", "bounds": [-172.97536983883978, -172.97536983883978, 172.97536983883978, 172.97536983883978]}}]},
+        "expected": {"illuminated_area": 141144.68207456724, "illuminated_percentage": 50.000000000000014, "street_lights_subscore": 100.0, "isolated_category_score": 15.0}
+      }
+    ],
+    "park_thresholds": [
+      {
+        "id": "park_area_just_below_3000",
+        "description": "An intersecting 2999.9999 m2 source park gets the small-park tier.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [-50.0, -14.9999995, 50.0, 14.9999995]}}]}},
+        "expected": {"category_score": 25.0, "details": {"parks": 50.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "park_area_exact_3000",
+        "description": "The 3000 m2 source-area threshold is inclusive.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [-50.0, -15.0, 50.0, 15.0]}}]}},
+        "expected": {"category_score": 50.0, "details": {"parks": 100.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "park_area_just_above_3000",
+        "description": "A 3000.0001 m2 source park gets the large-park tier.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [-50.0, -15.0000005, 50.0, 15.0000005]}}]}},
+        "expected": {"category_score": 50.0, "details": {"parks": 100.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "park_distance_just_inside_300",
+        "description": "A small park with its nearest edge 1e-7 m inside intersects.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [299.9999999, -0.1, 300.9999999, 0.1]}}]}},
+        "expected": {"category_score": 25.0, "details": {"parks": 50.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "park_distance_exact_touch_300",
+        "description": "Boundary touch at 300 m counts because parks use intersects.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [300.0, -0.1, 301.0, 0.1]}}]}},
+        "expected": {"category_score": 25.0, "details": {"parks": 50.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "park_distance_just_outside_300",
+        "description": "A nearest edge 1e-7 m outside the scalar buffer is absent.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [300.0000001, -0.1, 301.0000001, 0.1]}}]}},
+        "expected": {"category_score": 0.0, "details": {"parks": 0.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "park_large_source_boundary_touch",
+        "description": "A 3000 m2 park touching at one point qualifies using full source area, not clipped area.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [300.0, -15.0, 400.0, 15.0]}}]}},
+        "expected": {"category_score": 50.0, "details": {"parks": 100.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "parks_overlapping_small_not_aggregated",
+        "description": "Two overlapping 2000 m2 source parks do not combine into a large park.",
+        "point": [0.0, 0.0],
+        "layers": {"parks": {"features": [{"geometry": {"type": "Box", "bounds": [-50.0, -10.0, 50.0, 10.0]}}, {"geometry": {"type": "Box", "bounds": [-40.0, -10.0, 60.0, 10.0]}}]}},
+        "expected": {"category_score": 25.0, "details": {"parks": 50.0, "urban_nature_areas": 0.0}}
+      },
+      {
+        "id": "parks_missing_layer",
+        "description": "Missing park and urban-nature categories retain scalar zero defaults.",
+        "point": [0.0, 0.0],
+        "layers": {},
+        "expected": {"category_score": 0.0, "details": {"parks": 0.0, "urban_nature_areas": 0.0}}
+      }
+    ],
+    "service_thresholds": [
+      {
+        "id": "trees_count_0", "description": "Zero trees.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"trees": {"features": []}},
+        "expected": {"category_score": 40.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 100.0}}
+      },
+      {
+        "id": "trees_count_1", "description": "One tree enters the half tier.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"trees": {"features": [{"geometry": {"type": "Point", "coordinates": [1.0, 0.0]}}]}},
+        "expected": {"category_score": 50.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 50.0, "roads": 100.0}}
+      },
+      {
+        "id": "trees_count_2", "description": "Two trees remain in the half tier.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"trees": {"features": [{"geometry": {"type": "Point", "coordinates": [1.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [2.0, 0.0]}}]}},
+        "expected": {"category_score": 50.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 50.0, "roads": 100.0}}
+      },
+      {
+        "id": "trees_count_3", "description": "Three trees enter the full tier.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"trees": {"features": [{"geometry": {"type": "Point", "coordinates": [1.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [2.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [3.0, 0.0]}}]}},
+        "expected": {"category_score": 60.00000000000001, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 100.0, "roads": 100.0}}
+      },
+      {
+        "id": "fast_road_distance_0", "description": "Fast road at zero distance.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 60}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 0.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 0.0}}
+      },
+      {
+        "id": "fast_road_distance_exact_100", "description": "The <=100 m harmful-road endpoint is inclusive.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 60}, "geometry": {"type": "LineString", "coordinates": [[100.0, -1.0], [100.0, 1.0]]}}]}},
+        "expected": {"category_score": 0.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 0.0}}
+      },
+      {
+        "id": "fast_road_distance_just_above_100", "description": "Immediately above 100 m enters the middle road tier.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 60}, "geometry": {"type": "LineString", "coordinates": [[100.0000001, -1.0], [100.0000001, 1.0]]}}]}},
+        "expected": {"category_score": 20.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 50.0}}
+      },
+      {
+        "id": "fast_road_distance_exact_300", "description": "The middle road tier includes exactly 300 m.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 60}, "geometry": {"type": "LineString", "coordinates": [[300.0, -1.0], [300.0, 1.0]]}}]}},
+        "expected": {"category_score": 20.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 50.0}}
+      },
+      {
+        "id": "fast_road_distance_just_above_300", "description": "Immediately above 300 m retains the no-near-road default.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 60}, "geometry": {"type": "LineString", "coordinates": [[300.0000001, -1.0], [300.0000001, 1.0]]}}]}},
+        "expected": {"category_score": 40.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 100.0}}
+      },
+      {
+        "id": "road_speed_just_below_50", "description": "A numeric maxspeed immediately below 50 is not fast.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 49.9999999}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 40.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 100.0}}
+      },
+      {
+        "id": "road_speed_exact_50_not_fast", "description": "The road filter is strictly >50.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 50}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 40.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 100.0}}
+      },
+      {
+        "id": "road_speed_just_above_50_fast", "description": "A numeric speed immediately above 50 is fast.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": 50.0000001}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 0.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 0.0}}
+      },
+      {
+        "id": "road_maxspeed_numeric_string_fast", "description": "Numeric maxspeed strings are coerced and can enter the fast-road branch.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": "60"}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 0.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 0.0}}
+      },
+      {
+        "id": "road_maxspeed_malformed_string", "description": "Malformed maxspeed strings coerce to NaN and are not fast.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"maxspeed": "not-a-speed"}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 40.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 100.0}}
+      },
+      {
+        "id": "road_max_speed_alias_fast", "description": "The max_speed alias is recognized and coerced by the live scalar branch.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"max_speed": "60"}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 0.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 0.0}}
+      },
+      {
+        "id": "road_speed_limit_alias_fast", "description": "The speed_limit alias is recognized and coerced by the live scalar branch.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"speed_limit": 60}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 0.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 0.0}}
+      },
+      {
+        "id": "road_speed_column_missing", "description": "No recognized speed column means no fast roads.", "function": "environmental_quality", "point": [0.0, 0.0], "layers": {"roads": {"features": [{"properties": {"name": "road"}, "geometry": {"type": "LineString", "coordinates": [[0.0, -1.0], [0.0, 1.0]]}}]}},
+        "expected": {"category_score": 40.0, "details": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 100.0}}
+      },
+      {
+        "id": "bus_count_0", "description": "Zero bus stops.", "function": "safety_mobility", "point": [0.0, 0.0], "layers": {"bus_stops": {"features": []}},
+        "expected": {"category_score": 0.0, "details": {"street_lights": 0.0, "bicycle_access": 0.0, "bus_stops": 0.0, "shelters": 0.0}}
+      },
+      {
+        "id": "bus_count_1", "description": "One bus stop enters the half tier.", "function": "safety_mobility", "point": [0.0, 0.0], "layers": {"bus_stops": {"features": [{"geometry": {"type": "Point", "coordinates": [1.0, 0.0]}}]}},
+        "expected": {"category_score": 15.0, "details": {"street_lights": 0.0, "bicycle_access": 0.0, "bus_stops": 50.0, "shelters": 0.0}}
+      },
+      {
+        "id": "bus_count_2", "description": "Two bus stops remain in the half tier.", "function": "safety_mobility", "point": [0.0, 0.0], "layers": {"bus_stops": {"features": [{"geometry": {"type": "Point", "coordinates": [1.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [2.0, 0.0]}}]}},
+        "expected": {"category_score": 15.0, "details": {"street_lights": 0.0, "bicycle_access": 0.0, "bus_stops": 50.0, "shelters": 0.0}}
+      },
+      {
+        "id": "bus_count_3", "description": "Three bus stops enter the full tier.", "function": "safety_mobility", "point": [0.0, 0.0], "layers": {"bus_stops": {"features": [{"geometry": {"type": "Point", "coordinates": [1.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [2.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [3.0, 0.0]}}]}},
+        "expected": {"category_score": 30.0, "details": {"street_lights": 0.0, "bicycle_access": 0.0, "bus_stops": 100.0, "shelters": 0.0}}
+      },
+      {
+        "id": "bike_presence_exact_300", "description": "Bike presence includes a point on the 300 m buffer boundary.", "function": "safety_mobility", "point": [0.0, 0.0], "layers": {"bikes": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}},
+        "expected": {"category_score": 15.0, "details": {"street_lights": 0.0, "bicycle_access": 100.0, "bus_stops": 0.0, "shelters": 0.0}}
+      },
+      {
+        "id": "shelter_presence_exact_50", "description": "Shelter presence includes a point on the 50 m boundary.", "function": "safety_mobility", "point": [0.0, 0.0], "layers": {"shelters": {"features": [{"geometry": {"type": "Point", "coordinates": [50.0, 0.0]}}]}},
+        "expected": {"category_score": 40.0, "details": {"street_lights": 0.0, "bicycle_access": 0.0, "bus_stops": 0.0, "shelters": 100.0}}
+      },
+      {
+        "id": "education_distance_0", "description": "Education at zero distance is full tier.", "function": "family_services", "point": [0.0, 0.0], "layers": {"education": {"features": [{"geometry": {"type": "Point", "coordinates": [0.0, 0.0]}}]}},
+        "expected": {"category_score": 30.0, "details": {"education": 100.0, "community": 0.0, "business": 0.0, "health": 0.0}}
+      },
+      {
+        "id": "education_distance_exact_150", "description": "The full education tier includes 150 m.", "function": "family_services", "point": [0.0, 0.0], "layers": {"education": {"features": [{"geometry": {"type": "Point", "coordinates": [150.0, 0.0]}}]}},
+        "expected": {"category_score": 30.0, "details": {"education": 100.0, "community": 0.0, "business": 0.0, "health": 0.0}}
+      },
+      {
+        "id": "education_distance_just_above_150", "description": "Immediately above 150 m enters the half tier.", "function": "family_services", "point": [0.0, 0.0], "layers": {"education": {"features": [{"geometry": {"type": "Point", "coordinates": [150.0000001, 0.0]}}]}},
+        "expected": {"category_score": 15.0, "details": {"education": 50.0, "community": 0.0, "business": 0.0, "health": 0.0}}
+      },
+      {
+        "id": "education_distance_exact_300", "description": "The half education tier includes 300 m.", "function": "family_services", "point": [0.0, 0.0], "layers": {"education": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}},
+        "expected": {"category_score": 15.0, "details": {"education": 50.0, "community": 0.0, "business": 0.0, "health": 0.0}}
+      },
+      {
+        "id": "education_distance_just_above_300", "description": "Immediately outside the 300 m candidate buffer is absent.", "function": "family_services", "point": [0.0, 0.0], "layers": {"education": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0000001, 0.0]}}]}},
+        "expected": {"category_score": 0.0, "details": {"education": 0.0, "community": 0.0, "business": 0.0, "health": 0.0}}
+      },
+      {
+        "id": "community_presence_exact_300", "description": "Community is a presence-only branch within the 300 m scalar buffer.", "function": "family_services", "point": [0.0, 0.0], "layers": {"community": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}},
+        "expected": {"category_score": 20.0, "details": {"education": 0.0, "community": 100.0, "business": 0.0, "health": 0.0}}
+      },
+      {
+        "id": "business_presence_exact_300", "description": "Business is a presence-only branch within the 300 m scalar buffer.", "function": "family_services", "point": [0.0, 0.0], "layers": {"business": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}},
+        "expected": {"category_score": 20.0, "details": {"education": 0.0, "community": 0.0, "business": 100.0, "health": 0.0}}
+      },
+      {
+        "id": "health_presence_exact_300", "description": "Health is a presence-only branch within the 300 m scalar buffer.", "function": "family_services", "point": [0.0, 0.0], "layers": {"health": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}},
+        "expected": {"category_score": 30.0, "details": {"education": 0.0, "community": 0.0, "business": 0.0, "health": 100.0}}
+      },
+      {
+        "id": "urban_nature_presence_exact_300", "description": "Urban-nature presence contributes its 0.5 Nature weight.", "function": "nature", "point": [0.0, 0.0], "layers": {"urban_nature_areas": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}},
+        "expected": {"category_score": 50.0, "details": {"parks": 0.0, "urban_nature_areas": 100.0}}
+      },
+      {
+        "id": "playground_presence_exact_300", "description": "Playground presence contributes the full Play category.", "function": "play", "point": [0.0, 0.0], "layers": {"playgrounds": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}},
+        "expected": {"category_score": 100.0, "details": {"playgrounds": 100.0}}
+      }
+    ],
+    "shade_weighting": [
+      {
+        "id": "shade_empty_layers", "description": "No shade surfaces returns raw and stored zero.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": []}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 0, "candidate_positions": [], "intersection_areas": [], "total_area": 0.0, "weighted_sum": 0.0, "raw_summer_si": 0.0, "stored_summer_si": 0.0}
+      },
+      {
+        "id": "shade_empty_point", "description": "An empty point is skipped and returns zero without exception.", "point_geometry": {"type": "EmptyPoint"},
+        "streets": {"features": [{"properties": {"summer_SI": 0.7, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-10.0, -10.0, 10.0, 10.0]}}]}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 1, "candidate_positions": [], "intersection_areas": [], "total_area": 0.0, "weighted_sum": 0.0, "raw_summer_si": 0.0, "stored_summer_si": 0.0}
+      },
+      {
+        "id": "shade_no_intersection", "description": "A valid surface outside 300 m contributes nothing.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [{"properties": {"summer_SI": 0.7, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [400.0, 400.0, 410.0, 410.0]}}]}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 1, "candidate_positions": [], "intersection_areas": [], "total_area": 0.0, "weighted_sum": 0.0, "raw_summer_si": 0.0, "stored_summer_si": 0.0}
+      },
+      {
+        "id": "shade_overlap_sources_counted_separately", "description": "Identical street/open-space surfaces are both area-weighted, so overlap is double-accounted by source row.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [{"properties": {"summer_SI": 0.1, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-10.0, -10.0, 10.0, 10.0]}}]},
+        "open_spaces": {"features": [{"properties": {"summer_SI": 0.5, "si_layer": "open_space"}, "geometry": {"type": "Box", "bounds": [-10.0, -10.0, 10.0, 10.0]}}]},
+        "expected": {"prepared_surface_count": 2, "candidate_positions": [0, 1], "intersection_areas": [400.0, 400.0], "total_area": 800.0, "weighted_sum": 240.0, "raw_summer_si": 0.3, "stored_summer_si": 0.3}
+      },
+      {
+        "id": "shade_spatial_index_traversal_order", "description": "Source order 0,1,2 is queried as 1,2,0 and ordinary float additions follow that traversal.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [
+          {"properties": {"summer_SI": 0.1, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [100.0, -20.0, 140.0, 20.0]}},
+          {"properties": {"summer_SI": 0.2, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-140.0, -20.0, -100.0, 20.0]}},
+          {"properties": {"summer_SI": 0.9, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-20.0, -20.0, 20.0, 20.0]}}
+        ]}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 3, "candidate_positions": [1, 2, 0], "intersection_areas": [1600.0, 1600.0, 1600.0], "total_area": 4800.0, "weighted_sum": 1920.0, "raw_summer_si": 0.4, "stored_summer_si": 0.4}
+      },
+      {
+        "id": "shade_order_sensitive_half_up_tie", "description": "The runtime query order [1,2,0] accumulates a raw mean 1.11e-16 below 0.35 and stores 0.3; source order [0,1,2] yields exactly 0.35 and would store 0.4.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [
+          {"properties": {"summer_SI": 0.04754239386647818, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [100.0, -20.0, 140.0, 20.0]}},
+          {"properties": {"summer_SI": 0.2673926447760834, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-140.0, -20.0, -100.0, 20.0]}},
+          {"properties": {"summer_SI": 0.7350649613574384, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-20.0, -20.0, 20.0, 20.0]}}
+        ]}, "open_spaces": {"features": []},
+        "expected": {
+          "prepared_surface_count": 3,
+          "candidate_positions": [1, 2, 0],
+          "intersection_areas": [1600.0, 1600.0, 1600.0],
+          "total_area": 4800.0,
+          "weighted_sum": 1679.9999999999995,
+          "raw_summer_si": 0.3499999999999999,
+          "stored_summer_si": 0.3,
+          "alternate_candidate_positions": [0, 1, 2],
+          "alternate_weighted_sum": 1679.9999999999998,
+          "alternate_raw_summer_si": 0.35,
+          "alternate_stored_summer_si": 0.4
+        }
+      },
+      {
+        "id": "shade_invalid_bowtie_repaired", "description": "Invalid bowtie polygon is repaired to 800 m2 of polygonal parts before weighting.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [
+          {"properties": {"summer_SI": 0.8, "si_layer": "street"}, "geometry": {"type": "Polygon", "coordinates": [[[-20.0, -20.0], [20.0, 20.0], [-20.0, 20.0], [20.0, -20.0], [-20.0, -20.0]]]}},
+          {"properties": {"summer_SI": 0.2, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-10.0, -10.0, 10.0, 10.0]}}
+        ]}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 2, "candidate_positions": [0, 1], "intersection_areas": [800.0, 400.0], "total_area": 1200.0, "weighted_sum": 720.0, "raw_summer_si": 0.6, "stored_summer_si": 0.6}
+      },
+      {
+        "id": "shade_boundary_partial_area", "description": "A surface crossing the 300 m edge contributes only its exact scalar-buffer intersection area.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [
+          {"properties": {"summer_SI": 0.9, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [299.0, -10.0, 301.0, 10.0]}},
+          {"properties": {"summer_SI": 0.1, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-20.0, -20.0, 20.0, 20.0]}}
+        ]}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 2, "candidate_positions": [1, 0], "intersection_areas": [1600.0, 15.08731502305352], "total_area": 1615.0873150230536, "weighted_sum": 173.57858352074817, "raw_summer_si": 0.10747318854291821, "stored_summer_si": 0.1}
+      },
+      {
+        "id": "shade_nonfinite_and_nonarea_dropped", "description": "A non-finite score row and a line geometry are dropped; the finite polygon remains.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [
+          {"properties": {"summer_SI": 0.4, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-10.0, -10.0, 10.0, 10.0]}},
+          {"properties": {"summer_SI": {"kind": "nonfinite", "value": "NaN"}, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-5.0, -5.0, 5.0, 5.0]}},
+          {"properties": {"summer_SI": 0.9, "si_layer": "street"}, "geometry": {"type": "LineString", "coordinates": [[-5.0, 0.0], [5.0, 0.0]]}}
+        ]}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 1, "candidate_positions": [0], "intersection_areas": [400.0], "total_area": 400.0, "weighted_sum": 160.0, "raw_summer_si": 0.4, "stored_summer_si": 0.4}
+      },
+      {
+        "id": "shade_raw_tie_then_stored_half_up", "description": "Raw area-weighted 0.15 remains available from lookup while building storage rounds half-up to 0.2.", "point_geometry": {"type": "Point", "coordinates": [0.0, 0.0]},
+        "streets": {"features": [{"properties": {"summer_SI": 0.15, "si_layer": "street"}, "geometry": {"type": "Box", "bounds": [-10.0, -10.0, 10.0, 10.0]}}]}, "open_spaces": {"features": []},
+        "expected": {"prepared_surface_count": 1, "candidate_positions": [0], "intersection_areas": [400.0], "total_area": 400.0, "weighted_sum": 60.0, "raw_summer_si": 0.15, "stored_summer_si": 0.2}
+      }
+    ],
+    "shade_rounding": [
+      {"id": "si_just_below_015", "description": "Immediately below first half-up tie.", "input": 0.149999999999, "expected": {"stored_summer_si": 0.1, "project_subscore": 0, "official_classification": "Significant lack"}},
+      {"id": "si_tie_015", "description": "Required half-up tie 0.15 to 0.2.", "input": 0.15, "expected": {"stored_summer_si": 0.2, "project_subscore": 50, "official_classification": "Significant lack"}},
+      {"id": "si_just_above_015", "description": "Immediately above first half-up tie.", "input": 0.150000000001, "expected": {"stored_summer_si": 0.2, "project_subscore": 50, "official_classification": "Significant lack"}},
+      {"id": "si_just_below_035", "description": "Immediately below second half-up tie remains stored 0.3.", "input": 0.349999999999, "expected": {"stored_summer_si": 0.3, "project_subscore": 50, "official_classification": "Needs improvement"}},
+      {"id": "si_tie_035", "description": "Required half-up tie 0.35 to 0.4.", "input": 0.35, "expected": {"stored_summer_si": 0.4, "project_subscore": 100, "official_classification": "Needs improvement"}},
+      {"id": "si_just_above_035", "description": "Immediately above second half-up tie.", "input": 0.350000000001, "expected": {"stored_summer_si": 0.4, "project_subscore": 100, "official_classification": "Needs improvement"}},
+      {"id": "si_official_010_just_below", "description": "Official classification below 0.10.", "input": 0.099999999999, "expected": {"stored_summer_si": 0.1, "project_subscore": 0, "official_classification": "Severe lack"}},
+      {"id": "si_official_010_exact", "description": "Official 0.10 endpoint enters significant lack.", "input": 0.1, "expected": {"stored_summer_si": 0.1, "project_subscore": 0, "official_classification": "Significant lack"}},
+      {"id": "si_project_020_just_below", "description": "Raw just below 0.20 still stores 0.2 and therefore gets project score 50.", "input": 0.199999999999, "expected": {"stored_summer_si": 0.2, "project_subscore": 50, "official_classification": "Significant lack"}},
+      {"id": "si_project_020_exact", "description": "Stored/project 0.20 boundary is inclusive in the middle tier.", "input": 0.2, "expected": {"stored_summer_si": 0.2, "project_subscore": 50, "official_classification": "Needs improvement"}},
+      {"id": "si_project_020_just_above", "description": "Raw just above 0.20 remains middle tier.", "input": 0.200000000001, "expected": {"stored_summer_si": 0.2, "project_subscore": 50, "official_classification": "Needs improvement"}},
+      {"id": "si_project_040_just_below", "description": "Raw just below 0.40 stores 0.4 and therefore gets project score 100.", "input": 0.399999999999, "expected": {"stored_summer_si": 0.4, "project_subscore": 100, "official_classification": "Needs improvement"}},
+      {"id": "si_project_040_exact", "description": "Stored/project 0.40 boundary is inclusive in the high tier.", "input": 0.4, "expected": {"stored_summer_si": 0.4, "project_subscore": 100, "official_classification": "Good shade"}},
+      {"id": "si_project_040_just_above", "description": "Raw just above 0.40 remains high tier.", "input": 0.400000000001, "expected": {"stored_summer_si": 0.4, "project_subscore": 100, "official_classification": "Good shade"}},
+      {"id": "si_official_060_just_below", "description": "Official classification immediately below 0.60.", "input": 0.599999999999, "expected": {"stored_summer_si": 0.6, "project_subscore": 100, "official_classification": "Good shade"}},
+      {"id": "si_official_060_exact", "description": "Official 0.60 endpoint enters excellent shade.", "input": 0.6, "expected": {"stored_summer_si": 0.6, "project_subscore": 100, "official_classification": "Excellent shade"}},
+      {"id": "si_null_supported", "description": "None is explicitly accepted and maps to stored zero; official classification stays absent.", "input": null, "expected": {"stored_summer_si": 0.0, "project_subscore": 0, "official_classification": null}},
+      {"id": "si_nonnumeric_string_supported", "description": "Nonnumeric values are caught by scalar coercion and map to zero/none.", "input": "not-a-number", "expected": {"stored_summer_si": 0.0, "project_subscore": 0, "official_classification": null}},
+      {"id": "si_numeric_string_supported", "description": "Numeric strings are accepted by scalar float coercion.", "input": "0.15", "expected": {"stored_summer_si": 0.2, "project_subscore": 50, "official_classification": "Significant lack"}},
+      {"id": "si_nan_encoded", "description": "Non-finite NaN is encoded without a forbidden JSON NaN literal and maps to zero/none.", "input": {"kind": "nonfinite", "value": "NaN"}, "expected": {"stored_summer_si": 0.0, "project_subscore": 0, "official_classification": null}},
+      {"id": "si_positive_infinity_encoded", "description": "Positive infinity is encoded as a typed input spec and maps to zero/none.", "input": {"kind": "nonfinite", "value": "+Infinity"}, "expected": {"stored_summer_si": 0.0, "project_subscore": 0, "official_classification": null}}
+    ],
+    "complete_rows": [
+      {
+        "id": "complete_adversarial_building",
+        "description": "One row crosses every category: SI 0.35 half-up, two trees, 200 m fast road, exact 3000 m2 park, exact 50 percent light coverage, boundary/presence services, and one missing service.",
+        "point": [0.0, 0.0],
+        "precomputed_summer_si": 0.35,
+        "layers": {
+          "trees": {"features": [{"geometry": {"type": "Point", "coordinates": [1.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [2.0, 0.0]}}]},
+          "roads": {"features": [{"properties": {"maxspeed": 60}, "geometry": {"type": "LineString", "coordinates": [[200.0, -10.0], [200.0, 10.0]]}}]},
+          "parks": {"features": [{"geometry": {"type": "Box", "bounds": [-50.0, -15.0, 50.0, 15.0]}}]},
+          "urban_nature_areas": {"features": [{"geometry": {"type": "Point", "coordinates": [10.0, 10.0]}}]},
+          "playgrounds": {"features": [{"geometry": {"type": "Point", "coordinates": [20.0, 0.0]}}]},
+          "street_lights": {"features": [{"geometry": {"type": "Box", "bounds": [-172.97536983883975, -172.97536983883975, 172.97536983883975, 172.97536983883975]}}]},
+          "bikes": {"features": [{"geometry": {"type": "Point", "coordinates": [30.0, 0.0]}}]},
+          "bus_stops": {"features": [{"geometry": {"type": "Point", "coordinates": [40.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [50.0, 0.0]}}, {"geometry": {"type": "Point", "coordinates": [60.0, 0.0]}}]},
+          "shelters": {"features": [{"geometry": {"type": "Point", "coordinates": [50.0, 0.0]}}]},
+          "education": {"features": [{"geometry": {"type": "Point", "coordinates": [200.0, 0.0]}}]},
+          "community": {"features": [{"geometry": {"type": "Point", "coordinates": [100.0, 0.0]}}]},
+          "business": {"features": []},
+          "health": {"features": [{"geometry": {"type": "Point", "coordinates": [300.0, 0.0]}}]}
+        },
+        "expected": {
+          "master_result": {
+            "final_index": 83.4,
+            "category_scores": {"Environmental Quality": 70.0, "Nature": 100.0, "Play": 100.0, "Safety & Mobility": 92.5, "Family Services": 64.99999999999999},
+            "subcategory_scores": {
+              "Environmental Quality": {"shade": 100.0, "summer_si": 0.4, "trees": 50.0, "roads": 50.0},
+              "Nature": {"parks": 100.0, "urban_nature_areas": 100.0},
+              "Play": {"playgrounds": 100.0},
+              "Safety & Mobility": {"street_lights": 50.0, "bicycle_access": 100.0, "bus_stops": 100.0, "shelters": 100.0},
+              "Family Services": {"education": 50.0, "community": 100.0, "business": 0.0, "health": 100.0}
+            },
+            "subcategory_weights": {
+              "Environmental Quality": {"shade": 0.4, "trees": 0.2, "roads": 0.4},
+              "Nature": {"parks": 0.5, "urban_nature_areas": 0.5},
+              "Play": {"playgrounds": 1.0},
+              "Safety & Mobility": {"street_lights": 0.15, "bicycle_access": 0.15, "bus_stops": 0.3, "shelters": 0.4},
+              "Family Services": {"education": 0.3, "community": 0.2, "business": 0.2, "health": 0.3}
+            }
+          },
+          "published_columns": {
+            "summer_si": 0.4,
+            "score_weighted_5min": 83.4,
+            "score_weighted_environmental_quality_5min": 70.0,
+            "score_weighted_sub_environmental_quality_shade_5min": 100.0,
+            "score_weighted_sub_environmental_quality_trees_5min": 50.0,
+            "score_weighted_sub_environmental_quality_roads_5min": 50.0,
+            "score_weighted_nature_5min": 100.0,
+            "score_weighted_sub_nature_parks_5min": 100.0,
+            "score_weighted_sub_nature_urban_nature_areas_5min": 100.0,
+            "score_weighted_play_5min": 100.0,
+            "score_weighted_sub_play_playgrounds_5min": 100.0,
+            "score_weighted_safety_mobility_5min": 92.5,
+            "score_weighted_sub_safety_mobility_street_lights_5min": 50.0,
+            "score_weighted_sub_safety_mobility_bicycle_access_5min": 100.0,
+            "score_weighted_sub_safety_mobility_bus_stops_5min": 100.0,
+            "score_weighted_sub_safety_mobility_shelters_5min": 100.0,
+            "score_weighted_family_services_5min": 64.99999999999999,
+            "score_weighted_sub_family_services_education_5min": 50.0,
+            "score_weighted_sub_family_services_community_5min": 100.0,
+            "score_weighted_sub_family_services_business_5min": 0.0,
+            "score_weighted_sub_family_services_health_5min": 100.0,
+            "score_weighted_10min": 83.4,
+            "score_weighted_environmental_quality_10min": 70.0,
+            "score_weighted_sub_environmental_quality_shade_10min": 100.0,
+            "score_weighted_sub_environmental_quality_trees_10min": 50.0,
+            "score_weighted_sub_environmental_quality_roads_10min": 50.0,
+            "score_weighted_nature_10min": 100.0,
+            "score_weighted_sub_nature_parks_10min": 100.0,
+            "score_weighted_sub_nature_urban_nature_areas_10min": 100.0,
+            "score_weighted_play_10min": 100.0,
+            "score_weighted_sub_play_playgrounds_10min": 100.0,
+            "score_weighted_safety_mobility_10min": 92.5,
+            "score_weighted_sub_safety_mobility_street_lights_10min": 50.0,
+            "score_weighted_sub_safety_mobility_bicycle_access_10min": 100.0,
+            "score_weighted_sub_safety_mobility_bus_stops_10min": 100.0,
+            "score_weighted_sub_safety_mobility_shelters_10min": 100.0,
+            "score_weighted_family_services_10min": 64.99999999999999,
+            "score_weighted_sub_family_services_education_10min": 50.0,
+            "score_weighted_sub_family_services_community_10min": 100.0,
+            "score_weighted_sub_family_services_business_10min": 0.0,
+            "score_weighted_sub_family_services_health_10min": 100.0,
+            "score_weighted_15min": 83.4,
+            "score_weighted_environmental_quality_15min": 70.0,
+            "score_weighted_sub_environmental_quality_shade_15min": 100.0,
+            "score_weighted_sub_environmental_quality_trees_15min": 50.0,
+            "score_weighted_sub_environmental_quality_roads_15min": 50.0,
+            "score_weighted_nature_15min": 100.0,
+            "score_weighted_sub_nature_parks_15min": 100.0,
+            "score_weighted_sub_nature_urban_nature_areas_15min": 100.0,
+            "score_weighted_play_15min": 100.0,
+            "score_weighted_sub_play_playgrounds_15min": 100.0,
+            "score_weighted_safety_mobility_15min": 92.5,
+            "score_weighted_sub_safety_mobility_street_lights_15min": 50.0,
+            "score_weighted_sub_safety_mobility_bicycle_access_15min": 100.0,
+            "score_weighted_sub_safety_mobility_bus_stops_15min": 100.0,
+            "score_weighted_sub_safety_mobility_shelters_15min": 100.0,
+            "score_weighted_family_services_15min": 64.99999999999999,
+            "score_weighted_sub_family_services_education_15min": 50.0,
+            "score_weighted_sub_family_services_community_15min": 100.0,
+            "score_weighted_sub_family_services_business_15min": 0.0,
+            "score_weighted_sub_family_services_health_15min": 100.0
+          }
+        }
+      },
+      {
+        "id": "complete_missing_layers_building",
+        "description": "Missing optional categories preserve zero defaults while the no-fast-road default keeps Environmental Quality roads at 100.",
+        "point": [0.0, 0.0], "precomputed_summer_si": null, "layers": {},
+        "expected": {
+          "master_result": {
+            "final_index": 8.0,
+            "category_scores": {"Environmental Quality": 40.0, "Nature": 0.0, "Play": 0.0, "Safety & Mobility": 0.0, "Family Services": 0.0},
+            "subcategory_scores": {
+              "Environmental Quality": {"shade": 0.0, "summer_si": 0.0, "trees": 0.0, "roads": 100.0},
+              "Nature": {"parks": 0.0, "urban_nature_areas": 0.0},
+              "Play": {"playgrounds": 0.0},
+              "Safety & Mobility": {"street_lights": 0.0, "bicycle_access": 0.0, "bus_stops": 0.0, "shelters": 0.0},
+              "Family Services": {"education": 0.0, "community": 0.0, "business": 0.0, "health": 0.0}
+            },
+            "subcategory_weights": {
+              "Environmental Quality": {"shade": 0.4, "trees": 0.2, "roads": 0.4},
+              "Nature": {"parks": 0.5, "urban_nature_areas": 0.5},
+              "Play": {"playgrounds": 1.0},
+              "Safety & Mobility": {"street_lights": 0.15, "bicycle_access": 0.15, "bus_stops": 0.3, "shelters": 0.4},
+              "Family Services": {"education": 0.3, "community": 0.2, "business": 0.2, "health": 0.3}
+            }
+          },
+          "published_columns": {
+            "summer_si": 0.0,
+            "score_weighted_5min": 8.0,
+            "score_weighted_environmental_quality_5min": 40.0,
+            "score_weighted_sub_environmental_quality_shade_5min": 0.0,
+            "score_weighted_sub_environmental_quality_trees_5min": 0.0,
+            "score_weighted_sub_environmental_quality_roads_5min": 100.0,
+            "score_weighted_nature_5min": 0.0,
+            "score_weighted_sub_nature_parks_5min": 0.0,
+            "score_weighted_sub_nature_urban_nature_areas_5min": 0.0,
+            "score_weighted_play_5min": 0.0,
+            "score_weighted_sub_play_playgrounds_5min": 0.0,
+            "score_weighted_safety_mobility_5min": 0.0,
+            "score_weighted_sub_safety_mobility_street_lights_5min": 0.0,
+            "score_weighted_sub_safety_mobility_bicycle_access_5min": 0.0,
+            "score_weighted_sub_safety_mobility_bus_stops_5min": 0.0,
+            "score_weighted_sub_safety_mobility_shelters_5min": 0.0,
+            "score_weighted_family_services_5min": 0.0,
+            "score_weighted_sub_family_services_education_5min": 0.0,
+            "score_weighted_sub_family_services_community_5min": 0.0,
+            "score_weighted_sub_family_services_business_5min": 0.0,
+            "score_weighted_sub_family_services_health_5min": 0.0,
+            "score_weighted_10min": 8.0,
+            "score_weighted_environmental_quality_10min": 40.0,
+            "score_weighted_sub_environmental_quality_shade_10min": 0.0,
+            "score_weighted_sub_environmental_quality_trees_10min": 0.0,
+            "score_weighted_sub_environmental_quality_roads_10min": 100.0,
+            "score_weighted_nature_10min": 0.0,
+            "score_weighted_sub_nature_parks_10min": 0.0,
+            "score_weighted_sub_nature_urban_nature_areas_10min": 0.0,
+            "score_weighted_play_10min": 0.0,
+            "score_weighted_sub_play_playgrounds_10min": 0.0,
+            "score_weighted_safety_mobility_10min": 0.0,
+            "score_weighted_sub_safety_mobility_street_lights_10min": 0.0,
+            "score_weighted_sub_safety_mobility_bicycle_access_10min": 0.0,
+            "score_weighted_sub_safety_mobility_bus_stops_10min": 0.0,
+            "score_weighted_sub_safety_mobility_shelters_10min": 0.0,
+            "score_weighted_family_services_10min": 0.0,
+            "score_weighted_sub_family_services_education_10min": 0.0,
+            "score_weighted_sub_family_services_community_10min": 0.0,
+            "score_weighted_sub_family_services_business_10min": 0.0,
+            "score_weighted_sub_family_services_health_10min": 0.0,
+            "score_weighted_15min": 8.0,
+            "score_weighted_environmental_quality_15min": 40.0,
+            "score_weighted_sub_environmental_quality_shade_15min": 0.0,
+            "score_weighted_sub_environmental_quality_trees_15min": 0.0,
+            "score_weighted_sub_environmental_quality_roads_15min": 100.0,
+            "score_weighted_nature_15min": 0.0,
+            "score_weighted_sub_nature_parks_15min": 0.0,
+            "score_weighted_sub_nature_urban_nature_areas_15min": 0.0,
+            "score_weighted_play_15min": 0.0,
+            "score_weighted_sub_play_playgrounds_15min": 0.0,
+            "score_weighted_safety_mobility_15min": 0.0,
+            "score_weighted_sub_safety_mobility_street_lights_15min": 0.0,
+            "score_weighted_sub_safety_mobility_bicycle_access_15min": 0.0,
+            "score_weighted_sub_safety_mobility_bus_stops_15min": 0.0,
+            "score_weighted_sub_safety_mobility_shelters_15min": 0.0,
+            "score_weighted_family_services_15min": 0.0,
+            "score_weighted_sub_family_services_education_15min": 0.0,
+            "score_weighted_sub_family_services_community_15min": 0.0,
+            "score_weighted_sub_family_services_business_15min": 0.0,
+            "score_weighted_sub_family_services_health_15min": 0.0
+          }
+        }
+      }
+    ],
+    "invalid_inputs": [
+      {
+        "id": "master_index_nonnumeric_x_exception",
+        "description": "Nonnumeric coordinates are not silently sanitized by the scalar master function.",
+        "x_coord": "not-a-number", "y_coord": 0.0,
+        "expected": {"exception_type": "ValueError", "message_regex": "could not convert string to float"}
+      },
+      {
+        "id": "master_index_null_x_exception",
+        "description": "Null coordinates preserve the scalar Point-construction TypeError.",
+        "x_coord": null, "y_coord": 0.0,
+        "expected": {"exception_type": "TypeError", "message_regex": "float\\(\\) argument.*NoneType"}
+      }
+    ]
+  }
+}

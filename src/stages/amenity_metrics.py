@@ -1,23 +1,24 @@
-"""Per-building amenity accessibility metrics from isochrones (no network).
-
-Approach (vectorized):
-1. One isochrone GDF with ``building_id``, ``minutes`` (metric CRS).
-2. For each layer, **one** ``sjoin`` against all minutes, then
-   ``groupby(["building_id", "minutes"])``.
-3. Sequential layer joins (simplest/safest for correctness).
-"""
+"""Per-building amenity accessibility metrics from isochrones (no network)."""
 from __future__ import annotations
 
 import logging
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 
 from core.geo_io import CRS_METRIC, WALK_MINUTES, write_scored_buildings
 from core.paths import SCORED_BUILDINGS, strip_building_metric_columns
-from lib.amenity_layers import load_amenity_layers, normalize_clean_amenity_key, prepare_legacy_amenities
+from lib.amenity_layers import (
+    PreparedAmenityLayers,
+    load_amenity_layers,
+    normalize_clean_amenity_key,
+    prepare_amenity_layers,
+    prepare_legacy_amenities,
+)
 from lib.buildings_prep import load_raw_buildings
+from lib.spatial_pairs import count_pairs_by_group, iter_query_pairs
 from stages.isochrones import get_building_isochrones
 
 CLEAN_WEIGHTS = {
@@ -40,8 +41,7 @@ def _clean_pts_column_stem(weight_key: str) -> str:
 
 def _init_clean_pts_columns(buildings: gpd.GeoDataFrame, suffix: str) -> None:
     for wk in CLEAN_WEIGHTS:
-        stem = _clean_pts_column_stem(wk)
-        buildings[f"clean_pts_{stem}{suffix}"] = 0.0
+        buildings[f"clean_pts_{_clean_pts_column_stem(wk)}{suffix}"] = 0.0
 
 
 def _isochrones_dict_to_gdf(
@@ -68,148 +68,142 @@ def _normalize_iso_metric(
     if iso.crs is None:
         iso = iso.set_crs(epsg=4326)
     iso = iso.to_crs(epsg=crs_metric)
-    return iso[["building_id", "minutes", "geometry"]].copy()
+    iso = iso[["building_id", "minutes", "geometry"]].copy()
+    return iso.drop_duplicates(
+        ["building_id", "minutes"], keep="last"
+    ).reset_index(drop=True)
 
 
-def _sjoin_size_by_building_minutes(
-    features: gpd.GeoDataFrame | None,
-    iso_gdf: gpd.GeoDataFrame,
+def _categorical_codes(values: pd.Series) -> tuple[np.ndarray, tuple[str, ...]]:
+    categorical = pd.Categorical(values)
+    categories = tuple(str(value) for value in categorical.categories)
+    return np.asarray(categorical.codes, dtype=np.int32), categories
+
+
+def _query_layer_counts(
+    query_geometries: gpd.GeoSeries,
+    source: gpd.GeoDataFrame | None,
     *,
     predicate: str,
-) -> pd.Series:
-    """One sjoin → groupby([building_id, minutes]).size()."""
-    if features is None or len(features) == 0 or len(iso_gdf) == 0:
-        return pd.Series(dtype="int64")
-    right = iso_gdf.set_geometry("geometry")[["building_id", "minutes", "geometry"]]
-    joined = gpd.sjoin(
-        features.set_geometry("geometry"),
-        right,
+    source_group_codes: np.ndarray,
+    group_count: int,
+    chunk_size: int = 2048,
+) -> np.ndarray:
+    query_count = len(query_geometries)
+    if source is None or len(source) == 0 or query_count == 0 or group_count == 0:
+        return np.zeros((query_count, group_count), dtype=np.uint8)
+
+    counts = np.zeros((query_count, group_count), dtype=np.uint64)
+    for query_positions, source_positions in iter_query_pairs(
+        query_geometries,
+        source.geometry,
         predicate=predicate,
-        how="inner",
-    )
-    if len(joined) == 0:
-        return pd.Series(dtype="int64")
-    return joined.groupby(["building_id", "minutes"]).size()
+        chunk_size=chunk_size,
+    ):
+        counts += count_pairs_by_group(
+            query_positions,
+            source_positions,
+            source_group_codes,
+            query_count,
+            group_count,
+        )
+    return counts
 
 
-def _sjoin_legacy_typed(
-    amenities_legacy: gpd.GeoDataFrame,
+def _aggregate_by_building_and_minute(
     iso_gdf: gpd.GeoDataFrame,
-) -> pd.DataFrame:
-    """One sjoin → rows of building_id, minutes, amenity_type, count."""
-    empty = pd.DataFrame(columns=["building_id", "minutes", "amenity_type", "count"])
-    if len(amenities_legacy) == 0 or len(iso_gdf) == 0:
-        return empty
-    if "amenity_type" not in amenities_legacy.columns:
-        return empty
-    right = iso_gdf.set_geometry("geometry")[["building_id", "minutes", "geometry"]]
-    joined = gpd.sjoin(
-        amenities_legacy.set_geometry("geometry"),
-        right,
-        predicate="within",
-        how="inner",
-    )
-    if len(joined) == 0:
-        return empty
-    return (
-        joined.groupby(["building_id", "minutes", "amenity_type"])
-        .size()
-        .reset_index(name="count")
-    )
+    row_counts: np.ndarray,
+    building_ids: np.ndarray,
+) -> dict[int, np.ndarray]:
+    """Reduce isochrone-row matrices to output-building rows for each minute."""
+    result = {
+        int(minutes): np.zeros((len(building_ids), row_counts.shape[1]), dtype=np.int64)
+        for minutes in WALK_MINUTES
+    }
+    if len(iso_gdf) == 0 or row_counts.shape[0] == 0:
+        return result
+
+    output_positions = pd.Index(building_ids).get_indexer(iso_gdf["building_id"])
+    minutes = iso_gdf["minutes"].astype(int).to_numpy()
+    for walk_minutes in WALK_MINUTES:
+        selected = np.flatnonzero(minutes == int(walk_minutes))
+        if selected.size == 0:
+            continue
+        selected_output = output_positions[selected]
+        valid = selected_output >= 0
+        if valid.any():
+            np.add.at(result[int(walk_minutes)], selected_output[valid], row_counts[selected[valid]])
+    return result
 
 
-def _sjoin_clean_typed(
-    amenities_clean: gpd.GeoDataFrame,
+def _aggregate_simple_counts(
     iso_gdf: gpd.GeoDataFrame,
-) -> pd.DataFrame:
-    """One sjoin → rows of building_id, minutes, amenity_key, count."""
-    empty = pd.DataFrame(columns=["building_id", "minutes", "amenity_key", "count"])
-    if len(amenities_clean) == 0 or "amenity_type" not in amenities_clean.columns:
-        return empty
-    if len(iso_gdf) == 0:
-        return empty
-    right = iso_gdf.set_geometry("geometry")[["building_id", "minutes", "geometry"]]
-    joined = gpd.sjoin(
-        amenities_clean.set_geometry("geometry"),
-        right,
-        predicate="within",
-        how="inner",
-    )
-    if len(joined) == 0:
-        return empty
-    joined = joined.copy()
-    joined["amenity_key"] = joined["amenity_type"].map(normalize_clean_amenity_key)
-    return (
-        joined.groupby(["building_id", "minutes", "amenity_key"])
-        .size()
-        .reset_index(name="count")
-    )
+    row_counts: np.ndarray,
+    building_ids: np.ndarray,
+) -> dict[int, np.ndarray]:
+    grouped = _aggregate_by_building_and_minute(iso_gdf, row_counts.reshape(-1, 1), building_ids)
+    return {minutes: values[:, 0] for minutes, values in grouped.items()}
 
 
-def _apply_simple_counts(
+def _source_codes_for_column(
+    source: gpd.GeoDataFrame | None,
+    column: str,
+    normalizer=None,
+) -> tuple[np.ndarray, tuple[str, ...]]:
+    if source is None or len(source) == 0 or column not in source.columns:
+        return np.array([], dtype=np.int32), ()
+    values = source[column]
+    if normalizer is not None:
+        values = values.map(normalizer)
+    return _categorical_codes(values)
+
+
+def _apply_layerwise_metrics(
     buildings: gpd.GeoDataFrame,
-    counts: pd.Series,
-    col_stem: str,
-) -> None:
-    """Map (building_id, minutes) counts onto num_*_{minutes}min columns."""
-    for minutes in WALK_MINUTES:
-        suffix = f"_{minutes}min"
-        col = f"{col_stem}{suffix}"
-        if counts.empty:
-            buildings[col] = 0
-            continue
-        level_names = list(counts.index.names)
-        if "minutes" in level_names:
-            try:
-                minute_counts = counts.xs(int(minutes), level="minutes")
-            except KeyError:
-                buildings[col] = 0
-                continue
-        else:
-            buildings[col] = 0
-            continue
-        buildings[col] = buildings["building_id"].map(minute_counts).fillna(0).astype(int)
-
-
-def _apply_legacy_and_scores(
-    buildings: gpd.GeoDataFrame,
+    iso_gdf: gpd.GeoDataFrame,
     *,
-    legacy_typed: pd.DataFrame,
-    tree_counts: pd.Series,
-    light_counts: pd.Series,
-    park_counts: pd.Series,
-    clean_typed: pd.DataFrame,
+    legacy_counts: np.ndarray,
+    legacy_categories: tuple[str, ...],
+    tree_counts: dict[int, np.ndarray],
+    light_counts: dict[int, np.ndarray],
+    park_counts: dict[int, np.ndarray],
+    clean_counts: np.ndarray,
+    clean_categories: tuple[str, ...],
 ) -> gpd.GeoDataFrame:
-    """Merge layer pivots onto buildings and compute expanded/clean scores (main thread)."""
     out = buildings
+    building_ids = out["building_id"].to_numpy()
+    legacy_by_minute = _aggregate_by_building_and_minute(iso_gdf, legacy_counts, building_ids)
+    clean_by_minute = _aggregate_by_building_and_minute(iso_gdf, clean_counts, building_ids)
 
+    # Keep the legacy output order: amenity columns and their totals for all
+    # walk bands, followed by simple layer counts for all bands.
     for minutes in WALK_MINUTES:
         suffix = f"_{minutes}min"
-        if not legacy_typed.empty:
-            sub = legacy_typed[legacy_typed["minutes"].astype(int) == int(minutes)]
-            if len(sub) > 0:
-                pivot = (
-                    sub.groupby(["building_id", "amenity_type"])["count"]
-                    .sum()
-                    .reset_index()
-                    .pivot(index="building_id", columns="amenity_type", values="count")
-                    .fillna(0)
-                )
-                pivot.columns = [
-                    f"amen_{str(c).replace(' ', '_')}{suffix}" for c in pivot.columns
-                ]
-                pivot = pivot.reset_index()
-                out = out.merge(pivot, on="building_id", how="left")
+        row_mask = iso_gdf["minutes"].astype(int).to_numpy() == int(minutes)
+        for category_index, category in enumerate(legacy_categories):
+            if not row_mask.any() or legacy_counts[row_mask, category_index].sum() <= 0:
+                continue
+            column = f"amen_{str(category).replace(' ', '_')}{suffix}"
+            out[column] = legacy_by_minute[int(minutes)][:, category_index].astype(int)
 
-        metric_cols = [c for c in out.columns if c.startswith("amen_") and c.endswith(suffix)]
-        for col in metric_cols:
-            out[col] = out[col].fillna(0).astype(int)
+        metric_cols = [
+            column
+            for column in out.columns
+            if column.startswith("amen_") and column.endswith(suffix)
+        ]
+        for column in metric_cols:
+            out[column] = out[column].fillna(0).astype(int)
         out[f"num_amenities{suffix}"] = (
             out[metric_cols].sum(axis=1).astype(int) if metric_cols else 0
         )
 
-    _apply_simple_counts(out, tree_counts, "num_trees")
-    _apply_simple_counts(out, light_counts, "num_street_lights")
+    for minutes in WALK_MINUTES:
+        suffix = f"_{minutes}min"
+        out[f"num_trees{suffix}"] = tree_counts[int(minutes)].astype(int)
+
+    for minutes in WALK_MINUTES:
+        suffix = f"_{minutes}min"
+        out[f"num_street_lights{suffix}"] = light_counts[int(minutes)].astype(int)
 
     for minutes in WALK_MINUTES:
         suffix = f"_{minutes}min"
@@ -219,56 +213,36 @@ def _apply_legacy_and_scores(
             + out[f"num_street_lights{suffix}"].astype(float) * 0.25
         )
 
-        bids = [int(b) for b in out["building_id"].unique()]
-        clean_detail = {k: {bid: 0.0 for bid in bids} for k in CLEAN_WEIGHTS}
-
-        nt = out.set_index("building_id")[f"num_trees{suffix}"]
-        for bid, n in nt.items():
-            clean_detail["trees"][int(bid)] += CLEAN_WEIGHTS["trees"] * float(n)
-
-        if not park_counts.empty:
-            try:
-                pc = park_counts.xs(int(minutes), level="minutes")
-            except KeyError:
-                pc = pd.Series(dtype="int64")
-            for bid, count in pc.items():
-                clean_detail["parks"][int(bid)] += CLEAN_WEIGHTS["parks"] * float(count)
-
-        if not clean_typed.empty:
-            sub = clean_typed[clean_typed["minutes"].astype(int) == int(minutes)]
-            for _, row in sub.iterrows():
-                ak = row["amenity_key"]
-                if not ak or ak not in CLEAN_WEIGHTS:
-                    continue
-                weight = CLEAN_WEIGHTS[ak]
-                if weight <= 0:
-                    continue
-                clean_detail[ak][int(row["building_id"])] += weight * float(row["count"])
-
-        for wk in CLEAN_WEIGHTS:
-            stem = _clean_pts_column_stem(wk)
-            col = f"clean_pts_{stem}{suffix}"
-            out[col] = (
-                out["building_id"]
-                .map(lambda b, key=wk: clean_detail[key].get(int(b), 0.0))
-                .astype(float)
-            )
-
-        clean_scores = {bid: sum(clean_detail[k][bid] for k in CLEAN_WEIGHTS) for bid in bids}
-        out[f"score_clean{suffix}"] = (
-            out["building_id"].map(lambda b: clean_scores.get(int(b), 0.0)).astype(float)
+        clean_detail = np.zeros((len(out), len(CLEAN_WEIGHTS)), dtype=float)
+        clean_indices = {key: index for index, key in enumerate(clean_categories)}
+        for detail_index, key in enumerate(CLEAN_WEIGHTS):
+            if key in clean_indices:
+                clean_detail[:, detail_index] += (
+                    clean_by_minute[int(minutes)][:, clean_indices[key]] * CLEAN_WEIGHTS[key]
+                )
+        clean_detail[:, list(CLEAN_WEIGHTS).index("trees")] += (
+            tree_counts[int(minutes)] * CLEAN_WEIGHTS["trees"]
+        )
+        clean_detail[:, list(CLEAN_WEIGHTS).index("parks")] += (
+            park_counts[int(minutes)] * CLEAN_WEIGHTS["parks"]
+        )
+        # Raw street lights are kept in their own layer and added to any
+        # native clean-manifest street-lights count here.
+        clean_detail[:, list(CLEAN_WEIGHTS).index("street-lights")] += (
+            light_counts[int(minutes)] * CLEAN_WEIGHTS["street-lights"]
         )
 
-        sum_cols = [f"clean_pts_{_clean_pts_column_stem(wk)}{suffix}" for wk in CLEAN_WEIGHTS]
-        pts_sum = out[sum_cols].sum(axis=1)
-        max_diff = (out[f"score_clean{suffix}"] - pts_sum).abs().max()
+        for detail_index, key in enumerate(CLEAN_WEIGHTS):
+            out[f"clean_pts_{_clean_pts_column_stem(key)}{suffix}"] = clean_detail[:, detail_index]
+        out[f"score_clean{suffix}"] = clean_detail.sum(axis=1)
+        sum_cols = [f"clean_pts_{_clean_pts_column_stem(key)}{suffix}" for key in CLEAN_WEIGHTS]
+        max_diff = (out[f"score_clean{suffix}"] - out[sum_cols].sum(axis=1)).abs().max()
         if max_diff > 1e-3:
             logging.warning(
                 "clean_pts columns sum differs from score_clean (max abs diff=%s) for %smin.",
                 max_diff,
                 minutes,
             )
-
     return out
 
 
@@ -283,10 +257,9 @@ def compute_amenity_metrics(
     amenities_clean: gpd.GeoDataFrame,
     crs_metric: int = CRS_METRIC,
 ) -> gpd.GeoDataFrame:
-    """Pure join path: one sjoin per layer against all minutes, then groupby + merge."""
+    """Compute amenity metrics through separate layer-wise pair matrices."""
     out = buildings.copy()
     iso_gdf = _normalize_iso_metric(isochrones, crs_metric)
-
     if len(iso_gdf) == 0:
         for minutes in WALK_MINUTES:
             suffix = f"_{minutes}min"
@@ -298,21 +271,60 @@ def compute_amenity_metrics(
             _init_clean_pts_columns(out, suffix)
         return out
 
-    legacy_typed = _sjoin_legacy_typed(amenities_legacy, iso_gdf)
-    tree_counts = _sjoin_size_by_building_minutes(trees, iso_gdf, predicate="within")
-    light_counts = _sjoin_size_by_building_minutes(
-        street_lights, iso_gdf, predicate="within"
+    legacy_codes, legacy_categories = _source_codes_for_column(amenities_legacy, "amenity_type")
+    clean_codes, clean_categories = _source_codes_for_column(
+        amenities_clean, "amenity_type", normalize_clean_amenity_key
     )
-    park_counts = _sjoin_size_by_building_minutes(parks, iso_gdf, predicate="intersects")
-    clean_typed = _sjoin_clean_typed(amenities_clean, iso_gdf)
+    legacy_counts = _query_layer_counts(
+        iso_gdf.geometry,
+        amenities_legacy,
+        predicate="contains",
+        source_group_codes=legacy_codes,
+        group_count=len(legacy_categories),
+    )
+    clean_counts = _query_layer_counts(
+        iso_gdf.geometry,
+        amenities_clean,
+        predicate="contains",
+        source_group_codes=clean_codes,
+        group_count=len(clean_categories),
+    )
 
-    return _apply_legacy_and_scores(
+    tree_codes = np.zeros(len(trees) if trees is not None else 0, dtype=np.int8)
+    light_codes = np.zeros(len(street_lights) if street_lights is not None else 0, dtype=np.int8)
+    park_codes = np.zeros(len(parks) if parks is not None else 0, dtype=np.int8)
+    tree_row_counts = _query_layer_counts(
+        iso_gdf.geometry,
+        trees,
+        predicate="contains",
+        source_group_codes=tree_codes,
+        group_count=1,
+    )
+    light_row_counts = _query_layer_counts(
+        iso_gdf.geometry,
+        street_lights,
+        predicate="contains",
+        source_group_codes=light_codes,
+        group_count=1,
+    )
+    park_row_counts = _query_layer_counts(
+        iso_gdf.geometry,
+        parks,
+        predicate="intersects",
+        source_group_codes=park_codes,
+        group_count=1,
+    )
+    building_ids = out["building_id"].to_numpy()
+    return _apply_layerwise_metrics(
         out,
-        legacy_typed=legacy_typed,
-        tree_counts=tree_counts,
-        light_counts=light_counts,
-        park_counts=park_counts,
-        clean_typed=clean_typed,
+        iso_gdf,
+        legacy_counts=legacy_counts,
+        legacy_categories=legacy_categories,
+        tree_counts=_aggregate_simple_counts(iso_gdf, tree_row_counts, building_ids),
+        light_counts=_aggregate_simple_counts(iso_gdf, light_row_counts, building_ids),
+        park_counts=_aggregate_simple_counts(iso_gdf, park_row_counts, building_ids),
+        clean_counts=clean_counts,
+        clean_categories=clean_categories,
     )
 
 
@@ -320,15 +332,22 @@ def run_amenity_metrics(
     buildings: gpd.GeoDataFrame,
     *,
     isochrones: gpd.GeoDataFrame | dict[int, dict[int, object]] | None = None,
+    prepared_layers: PreparedAmenityLayers | None = None,
 ) -> gpd.GeoDataFrame:
-    """Strip metric cols, join amenities via isochrones, return buildings with amenity metrics (no network)."""
+    """Strip metric cols, join amenities via isochrones, return buildings with amenity metrics."""
     crs_metric = CRS_METRIC
     buildings = strip_building_metric_columns(buildings.copy())
-
-    amenities_legacy, amenities_clean, trees_gdf, parks_gdf, street_lights_gdf, merged_path = (
-        load_amenity_layers(crs_metric)
-    )
-    amenities_legacy, _ = prepare_legacy_amenities(amenities_legacy, merged_path, crs_metric)
+    if prepared_layers is None:
+        amenities_legacy, amenities_clean, trees_gdf, parks_gdf, street_lights_gdf, merged_path = (
+            load_amenity_layers(crs_metric)
+        )
+        amenities_legacy, _ = prepare_legacy_amenities(amenities_legacy, merged_path, crs_metric)
+    else:
+        amenities_legacy = prepared_layers.amenities_legacy
+        amenities_clean = prepared_layers.amenities_clean
+        trees_gdf = prepared_layers.trees
+        parks_gdf = prepared_layers.parks
+        street_lights_gdf = prepared_layers.street_lights
 
     if isochrones is None:
         iso_gdf = _isochrones_dict_to_gdf(get_building_isochrones(buildings))
@@ -354,15 +373,16 @@ def run_amenity_metrics_stage(
     buildings: gpd.GeoDataFrame | None = None,
     isochrones: gpd.GeoDataFrame | dict[int, dict[int, object]] | None = None,
     write_output: bool = True,
+    prepared_layers: PreparedAmenityLayers | None = None,
 ) -> gpd.GeoDataFrame:
-    """If isochrones is provided, do NOT call get_building_isochrones / disk reload.
-    GeoDataFrame form: columns building_id, minutes, geometry (any CRS; reproject inside).
-    dict form: same as get_building_isochrones return value.
-    """
+    """Run amenity metrics and optionally write the scored-building artifact."""
     if buildings is None:
         buildings = load_raw_buildings()
-
-    buildings = run_amenity_metrics(buildings, isochrones=isochrones)
+    buildings = run_amenity_metrics(
+        buildings,
+        isochrones=isochrones,
+        prepared_layers=prepared_layers,
+    )
     if write_output:
         write_scored_buildings(buildings, SCORED_BUILDINGS)
     return buildings

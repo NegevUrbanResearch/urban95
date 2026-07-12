@@ -7,16 +7,16 @@ from pathlib import Path
 import geopandas as gpd
 
 from core.geo_io import CRS_METRIC, load_scored_buildings, repair_dataframe_encoding
+from core.atomic_files import commit_staged_files, staged_output_paths
 from core.geojson_utils import (
     export_buildings_web_layer,
-    reduce_coordinate_precision,
     simplify_geometries,
-    write_gzip_copy,
+    _write_minimal_geojson_stream,
     write_minimal_geojson,
 )
 from core.paths import DOCS_DATA_DIR, SCORED_BUILDINGS, layer
 from lib.amenity_layers import load_amenity_layers, prepare_legacy_amenities
-from lib.buildings_lookup import build_buildings_lookup
+from lib.buildings_lookup import BuildingLookupCollector
 from lib.buildings_prep import BUILDING_DROP_COLUMNS, BUILDING_SIMPLIFY_TOLERANCE_M, PARK_SIMPLIFY_TOLERANCE_M
 from stages.isochrones import get_building_isochrones
 
@@ -56,7 +56,13 @@ def assert_buildings_have_scores(buildings: gpd.GeoDataFrame) -> None:
         )
 
 
-def _sync_raw_layer_to_docs(raw_layer_id: str, docs_path: Path, *, precision: int = 5) -> None:
+def _sync_raw_layer_to_docs(
+    raw_layer_id: str,
+    docs_path: Path,
+    *,
+    precision: int = 5,
+    gzip_companion: bool = False,
+) -> None:
     raw_path = layer(raw_layer_id).path
     if not raw_path.is_file():
         logging.info("Skipping docs sync for %s (raw layer missing)", raw_layer_id)
@@ -66,7 +72,16 @@ def _sync_raw_layer_to_docs(raw_layer_id: str, docs_path: Path, *, precision: in
         gdf = gdf.set_crs(epsg=4326)
     gdf = repair_dataframe_encoding(gdf)
     gdf = gdf.to_crs(epsg=4326)
-    write_minimal_geojson(gdf, docs_path, precision=precision)
+    write_minimal_geojson(
+        gdf,
+        docs_path,
+        precision=precision,
+        gzip_path=(
+            docs_path.with_name(f"{docs_path.name}.gz")
+            if gzip_companion
+            else None
+        ),
+    )
     logging.info("Synced %s -> %s (%d features)", raw_path.name, docs_path.name, len(gdf))
 
 
@@ -88,7 +103,6 @@ def _isochrones_web_gdf(buildings: gpd.GeoDataFrame, isochrones_gdf: gpd.GeoData
         iso_export = isochrones_gdf.copy()
         if iso_export.crs is None:
             iso_export = iso_export.set_crs(epsg=4326)
-        iso_export = iso_export.to_crs(epsg=4326)
     else:
         all_isochrones = get_building_isochrones(buildings)
         iso_features = []
@@ -107,9 +121,12 @@ def _isochrones_web_gdf(buildings: gpd.GeoDataFrame, isochrones_gdf: gpd.GeoData
             return None
         iso_export = gpd.GeoDataFrame(iso_features, crs="EPSG:4326")
 
-    iso_export = simplify_geometries(iso_export, ISOCHRONE_SIMPLIFY_TOLERANCE_M)
-    iso_export = reduce_coordinate_precision(iso_export, precision=4)
-    return iso_export
+    if iso_export.crs.to_epsg() == CRS_METRIC:
+        iso_metric = iso_export
+    else:
+        iso_metric = iso_export.to_crs(epsg=CRS_METRIC)
+    iso_metric = simplify_geometries(iso_metric, ISOCHRONE_SIMPLIFY_TOLERANCE_M)
+    return iso_metric.to_crs(epsg=4326)
 
 
 def _resolve_amenities_legacy(
@@ -156,9 +173,7 @@ def export_web(
     parks_gdf: gpd.GeoDataFrame | None = None,
     amenities_legacy_gdf: gpd.GeoDataFrame | None = None,
 ) -> None:
-    """Write docs/data buildings (+gz), amenities_all, trees, parks, isochrones as today;
-    sync raw amenities_clean -> amenities_new.geojson and street_lights;
-    always build_buildings_lookup -> buildings_lookup.json (+ gz)."""
+    """Write web layers and stream the compact buildings lookup with its gzip."""
     if buildings is None:
         if not SCORED_BUILDINGS.is_file():
             raise FileNotFoundError(f"SCORED_BUILDINGS not found: {SCORED_BUILDINGS}")
@@ -171,18 +186,19 @@ def export_web(
 
     logging.info("Syncing raw amenity manifest layers to docs/data...")
     _sync_raw_layer_to_docs("amenities_clean", AMENITIES_NEW_PATH)
-    _sync_raw_layer_to_docs("street_lights", STREET_LIGHTS_PATH)
+    _sync_raw_layer_to_docs(
+        "street_lights", STREET_LIGHTS_PATH, gzip_companion=True
+    )
 
-    buildings_wgs84 = buildings.to_crs(epsg=4326)
     out_path = layer("publish_buildings").path
 
     logging.info(
         "Simplifying building geometries (tolerance: %.1fm)...",
         BUILDING_SIMPLIFY_TOLERANCE_M,
     )
-    cols_to_drop = [c for c in BUILDING_DROP_COLUMNS if c in buildings_wgs84.columns]
+    cols_to_drop = [c for c in BUILDING_DROP_COLUMNS if c in buildings.columns]
     buildings_web = export_buildings_web_layer(
-        buildings_wgs84,
+        buildings,
         out_path,
         simplify_tolerance_m=BUILDING_SIMPLIFY_TOLERANCE_M,
         drop_columns=BUILDING_DROP_COLUMNS,
@@ -197,27 +213,59 @@ def export_web(
             buildings_web = buildings_web.drop(columns=[col])
             logging.info("Dropped zero-sum column: %s", col)
 
-    write_minimal_geojson(buildings_web, out_path, precision=5)
+    lookup_path = layer("publish_buildings_lookup").path
+    buildings_gzip_path = out_path.with_name(f"{out_path.name}.gz")
+    lookup_gzip_path = lookup_path.with_name(f"{lookup_path.name}.gz")
+    with staged_output_paths(
+        (out_path, buildings_gzip_path, lookup_path, lookup_gzip_path)
+    ) as staged:
+        staged_buildings, staged_buildings_gzip, staged_lookup, staged_lookup_gzip = staged
+        building_lookup_collector = BuildingLookupCollector(
+            lookup_path,
+            input_path=out_path,
+            physical_output_path=staged_lookup,
+            physical_gzip_path=staged_lookup_gzip,
+            commit_on_exit=False,
+        )
+        with building_lookup_collector:
+            _write_minimal_geojson_stream(
+                buildings_web,
+                staged_buildings,
+                precision=5,
+                gzip_path=staged_buildings_gzip,
+                canonical_gzip_path=buildings_gzip_path,
+                feature_observer=building_lookup_collector,
+            )
+        lookup_result = building_lookup_collector.result
+        if not isinstance(lookup_result, dict) or lookup_result.get("status") != "built":
+            raise RuntimeError(
+                "Buildings lookup regeneration failed: "
+                f"{lookup_result.get('note', lookup_result.get('status')) if isinstance(lookup_result, dict) else lookup_result}"
+            )
+        records = lookup_result.get("records")
+        byte_count = lookup_result.get("bytes")
+        if not isinstance(records, int) or records < 0 or not isinstance(byte_count, int) or byte_count < 0:
+            raise RuntimeError("Buildings lookup regeneration returned an invalid manifest")
+        commit_staged_files(
+            (
+                (staged_buildings, out_path),
+                (staged_buildings_gzip, buildings_gzip_path),
+                (staged_lookup, lookup_path),
+                (staged_lookup_gzip, lookup_gzip_path),
+            )
+        )
     raw_size = out_path.stat().st_size
     logging.info("Buildings: %.1fMB (%d features)", raw_size / 1e6, len(buildings_web))
-
-    gz_path = write_gzip_copy(out_path)
-    if gz_path is not None:
-        gz_size = gz_path.stat().st_size
-        ratio = (gz_size / raw_size * 100.0) if raw_size else 0.0
-        logging.info(
-            "Compressed %s -> %s (%.1fMB -> %.1fMB, %.1f%%)",
-            out_path.name,
-            gz_path.name,
-            raw_size / 1e6,
-            gz_size / 1e6,
-            ratio,
-        )
 
     amenities_legacy = _resolve_amenities_legacy(amenities_legacy_gdf)
     amenities_filtered = _prepare_amenities_all(amenities_legacy)
     amenities_all_path = DOCS_DATA_DIR / "amenities_all.geojson"
-    write_minimal_geojson(amenities_filtered, amenities_all_path, precision=5)
+    write_minimal_geojson(
+        amenities_filtered,
+        amenities_all_path,
+        precision=5,
+        gzip_path=amenities_all_path.with_name(f"{amenities_all_path.name}.gz"),
+    )
     if len(amenities_filtered):
         logging.info(
             "Amenities: %.1fMB (%d features)",
@@ -232,7 +280,12 @@ def export_web(
         trees_metric = trees_metric.set_geometry(trees_metric.geometry.centroid)
         trees_web = trees_metric.to_crs(epsg=4326)[TREE_KEEP_COLUMNS].copy()
         trees_path = DOCS_DATA_DIR / "trees.geojson"
-        write_minimal_geojson(trees_web, trees_path, precision=5)
+        write_minimal_geojson(
+            trees_web,
+            trees_path,
+            precision=5,
+            gzip_path=trees_path.with_name(f"{trees_path.name}.gz"),
+        )
         logging.info(
             "Trees: %.1fMB (%d features, geometry only)",
             trees_path.stat().st_size / 1e6,
@@ -241,7 +294,7 @@ def export_web(
 
     parks_metric = _resolve_parks(parks_gdf)
     if parks_metric is not None:
-        parks_web = simplify_geometries(parks_metric.to_crs(epsg=4326), PARK_SIMPLIFY_TOLERANCE_M)
+        parks_web = simplify_geometries(parks_metric, PARK_SIMPLIFY_TOLERANCE_M).to_crs(epsg=4326)
         parks_path = DOCS_DATA_DIR / "parks.geojson"
         write_minimal_geojson(parks_web, parks_path, precision=5)
         logging.info("Parks: %.1fMB (%d features)", parks_path.stat().st_size / 1e6, len(parks_web))
@@ -249,22 +302,19 @@ def export_web(
     logging.info("Building isochrone GeoJSON for web...")
     iso_export = _isochrones_web_gdf(buildings, isochrones_gdf)
     if iso_export is not None and len(iso_export):
-        write_minimal_geojson(iso_export, ISOCHRONES_WEB_PATH, precision=4)
+        write_minimal_geojson(
+            iso_export,
+            ISOCHRONES_WEB_PATH,
+            precision=4,
+            gzip_path=ISOCHRONES_WEB_PATH.with_name(f"{ISOCHRONES_WEB_PATH.name}.gz"),
+        )
         logging.info(
             "Isochrones: %.1fMB (%d features)",
             ISOCHRONES_WEB_PATH.stat().st_size / 1e6,
             len(iso_export),
         )
 
-    lookup_path = layer("publish_buildings_lookup").path
-    logging.info("Regenerating buildings lookup from %s...", out_path.name)
-    lookup_result = build_buildings_lookup(out_path, lookup_path)
-    if lookup_result.get("status") != "built":
-        raise RuntimeError(
-            f"Buildings lookup regeneration failed: "
-            f"{lookup_result.get('note', lookup_result.get('status'))}"
-        )
-    records = lookup_result.get("records") or lookup_result.get("extra_fields", {}).get("records")
+    logging.info("Regenerating buildings lookup from serialized %s features...", out_path.name)
     logging.info(
         "Wrote %s (%d records, %.1fKB)",
         lookup_path.name,

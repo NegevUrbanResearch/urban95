@@ -257,6 +257,16 @@ def _prepare_combined_si_layers(*si_layers: gpd.GeoDataFrame) -> gpd.GeoDataFram
     return sanitize_polygonal_finite_si_surfaces(combined_layers)
 
 
+def prepare_shade_overlay(*si_layers: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame:
+    """Prepare the combined metric shade surfaces once for layer-wise scoring.
+
+    The returned rows retain the source-layer and source-row traversal order used
+    by the scalar SI oracle, while dropping non-finite scores and non-area
+    geometries with the existing sanitizer.
+    """
+    return _prepare_combined_si_layers(*si_layers)
+
+
 def _area_weighted_si_against_prepared(
     points: gpd.GeoDataFrame,
     combined_layers: gpd.GeoDataFrame,

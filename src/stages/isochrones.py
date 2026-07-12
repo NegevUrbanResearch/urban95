@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from numbers import Real
 from pathlib import Path
 
 import geopandas as gpd
@@ -26,6 +28,64 @@ _DEFAULT_HIGH_WORKERS = max(16, min(64, (os.cpu_count() or 8) * 4))
 ISOCHRONE_FETCH_WORKERS = max(1, int(os.getenv("ISOCHRONE_FETCH_WORKERS", _DEFAULT_HIGH_WORKERS)))
 
 _thread_local = threading.local()
+_request_counter_lock = threading.Lock()
+mapbox_requests_attempted = 0
+
+
+def _reset_mapbox_request_counter() -> None:
+    global mapbox_requests_attempted
+    with _request_counter_lock:
+        mapbox_requests_attempted = 0
+
+
+def get_mapbox_requests_attempted() -> int:
+    """Return actual HTTP attempts; ``run_isochrones`` resets this per run."""
+    with _request_counter_lock:
+        return int(mapbox_requests_attempted)
+
+
+def _increment_mapbox_requests(count: int = 1) -> int:
+    global mapbox_requests_attempted
+    with _request_counter_lock:
+        mapbox_requests_attempted += int(count)
+        return int(mapbox_requests_attempted)
+
+
+def _abort_forbidden_mapbox_requests(required: int, *, terminal: bool = False) -> None:
+    """Abort a guarded run before token loading, session creation, or network I/O."""
+    required = int(required)
+    if os.getenv("PIPELINE_FORBID_MAPBOX") != "1" or (
+        required <= 0 and not terminal
+    ):
+        return
+    logging.error(
+        "Mapbox requests forbidden: mapbox_requests_required=%d "
+        "mapbox_requests_attempted=%d",
+        required,
+        get_mapbox_requests_attempted(),
+    )
+    raise RuntimeError("Mapbox requests forbidden by PIPELINE_FORBID_MAPBOX=1")
+
+
+def _cache_payload_valid_without_mutation(cache_file: Path) -> bool:
+    """Read-only cache validation used only by the acceptance guard."""
+    if not cache_file.is_file():
+        return False
+    try:
+        with open(cache_file, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and isinstance(data.get("features"), list)
+
+
+def _guarded_requests_required(cache_keys) -> int:
+    return sum(
+        not _cache_payload_valid_without_mutation(
+            ISOCHRONE_CACHE_DIR / f"{cache_key}.json"
+        )
+        for cache_key in cache_keys
+    )
 
 
 def _get_session() -> requests.Session:
@@ -56,8 +116,14 @@ def _load_valid_cached_isochrone_payload(cache_file: Path):
     try:
         with open(cache_file, encoding="utf-8") as handle:
             data = json.load(handle)
-    except Exception:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         logging.warning("Invalid JSON cache file, deleting: %s", cache_file.name)
+        cache_file.unlink(missing_ok=True)
+        return None
+    if not isinstance(data, dict):
+        logging.warning(
+            "Invalid isochrone cache payload, deleting: %s", cache_file.name
+        )
         cache_file.unlink(missing_ok=True)
         return None
     features = data.get("features")
@@ -102,9 +168,16 @@ def fetch_isochrones(lng: float, lat: float, token: str | None, minutes: list | 
     if minutes is None:
         minutes = WALK_MINUTES
 
-    ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    forbid_mapbox = os.getenv("PIPELINE_FORBID_MAPBOX") == "1"
+    if not forbid_mapbox:
+        ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_key = f"{lng:.5f}_{lat:.5f}"
     cache_file = ISOCHRONE_CACHE_DIR / f"{cache_key}.json"
+    if forbid_mapbox:
+        _abort_forbidden_mapbox_requests(
+            0 if _cache_payload_valid_without_mutation(cache_file) else 1
+        )
+        ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     data = _load_valid_cached_isochrone_payload(cache_file)
     if data is None:
@@ -120,10 +193,12 @@ def fetch_isochrones(lng: float, lat: float, token: str | None, minutes: list | 
             "polygons": "true",
             "access_token": token,
         }
+        _abort_forbidden_mapbox_requests(1)
         session = _get_session()
 
         resp = None
         for attempt in range(6):
+            _increment_mapbox_requests()
             resp = session.get(url, params=params, timeout=(8, 25))
             if resp.status_code == 429:
                 retry_after = resp.headers.get("Retry-After")
@@ -177,7 +252,9 @@ def _fetch_all_isochrones(
     total = len(centroids_wgs84)
     all_isochrones: dict[int, dict[int, object]] = {}
     failed_buildings: list[tuple[int, float, float, str]] = []
-    ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    forbid_mapbox = os.getenv("PIPELINE_FORBID_MAPBOX") == "1"
+    if not forbid_mapbox:
+        ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     cache_to_bids: dict[str, list[int]] = defaultdict(list)
     cache_to_coords: dict[str, tuple[float, float]] = {}
@@ -187,6 +264,12 @@ def _fetch_all_isochrones(
         cache_key = f"{lng:.5f}_{lat:.5f}"
         cache_to_bids[cache_key].append(bid)
         cache_to_coords[cache_key] = (lng, lat)
+
+    if forbid_mapbox:
+        _abort_forbidden_mapbox_requests(
+            _guarded_requests_required(cache_to_bids)
+        )
+        ISOCHRONE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     present_keys = [
         cache_key
@@ -219,6 +302,7 @@ def _fetch_all_isochrones(
         cached_count,
         api_needed,
     )
+    _abort_forbidden_mapbox_requests(len(missing_keys))
 
     def _fetch_key_task(cache_key: str, lng: float, lat: float, bids_for_key: list[int]):
         try:
@@ -332,13 +416,25 @@ def _write_isochrones_geojson(all_isochrones: dict[int, dict[int, object]], path
     logging.info("Wrote %s (%d features)", path, len(iso_export))
 
 
-def _warm_intermediate_isochrones_ok(path: Path, *, min_buildings: int) -> bool:
-    """True when path is a usable warm intermediate matching current building count.
+def _warm_intermediate_isochrones_ok(
+    path: Path,
+    *,
+    min_buildings: int,
+    expected_keys: set[tuple[int, int]] | None = None,
+    guard_report: dict[str, int] | None = None,
+) -> bool:
+    """Return whether a warm intermediate covers the current building workload.
 
-    Checks schema via a one-row peek, then requires a non-empty file whose unique
-    ``building_id`` count is at least ``min_buildings``. On mismatch, returns False
-    so the caller falls through to the normal cache/API path.
+    Checks schema via a one-row peek. With ``expected_keys``, requires the exact
+    set of normalized ``(building_id, minutes)`` pairs with no duplicates or
+    invalid values; otherwise it requires at least ``min_buildings`` unique
+    ``building_id`` values. On mismatch, returns False so the caller falls
+    through to the normal cache/API path.
     """
+    if expected_keys is not None and guard_report is not None:
+        guard_report["required_requests"] = len(
+            {building_id for building_id, _ in expected_keys}
+        )
     if not path.is_file() or path.stat().st_size <= 0:
         return False
     try:
@@ -358,7 +454,8 @@ def _warm_intermediate_isochrones_ok(path: Path, *, min_buildings: int) -> bool:
         )
         return False
     try:
-        ids = gpd.read_file(path, columns=["building_id"])
+        columns = ["building_id", "minutes"] if expected_keys is not None else ["building_id"]
+        ids = gpd.read_file(path, columns=columns)
     except TypeError:
         # Older geopandas/fiona may not support columns=; fall back to full read.
         try:
@@ -371,6 +468,51 @@ def _warm_intermediate_isochrones_ok(path: Path, *, min_buildings: int) -> bool:
         return False
     if ids.empty or "building_id" not in ids.columns:
         return False
+    if expected_keys is not None:
+        if "minutes" not in ids.columns:
+            logging.warning("Warm isochrones intermediate missing minutes column: %s", path)
+            return False
+        observed_keys: list[tuple[int, int]] = []
+        invalid_count = 0
+        for building_id, minutes in zip(ids["building_id"], ids["minutes"]):
+            try:
+                normalized_values = []
+                for value in (building_id, minutes):
+                    if isinstance(value, bool) or not isinstance(value, Real):
+                        raise ValueError("non-numeric key")
+                    numeric = float(value)
+                    if not math.isfinite(numeric) or not numeric.is_integer():
+                        raise ValueError("non-integral key")
+                    normalized_values.append(int(value))
+                normalized = (normalized_values[0], normalized_values[1])
+                observed_keys.append(normalized)
+            except (TypeError, ValueError, OverflowError):
+                invalid_count += 1
+        observed_set = set(observed_keys)
+        expected_set = set(expected_keys)
+        if guard_report is not None:
+            guard_report["required_requests"] = len(
+                {
+                    building_id
+                    for building_id, _ in expected_set - observed_set
+                }
+            )
+        if (
+            invalid_count
+            or len(observed_keys) != len(observed_set)
+            or observed_set != expected_set
+        ):
+            logging.warning(
+                "Warm isochrones key mismatch: missing=%d extra=%d duplicate=%d "
+                "invalid=%d (%s)",
+                len(expected_set - observed_set),
+                len(observed_set - expected_set),
+                len(observed_keys) - len(observed_set),
+                invalid_count,
+                path,
+            )
+            return False
+        return True
     n_unique = int(ids["building_id"].nunique())
     if n_unique < int(min_buildings):
         logging.warning(
@@ -385,20 +527,39 @@ def _warm_intermediate_isochrones_ok(path: Path, *, min_buildings: int) -> bool:
 
 def run_isochrones() -> Path:
     """Write cache + output/isochrones/isochrones.geojson (building_id, minutes). Token only on cache miss."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    _reset_mapbox_request_counter()
 
     buildings = load_raw_buildings()
+    forbid_mapbox = os.getenv("PIPELINE_FORBID_MAPBOX") == "1"
+    expected_keys = None
+    if forbid_mapbox:
+        expected_keys = {
+            (int(building_id), int(minutes))
+            for building_id in buildings["building_id"]
+            for minutes in WALK_MINUTES
+        }
+    guard_report: dict[str, int] = {}
     # Reuse aggregated intermediate when it covers current buildings so a cold
     # per-centroid cache + missing .env does not force Mapbox.
     if _warm_intermediate_isochrones_ok(
-        ISOCHRONES_OUTPUT_PATH, min_buildings=len(buildings)
+        ISOCHRONES_OUTPUT_PATH,
+        min_buildings=len(buildings),
+        expected_keys=expected_keys,
+        guard_report=guard_report if forbid_mapbox else None,
     ):
         logging.info(
             "Warm isochrones short-circuit: reusing existing %s (skip fetch/API)",
             ISOCHRONES_OUTPUT_PATH,
         )
+        logging.info("mapbox_requests_attempted=%d", get_mapbox_requests_attempted())
         return ISOCHRONES_OUTPUT_PATH
+    if forbid_mapbox:
+        _abort_forbidden_mapbox_requests(
+            guard_report.get("required_requests", len(buildings)),
+            terminal=True,
+        )
 
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     centroids_wgs84 = _building_centroids_wgs84(buildings)
 
     cache_to_bids: dict[str, list[int]] = defaultdict(list)
@@ -413,10 +574,15 @@ def run_isochrones() -> Path:
         not (ISOCHRONE_CACHE_DIR / f"{cache_key}.json").exists()
         for cache_key in cache_to_bids
     )
+    if forbid_mapbox:
+        _abort_forbidden_mapbox_requests(
+            _guarded_requests_required(cache_to_bids)
+        )
     token = load_mapbox_token() if needs_api else None
 
     all_isochrones = _fetch_all_isochrones(centroids_wgs84, token=token)
     _write_isochrones_geojson(all_isochrones, ISOCHRONES_OUTPUT_PATH)
+    logging.info("mapbox_requests_attempted=%d", get_mapbox_requests_attempted())
     return ISOCHRONES_OUTPUT_PATH
 
 

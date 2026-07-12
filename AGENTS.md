@@ -53,10 +53,18 @@ python -m pipeline check
 1. **Optional (usually first if you use it):** `python -m optional.filter` — clips layers into `filtered/` (legacy helper; `filtered/` is deprecated as a pipeline input — resolve from `data/raw/` via `core/paths.py`).
 2. Raw GIS under `data/raw/` as registered in `src/core/paths.py` (see `python -m pipeline check`), plus shade SI under `data/raw/arcgis_shade/`, and `data/raw/amenities_clean.geojson` for the clean manifest.
 3. **`python -m pipeline run shade`** — validates raw ArcGIS SI inputs, writes metric prepared scoring layers to **`output/shade_si/`**, calibration to **`output/shade_si_calibration.json`**, and a simplified web-only **`docs/data/shade_si.geojson`** (+ `.gz`). Run **before** building accessibility scoring.
-4. **`python -m pipeline run all`** (or stage-by-stage: `isochrones` → `amenity_metrics` → `score` → `export_web`) — writes `output/buildings_scored.geojson` and publishes web layers via **`stages/export_web.py`** only.
+4. **`python -m pipeline run all`** (or stage-by-stage: `isochrones` → `amenity_metrics` → `score` → `export_web`) — writes `output/buildings_scored.geojson` and publishes web layers via **`stages/export_web.py`** for its owned layers; shade and neighborhoods retain their separate publication ownership.
 5. **`python -m pipeline run rescore`** — recompute Urban95 weighted columns (incl. shade SI) on existing published buildings without Mapbox/isochrones. Refreshes buildings (+gz), lookup (+gz), and companion publish layers (`amenities_new`, `street_lights`, `amenities_all`, `trees`, `parks`, `isochrones` when available) via `export_web`; rerun `python -m pipeline run neighborhoods` immediately afterward.
 6. **`python -m pipeline run neighborhoods`** — requires building-level outputs in `docs/data/`; updates neighborhoods GeoJSON, `neighborhood_charts.json`, `citywide_stats.json`.
 7. **Roads + spatial syntax (optional):** `python -m optional.download_osm_roads` → `docs/data/roads.geojson`, then `python -m optional.generate_spatial_syntax` → segment/zone GeoJSON under `docs/data/`.
+
+### Layer-oriented pipeline behavior
+
+The commands, filenames, schemas, and browser URL contracts are unchanged. During `run all`, named source frames are prepared/reused once; amenity and score work uses exact layer-by-layer/chunked reductions; street-light coverage uses exact threaded local unions; neighborhoods reuses one IDW geometry plan; and publication serializes each web layer once. Standalone stages keep their existing disk fallbacks. Neighborhoods intentionally rereads the rounded published building geometry so aggregates match the browser payload.
+
+`PIPELINE_FORBID_MAPBOX=1` is an acceptance-only guard for a warm run. It validates the complete `(building_id, minutes)` aggregate and aborts before token/session/network work if any key is missing. With the variable unset, the existing Mapbox token/cache/API behavior remains in force.
+
+Publication ownership is recorded in [`docs/data/README.md`](docs/data/README.md): `export_web` owns buildings + lookup, `amenities_new`, `street_lights`, `amenities_all`, `trees`, `parks`, `isochrones` and their specified gzip companions; `shade` owns `shade_si` and its gzip; `neighborhoods` owns `neighborhoods.geojson`, `neighborhood_surface.geojson`, `neighborhood_charts.json`, and `citywide_stats.json`.
 
 ### Quirks agents must respect
 

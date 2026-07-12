@@ -145,7 +145,13 @@ python -m pipeline run score
 python -m pipeline run export_web
 ```
 
-`export_web` is the sole writer for published building, amenity, tree, park, and isochrone layers under `docs/data/` (plus `buildings_lookup.json`).
+`export_web` owns publication of the building, lookup, amenity, tree, park, and isochrone layers under `docs/data/` (including their specified `.gz` companions). The shade stage owns `shade_si.geojson` (+ `.gz`); the neighborhoods stage owns its four neighborhood/statistics files. See [`docs/data/README.md`](docs/data/README.md) for the complete ownership table.
+
+### Layer-oriented execution model
+
+The commands and browser-facing output contracts above are unchanged. In `run all`, the pipeline now prepares and reuses named source frames, computes amenity and scoring relations as exact layer-by-layer/chunked reductions, uses exact threaded local street-light unions, reuses one neighborhood IDW geometry plan, and publishes each web layer in one serialization pass. Standalone stages retain their disk-backed fallbacks. The neighborhoods stage intentionally rereads the rounded building publication so its aggregates use the same geometry and values served to the map.
+
+For acceptance-only warm-run checks, set `PIPELINE_FORBID_MAPBOX=1`. A guarded run validates the complete `(building_id, minutes)` warm aggregate and aborts before token/session/network work when it is incomplete; ordinary unguarded runs retain their existing Mapbox/cache behavior.
 
 To recompute Urban95 weighted columns (including shade SI) on existing buildings without Mapbox or isochrones:
 

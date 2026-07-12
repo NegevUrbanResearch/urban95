@@ -81,3 +81,15 @@ def test_idw_batch_matches_scalar_within_tol():
     # Single-point wrapper stays consistent with batch
     for i, (x, y) in enumerate(queries):
         assert abs(idw_score(x, y, samples, HEX_IDW_RADIUS_METERS) - float(batch[i])) <= 1e-6
+
+
+def test_idw_public_wrappers_keep_nearest_fallback_outside_radius():
+    samples = [(-100.0, -100.0, 7.0)]
+    actual = idw_scores_batch(
+        np.array([100.0]),
+        np.array([100.0]),
+        samples,
+        radius_m=1.0,
+    )
+    assert actual.tolist() == [7.0]
+    assert idw_score(100.0, 100.0, samples, radius_m=1.0) == 7.0

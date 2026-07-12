@@ -1,0 +1,715 @@
+from __future__ import annotations
+
+import copy
+import logging
+import math
+from contextlib import contextmanager
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import pytest
+from shapely.geometry import LineString, Point, Polygon, box
+
+from lib.urban95_layerwise import (
+    PreparedUrban95Layers,
+    prepare_urban95_layers,
+    score_discrete_components,
+    score_shade_overlay,
+    score_streetlight_overlay,
+    score_urban95_layerwise,
+)
+from lib.shade_si import prepare_shade_overlay
+from lib.urban95_weights import (
+    calc_environmental_quality,
+    calc_family_services,
+    calc_nature,
+    calc_play,
+    calc_safety_and_mobility,
+    calculate_master_index,
+)
+
+
+def _gdf(geometries, **columns):
+    return gpd.GeoDataFrame(columns, geometry=list(geometries), crs="EPSG:2039")
+
+
+def _scalar_discrete(buildings, layers):
+    out = []
+    for point in buildings.geometry.centroid:
+        _, env = calc_environmental_quality(point, layers, include_details=True, precomputed_summer_si=0.0)
+        _, nature = calc_nature(point, layers, include_details=True)
+        _, play = calc_play(point, layers, include_details=True)
+        _, safety = calc_safety_and_mobility(point, layers, include_details=True)
+        _, family = calc_family_services(point, layers, include_details=True)
+        out.append(
+            {
+                "trees": env["trees"],
+                "roads": env["roads"],
+                "parks": nature["parks"],
+                "urban_nature_areas": nature["urban_nature_areas"],
+                "playgrounds": play["playgrounds"],
+                "bicycle_access": safety["bicycle_access"],
+                "bus_stops": safety["bus_stops"],
+                "shelters": safety["shelters"],
+                "education": family["education"],
+                "community": family["community"],
+                "business": family["business"],
+                "health": family["health"],
+            }
+        )
+    return pd.DataFrame(out, index=buildings.index)
+
+
+@pytest.fixture
+def scoring_fixture():
+    buildings = _gdf([Point(0, 0), Point(100, 0), Point(400, 0)])
+    layers = {
+        "trees": _gdf([Point(0, 0), Point(1, 0), Point(2, 0)]),
+        "roads": _gdf(
+            [LineString([(0, -1), (0, 1)]), LineString([(200, -1), (200, 1)])],
+            maxspeed=["60", "not-a-speed"],
+        ),
+        "parks": _gdf([box(-50, -50, 50, 50), box(300, -1, 302, 1)]),
+        "urban_nature_areas": _gdf([box(-1, -1, 1, 1)]),
+        "playgrounds": _gdf([Point(300, 0)], amenity_type=["playgrounds"]),
+        "bikes": _gdf([Point(0, 300)], amenity_type=[" BICYCLE_TRACK "]),
+        "bus_stops": _gdf([Point(0, 0), Point(1, 0)]),
+        "shelters": _gdf([Point(0, 50)], amenity_type=["shelters"]),
+        "education": _gdf([Point(150, 0)], amenity_type=["education"]),
+        "community": _gdf([Point(300, 0)], amenity_type=["community-centers"]),
+        "business": _gdf([Point(0, 300)], amenity_type=["businesscenters"]),
+        "health": _gdf([Point(100, 100)], amenity_type=["health"]),
+    }
+    return buildings, layers
+
+
+@pytest.mark.parametrize("chunk_size", [1, 3, 64])
+def test_layerwise_discrete_components_match_scalar(chunk_size, scoring_fixture):
+    buildings, layers = scoring_fixture
+    expected = _scalar_discrete(buildings, layers)
+    prepared = prepare_urban95_layers(**layers)
+    actual = score_discrete_components(buildings, prepared, chunk_size=chunk_size)
+    pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+
+
+def test_prepare_sanitizes_normalizes_resets_indexes_and_does_not_mutate_inputs():
+    roads = _gdf(
+        [None, Point(), Point(0, 0), Point(1, 0)],
+        max_speed=[60, 60, 40, 80],
+    )
+    bikes = _gdf([Point(0, 0), Point(1, 0)], amenity_type=[" BICYCLE_TRACK ", "other"])
+    before_roads = copy.deepcopy(roads)
+    before_bikes = copy.deepcopy(bikes)
+    prepared = prepare_urban95_layers(roads=roads, bikes=bikes)
+    assert isinstance(prepared, PreparedUrban95Layers)
+    assert prepared.fast_roads.index.tolist() == [0]
+    assert len(prepared.fast_roads) == 1
+    assert len(prepared.bikes) == 1
+    assert prepared.bikes.index.tolist() == [0]
+    pd.testing.assert_frame_equal(roads, before_roads)
+    pd.testing.assert_frame_equal(bikes, before_bikes)
+
+
+@pytest.mark.parametrize(
+    "layer_name",
+    ["playgrounds", "bikes", "shelters", "education", "community", "business", "health"],
+)
+def test_typed_amenity_without_type_column_resolves_to_empty(layer_name):
+    prepared = prepare_urban95_layers(**{layer_name: _gdf([Point(0, 0)])})
+    prepared_name = "bikes" if layer_name == "bikes" else layer_name
+    assert getattr(prepared, prepared_name).empty
+
+
+def test_duplicate_invalid_and_post_sanitation_empty_sources_preserve_scalar_semantics():
+    bowtie = Polygon([(0, 0), (2, 2), (0, 2), (2, 0), (0, 0)])
+    layers = {
+        "trees": _gdf([None, Point(), Point(0, 0), Point(0, 0)]),
+        "parks": _gdf([bowtie]),
+        "bus_stops": _gdf([Point(0, 0), Point(0, 0), Point(0, 0)]),
+    }
+    prepared = prepare_urban95_layers(**layers)
+    assert prepared.parks.geometry.is_valid.all()
+    actual = score_discrete_components(_gdf([Point(0, 0)], marker=[1]), prepared, chunk_size=1)
+    assert actual.loc[0, "trees"] == 50.0
+    assert actual.loc[0, "parks"] == 50.0
+    assert actual.loc[0, "bus_stops"] == 100.0
+
+
+def test_null_only_sources_keep_defaults_and_output_contract():
+    buildings = gpd.GeoDataFrame(
+        {"marker": [1, 2]},
+        geometry=[Point(0, 0), Point(10, 0)],
+        index=[7, 9],
+        crs="EPSG:2039",
+    )
+    actual = score_discrete_components(
+        buildings,
+        prepare_urban95_layers(trees=_gdf([None, Point()])),
+        chunk_size=1,
+    )
+    assert actual.index.tolist() == [7, 9]
+    assert actual.columns.tolist() == [
+        "trees", "roads", "parks", "urban_nature_areas", "playgrounds",
+        "bicycle_access", "bus_stops", "shelters", "education", "community",
+        "business", "health",
+    ]
+    assert actual.dtypes.tolist() == [pd.api.types.pandas_dtype("float64")] * 12
+    assert actual["trees"].tolist() == [0.0, 0.0]
+    assert actual["roads"].tolist() == [100.0, 100.0]
+
+
+def test_discrete_boundaries_and_defaults_are_exact():
+    buildings = _gdf([Point(0, 0), Point(100, 0), Point(300, 0), Point(301, 0)])
+    layers = {
+        "trees": _gdf([Point(20, 0)]),
+        "roads": _gdf([LineString([(0, -1), (0, 1)])], maxspeed=[51]),
+        "parks": _gdf([box(0, 0, 50, 60)]),
+        "education": _gdf([Point(150, 0)], amenity_type=["education"]),
+    }
+    actual = score_discrete_components(buildings, prepare_urban95_layers(**layers), chunk_size=2)
+    assert actual.loc[0, "trees"] == 50
+    assert actual.loc[0, "roads"] == 0
+    assert actual.loc[1, "roads"] == 0
+    assert actual.loc[2, "roads"] == 50
+    assert actual.loc[3, "roads"] == 100
+    assert actual.loc[0, "parks"] == 100
+    assert actual.loc[0, "education"] == 100
+    assert actual.loc[2, "education"] == 100
+    assert actual.loc[3, "education"] == 50
+
+
+@pytest.mark.parametrize(
+    ("radius", "expected"),
+    [(299.8, 50.0), (300.2, 100.0)],
+)
+def test_fast_road_angular_candidate_envelope_is_complete(radius, expected):
+    angle = math.pi / 64.0
+    road_point = Point(radius * math.cos(angle), radius * math.sin(angle))
+    roads = _gdf([road_point], maxspeed=[60])
+    actual = score_discrete_components(
+        _gdf([Point(0, 0)]),
+        prepare_urban95_layers(roads=roads),
+        chunk_size=1,
+    )
+    assert actual.loc[0, "roads"] == expected
+
+
+def test_discrete_scorer_constructs_only_task3_buffers(monkeypatch):
+    from lib import urban95_layerwise
+
+    distances = []
+    original = urban95_layerwise._buffer
+
+    def recording_buffer(points, distance):
+        distances.append(distance)
+        return original(points, distance)
+
+    monkeypatch.setattr(urban95_layerwise, "_buffer", recording_buffer)
+    score_discrete_components(
+        _gdf([Point(0, 0)]),
+        prepare_urban95_layers(),
+        chunk_size=1,
+    )
+    assert distances == [20, 50, 300]
+
+
+def test_pairs_passes_the_requested_chunk_size(monkeypatch):
+    from lib import urban95_layerwise
+
+    seen = []
+
+    def fake_pairs(query, source, predicate, chunk_size):
+        seen.append(chunk_size)
+        yield (
+            pd.array([], dtype="int64").to_numpy(),
+            pd.array([], dtype="int64").to_numpy(),
+        )
+
+    monkeypatch.setattr(urban95_layerwise, "iter_query_pairs", fake_pairs)
+    urban95_layerwise._pairs(
+        gpd.GeoSeries([Point(0, 0), Point(1, 0), Point(2, 0)], crs="EPSG:2039"),
+        _gdf([Point(0, 0)]),
+        chunk_size=1,
+    )
+    assert seen == [1]
+
+
+def test_extracted_streetlight_subscore_preserves_scalar_behavior():
+    from lib.urban95_weights import calc_streetlight_subscore
+
+    lights = _gdf([Point(0, 0), Point(0, 0)])
+    point = Point(0, 0)
+    _, details = calc_safety_and_mobility(
+        point,
+        {"street_lights": lights},
+        include_details=True,
+    )
+    assert calc_streetlight_subscore(point, lights) == details["street_lights"]
+
+
+def test_stage_uses_one_layerwise_score_call_without_scalar_overlay_helpers(monkeypatch):
+    from stages import urban95_scoring
+
+    buildings = _gdf([Point(0, 0)])
+    layers = {
+        "trees": _gdf([Point(0, 0)]),
+        "roads": _gdf([], maxspeed=[]),
+        "parks": _gdf([]),
+        "urban_nature_areas": _gdf([]),
+        "playgrounds": _gdf([]),
+        "bikes": _gdf([]),
+        "bus_stops": _gdf([]),
+        "shelters": _gdf([]),
+        "education": _gdf([]),
+        "community": _gdf([]),
+        "business": _gdf([]),
+        "health": _gdf([]),
+        "street_lights": _gdf([]),
+        "shade_streets": None,
+        "shade_open_spaces": None,
+    }
+    monkeypatch.setattr(urban95_scoring, "build_layers", lambda **_: layers)
+
+    monkeypatch.setattr(
+        urban95_scoring,
+        "attach_summer_si_to_buildings",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("scalar shade helper should not run")),
+    )
+    monkeypatch.setattr(
+        urban95_scoring,
+        "calculate_master_index",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("scalar scorer should not run")),
+    )
+    monkeypatch.setattr(
+        "lib.urban95_weights.calc_environmental_quality",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("full environmental scorer should not run")),
+    )
+    monkeypatch.setattr(
+        "lib.urban95_weights.calc_safety_and_mobility",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("full safety scorer should not run")),
+    )
+    result = urban95_scoring.append_weighted_urban95_scores(buildings, workers=1)
+    assert result.loc[0, "score_weighted_sub_environmental_quality_trees_5min"] == 50.0
+    assert result.loc[0, "score_weighted_sub_environmental_quality_shade_5min"] == 0.0
+
+
+def _shade_gdf(geometries, scores):
+    return _gdf(geometries, summer_SI=scores)
+
+
+def test_shade_overlay_preserves_scalar_overlap_order_and_half_up_ties():
+    buildings = _gdf([Point(0, 0), Point(2000, 0)])
+    streets = _shade_gdf(
+        [box(-500, -500, 500, 500), box(1500, -500, 2500, 500)],
+        [0.15, 0.35],
+    )
+    prepared = prepare_shade_overlay(streets, None)
+    actual = score_shade_overlay(buildings, prepared, chunk_size=1)
+    assert actual.tolist() == [0.2, 0.4]
+
+
+def test_shade_overlay_drops_null_invalid_and_empty_rows():
+    bowtie = Polygon([(0, 0), (200, 200), (0, 200), (200, 0), (0, 0)])
+    buildings = _gdf([Point(0, 0)])
+    raw = _shade_gdf([None, Point(), bowtie, box(-500, -500, 500, 500)], [0.8, 0.9, 0.2, 0.4])
+    prepared = prepare_shade_overlay(raw, None)
+    actual = score_shade_overlay(buildings, prepared, chunk_size=8)
+    expected = round(float(prepare_shade_overlay(raw, None).iloc[-1].summer_SI), 1)
+    assert actual.iloc[0] == pytest.approx(expected)
+
+
+def test_streetlight_overlay_candidate_order_fallback_matches_scalar():
+    from lib.urban95_weights import calc_streetlight_subscore
+
+    buildings = _gdf([Point(0, 0), Point(100, 0)])
+    lights = _gdf([Point(0, 0), Point(40, 0), Point(100, 0)])
+    expected = pd.Series(
+        [calc_streetlight_subscore(point, lights) for point in buildings.geometry],
+        index=buildings.index,
+        dtype=float,
+    )
+    actual = score_streetlight_overlay(buildings, lights, chunk_size=1)
+    pd.testing.assert_series_equal(actual, expected)
+
+
+def test_streetlight_subscore_mapping_includes_exact_30_and_50_boundaries():
+    from lib.urban95_layerwise import _streetlight_percent_to_subscore
+
+    assert _streetlight_percent_to_subscore(29.999999) == 0.0
+    assert _streetlight_percent_to_subscore(30.0) == 50.0
+    assert _streetlight_percent_to_subscore(50.0) == 50.0
+    assert _streetlight_percent_to_subscore(50.000001) == 100.0
+
+
+def test_full_layerwise_score_has_current_columns_and_preserves_index(scoring_fixture):
+    buildings, layers = scoring_fixture
+    prepared_discrete = prepare_urban95_layers(**layers)
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    result = score_urban95_layerwise(
+        buildings,
+        prepared_discrete,
+        shade,
+        _gdf([Point(0, 0)]),
+        chunk_size=2,
+    )
+    assert result.index.tolist() == buildings.index.tolist()
+    assert result.columns[0] == "summer_si"
+    assert "score_weighted_5min" in result.columns
+    assert "score_weighted_sub_safety_mobility_street_lights_15min" in result.columns
+    assert all(pd.api.types.is_float_dtype(result[column]) for column in result.columns)
+    scalar_layers = dict(layers, street_lights=_gdf([Point(0, 0)]))
+    for position, point in enumerate(buildings.geometry):
+        scalar = calculate_master_index(
+            float(point.x),
+            float(point.y),
+            scalar_layers,
+            precomputed={"summer_si": float(result.iloc[position]["summer_si"])},
+        )
+        for minutes in (5, 10, 15):
+            suffix = f"_{minutes}min"
+            assert result.iloc[position][f"score_weighted{suffix}"] == scalar["final_index"]
+            for category_name, category_stem in urban95_scoring_stems().items():
+                assert result.iloc[position][f"score_weighted_{category_stem}{suffix}"] == scalar["category_scores"][category_name]
+            for category_name, subcategories in scalar["subcategory_scores"].items():
+                for subcategory_name, value in subcategories.items():
+                    if subcategory_name == "summer_si":
+                        continue
+                    category_stem = category_name.lower().replace(" & ", "_").replace(" ", "_")
+                    subcategory_stem = subcategory_name.lower().replace(" & ", "_").replace(" ", "_")
+                    column = f"score_weighted_sub_{category_stem}_{subcategory_stem}{suffix}"
+                    assert result.iloc[position][column] == value
+
+
+def urban95_scoring_stems():
+    return {
+        "Environmental Quality": "environmental_quality",
+        "Nature": "nature",
+        "Play": "play",
+        "Safety & Mobility": "safety_mobility",
+        "Family Services": "family_services",
+    }
+
+
+def test_streetlight_threaded_matches_serial_with_duplicates_overlaps_and_invalid_rows():
+    building_count = 130  # 64-building work chunks => three ordered executor ranges.
+    buildings = _gdf([Point(position * 2000, 0) for position in range(building_count)])
+    light_geometries = [
+        None,
+        Point(),
+        Polygon([(-10000, 0), (-9970, 30), (-10000, 30), (-9970, 0), (-10000, 0)]),
+        Point(2000, 0),
+        Point(2000, 0),
+    ]
+    expected = []
+    for position in range(building_count):
+        center_x = position * 2000
+        tier = position % 3
+        expected.append(float(tier * 50))
+        if tier == 1:
+            light_geometries.append(box(center_x - 150, -150, center_x + 150, 150))
+        elif tier == 2:
+            light_geometries.append(box(center_x - 220, -220, center_x + 220, 220))
+    lights = _gdf(light_geometries)
+    serial = score_streetlight_overlay(buildings, lights, chunk_size=32, workers=1)
+    threaded = score_streetlight_overlay(buildings, lights, chunk_size=32, workers=4)
+    assert serial.tolist() == expected
+    pd.testing.assert_series_equal(threaded, serial, check_exact=True)
+
+
+def test_streetlight_threaded_preserves_raw_30_and_50_boundary_mapping():
+    from lib.urban95_layerwise import _streetlight_percent_to_subscore
+
+    raw_boundary_scores = pd.Series(
+        [_streetlight_percent_to_subscore(value) for value in (30.0, 50.0)],
+        dtype=float,
+    )
+    assert raw_boundary_scores.tolist() == [50.0, 50.0]
+    buildings = _gdf([Point(0, 0), Point(100, 0)])
+    lights = _gdf([Point(0, 0), Point(0, 0), Point(100, 0), Point(100, 0)])
+    serial = score_streetlight_overlay(buildings, lights, chunk_size=1, workers=1)
+    threaded = score_streetlight_overlay(buildings, lights, chunk_size=1, workers=2)
+    pd.testing.assert_series_equal(threaded, serial, check_exact=True)
+
+
+def test_candidate_lists_falls_back_when_batch_order_disagrees(monkeypatch):
+    from lib import urban95_layerwise
+
+    source = _gdf([Point(-10, 0), Point(10, 0), Point(0, 10)])
+    queries = gpd.GeoSeries([Point(0, 0).buffer(50)], crs="EPSG:2039")
+    scalar = np.asarray(source.sindex.query(queries.iloc[0], predicate="intersects"), dtype=np.int64)
+    forced_batch = scalar[::-1].copy()
+    assert not np.array_equal(forced_batch, scalar)
+
+    def reversed_pairs(_queries, _source, predicate, chunk_size):
+        assert predicate == "intersects"
+        assert chunk_size == 1
+        yield np.zeros(len(forced_batch), dtype=np.int64), forced_batch
+
+    monkeypatch.setattr(urban95_layerwise, "iter_query_pairs", reversed_pairs)
+    actual = urban95_layerwise._candidate_lists(
+        queries,
+        source,
+        predicate="intersects",
+        chunk_size=1,
+    )
+    np.testing.assert_array_equal(actual[0], scalar)
+
+
+def test_stage_forwards_workers_to_full_layerwise_scorer(monkeypatch):
+    from stages import urban95_scoring
+
+    buildings = _gdf([Point(0, 0)])
+    layers = {
+        "trees": _gdf([Point(0, 0)]),
+        "street_lights": _gdf([Point(0, 0)]),
+        "shade_streets": None,
+        "shade_open_spaces": None,
+    }
+    seen = []
+    monkeypatch.setattr(urban95_scoring, "build_layers", lambda **_: layers)
+
+    def fake_full(*_args, chunk_size, workers):
+        seen.append((chunk_size, workers))
+        return pd.DataFrame({"summer_si": [0.0]}, index=buildings.index)
+
+    monkeypatch.setattr(urban95_scoring, "score_urban95_layerwise", fake_full)
+    urban95_scoring.append_weighted_urban95_scores(buildings, workers=7)
+    assert seen == [(urban95_scoring.SI_ATTACH_CHUNK_SIZE, 7)]
+
+
+def test_empty_keyed_layers_use_independent_scalar_fallback(monkeypatch):
+    from stages import urban95_scoring
+
+    buildings = _gdf([Point(0, 0)])
+    empty = _gdf([])
+    layers = {
+        name: empty.copy()
+        for name in (
+            "trees", "roads", "parks", "urban_nature_areas", "playgrounds", "bikes",
+            "bus_stops", "shelters", "education", "community", "business", "health", "street_lights",
+        )
+    }
+    layers.update({"shade_streets": None, "shade_open_spaces": None})
+    scalar_calls = []
+    monkeypatch.setattr(urban95_scoring, "build_layers", lambda **_: layers)
+
+    def fake_attach(frame, *_args, **_kwargs):
+        out = frame.copy()
+        out["summer_si"] = [0.0]
+        return out
+
+    def fake_scalar(*_args, **_kwargs):
+        scalar_calls.append(True)
+        return {"final_index": 0.0, "category_scores": {}, "subcategory_scores": {}}
+
+    monkeypatch.setattr(urban95_scoring, "attach_summer_si_to_buildings", fake_attach)
+    monkeypatch.setattr(urban95_scoring, "calculate_master_index", fake_scalar)
+    monkeypatch.setattr(
+        urban95_scoring,
+        "score_urban95_layerwise",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("empty layers must use scalar fallback")),
+    )
+    urban95_scoring.append_weighted_urban95_scores(buildings, workers=1)
+    assert scalar_calls == [True]
+
+
+class _RecordingProgress:
+    created = []
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        self.updates = []
+        self.close_calls = 0
+        type(self).created.append(self)
+
+    def update(self, amount=1):
+        self.updates.append(amount)
+
+    def close(self):
+        self.close_calls += 1
+
+
+class _DisabledProgress:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def update(self, amount=1):
+        pass
+
+    def close(self):
+        pass
+
+
+def test_score_only_progress_reports_shade_and_serial_streetlights(monkeypatch):
+    from lib import urban95_layerwise
+
+    _RecordingProgress.created = []
+    monkeypatch.setattr(urban95_layerwise, "tqdm", _RecordingProgress)
+    buildings = _gdf([Point(0, 0), Point(100, 0), Point(200, 0)])
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    lights = _gdf([Point(0, 0), Point(100, 0), Point(200, 0)])
+
+    score_shade_overlay(buildings, shade, chunk_size=2)
+    score_streetlight_overlay(buildings, lights, chunk_size=2, workers=1)
+
+    assert len(_RecordingProgress.created) == 2
+    shade_bar, lights_bar = _RecordingProgress.created
+    assert shade_bar.kwargs == {"total": 3, "desc": "Urban95 shade", "unit": "building", "disable": None}
+    assert shade_bar.updates == [1, 1, 1]
+    assert shade_bar.close_calls == 1
+    assert lights_bar.kwargs == {"total": 3, "desc": "Urban95 streetlights", "unit": "building", "disable": None}
+    assert lights_bar.updates == [1, 1, 1]
+    assert lights_bar.close_calls == 1
+
+
+def test_progress_enabled_and_disabled_preserve_exact_overlay_outputs(monkeypatch):
+    from lib import urban95_layerwise
+
+    buildings = _gdf([Point(0, 0), Point(100, 0), Point(200, 0)])
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    lights = _gdf([Point(0, 0), Point(100, 0), Point(200, 0)])
+
+    monkeypatch.setattr(urban95_layerwise, "tqdm", _RecordingProgress)
+    enabled_shade = score_shade_overlay(buildings, shade, chunk_size=2)
+    enabled_serial_lights = score_streetlight_overlay(buildings, lights, chunk_size=2, workers=1)
+    enabled_threaded_lights = score_streetlight_overlay(buildings, lights, chunk_size=2, workers=2)
+
+    monkeypatch.setattr(urban95_layerwise, "tqdm", _DisabledProgress)
+    disabled_shade = score_shade_overlay(buildings, shade, chunk_size=2)
+    disabled_serial_lights = score_streetlight_overlay(buildings, lights, chunk_size=2, workers=1)
+    disabled_threaded_lights = score_streetlight_overlay(buildings, lights, chunk_size=2, workers=2)
+
+    pd.testing.assert_series_equal(enabled_shade, disabled_shade, check_exact=True)
+    pd.testing.assert_series_equal(enabled_serial_lights, disabled_serial_lights, check_exact=True)
+    pd.testing.assert_series_equal(enabled_threaded_lights, disabled_threaded_lights, check_exact=True)
+
+
+def test_threaded_streetlight_progress_updates_in_ordered_chunks(monkeypatch):
+    from lib import urban95_layerwise
+
+    _RecordingProgress.created = []
+    monkeypatch.setattr(urban95_layerwise, "tqdm", _RecordingProgress)
+    buildings = _gdf([Point(position * 2000, 0) for position in range(130)])
+    lights = _gdf([Point(0, 0)])
+
+    threaded = score_streetlight_overlay(buildings, lights, chunk_size=32, workers=4)
+
+    bar = _RecordingProgress.created[0]
+    assert bar.kwargs == {"total": 130, "desc": "Urban95 streetlights", "unit": "building", "disable": None}
+    assert bar.updates == [64, 64, 2]
+    assert sum(bar.updates) == 130
+    assert bar.close_calls == 1
+    assert threaded.index.tolist() == buildings.index.tolist()
+
+
+def test_progress_bars_close_and_phase_logs_survive_overlay_exceptions(monkeypatch, caplog):
+    from lib import urban95_layerwise
+
+    _RecordingProgress.created = []
+    monkeypatch.setattr(urban95_layerwise, "tqdm", _RecordingProgress)
+    monkeypatch.setattr(
+        "lib.shade_si.round_building_summer_si",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("shade boom")),
+    )
+    caplog.set_level(logging.INFO)
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    with pytest.raises(RuntimeError, match="shade boom"):
+        score_shade_overlay(_gdf([Point(0, 0)]), shade, chunk_size=1)
+    assert _RecordingProgress.created[0].close_calls == 1
+    assert _RecordingProgress.created[0].updates == []
+    assert [r.getMessage() for r in caplog.records if r.name == "core.perf"][-1].startswith(
+        "score_phase=score.shade.intersections elapsed_s="
+    )
+
+    _RecordingProgress.created = []
+    monkeypatch.setattr(
+        gpd.GeoSeries,
+        "union_all",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("lights boom")),
+    )
+    with pytest.raises(RuntimeError, match="lights boom"):
+        score_streetlight_overlay(_gdf([Point(0, 0), Point(100, 0)]), _gdf([Point(0, 0)]), chunk_size=1, workers=2)
+    assert _RecordingProgress.created[0].close_calls == 1
+    assert any(
+        r.getMessage().startswith("score_phase=score.lights.unions elapsed_s=")
+        for r in caplog.records
+        if r.name == "core.perf"
+    )
+
+
+def test_shade_progress_counts_empty_success_but_not_throwing_building(monkeypatch):
+    from lib import urban95_layerwise
+
+    _RecordingProgress.created = []
+    monkeypatch.setattr(urban95_layerwise, "tqdm", _RecordingProgress)
+    calls = {"round": 0}
+
+    def round_or_raise(raw_value):
+        calls["round"] += 1
+        if calls["round"] == 2:
+            raise RuntimeError("third building boom")
+        return raw_value
+
+    monkeypatch.setattr("lib.shade_si.round_building_summer_si", round_or_raise)
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    buildings = _gdf([Point(0, 0), Point(), Point(100, 0)])
+
+    with pytest.raises(RuntimeError, match="third building boom"):
+        score_shade_overlay(buildings, shade, chunk_size=1)
+
+    bar = _RecordingProgress.created[0]
+    assert bar.updates == [1, 1]
+    assert bar.close_calls == 1
+
+
+def test_layerwise_score_emits_required_phase_inventory_in_order(monkeypatch, caplog, scoring_fixture):
+    from stages import urban95_scoring
+    from lib import urban95_layerwise
+    import core.perf as perf
+
+    buildings, layers = scoring_fixture
+    layers = dict(
+        layers,
+        street_lights=_gdf([Point(0, 0)]),
+        shade_streets=_shade_gdf([box(-500, -500, 500, 500)], [0.4]),
+        shade_open_spaces=None,
+    )
+    monkeypatch.setattr(urban95_scoring, "build_layers", lambda **_: layers)
+    timing = {"depth": 0, "max_depth": 0}
+
+    @contextmanager
+    def tracked_phase(name):
+        timing["depth"] += 1
+        timing["max_depth"] = max(timing["max_depth"], timing["depth"])
+        try:
+            with perf.logged_phase(name):
+                yield
+        finally:
+            timing["depth"] -= 1
+
+    monkeypatch.setattr(urban95_scoring, "logged_phase", tracked_phase)
+    monkeypatch.setattr(urban95_layerwise, "logged_phase", tracked_phase)
+    caplog.set_level(logging.INFO)
+
+    urban95_scoring.append_weighted_urban95_scores(buildings.copy(), workers=1)
+
+    names = [
+        record.getMessage().split(" ", 1)[0].split("=", 1)[1]
+        for record in caplog.records
+        if record.name == "core.perf" and record.getMessage().startswith("score_phase=")
+    ]
+    assert names == [
+        "score.layers.load",
+        "score.discrete.prepare",
+        "score.shade.prepare",
+        "score.discrete.compute",
+        "score.shade.candidates",
+        "score.shade.intersections",
+        "score.lights.prepare",
+        "score.lights.candidates",
+        "score.lights.unions",
+        "score.assembly",
+    ]
+    assert timing["max_depth"] == 1

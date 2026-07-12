@@ -62,6 +62,27 @@ OPTIONAL_RAW_LAYER_IDS = (
     "bus_stops",
 )
 
+_LAYER_OVERRIDE_UNSET = object()
+
+# Explicit source contract shared with the batch discrete scorer.  This is a
+# named mapping rather than a registry so the scalar oracle remains unchanged
+# and every source used by the published model stays visible at the call site.
+def discrete_layer_kwargs(layers: dict) -> dict:
+    return {
+        "trees": layers.get("trees"),
+        "roads": layers.get("roads"),
+        "parks": layers.get("parks"),
+        "urban_nature_areas": layers.get("urban_nature_areas"),
+        "playgrounds": layers.get("playgrounds"),
+        "bikes": layers.get("bikes"),
+        "bus_stops": layers.get("bus_stops"),
+        "shelters": layers.get("shelters"),
+        "education": layers.get("education"),
+        "community": layers.get("community"),
+        "business": layers.get("business"),
+        "health": layers.get("health"),
+    }
+
 
 def _sanitize_layer(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     if gdf.empty:
@@ -181,11 +202,31 @@ def _load_optional_raw(layer_id: str, target_epsg: int) -> gpd.GeoDataFrame:
     return _load_geojson(L.path, target_epsg)
 
 
-def build_layers_from_raw(target_epsg: int = 2039) -> dict:
+def _explicit_override_frame(value, target_epsg: int) -> gpd.GeoDataFrame:
+    if value is None:
+        return gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+    return value
+
+
+def build_layers_from_raw(
+    target_epsg: int = 2039,
+    *,
+    trees=_LAYER_OVERRIDE_UNSET,
+    parks=_LAYER_OVERRIDE_UNSET,
+    street_lights=_LAYER_OVERRIDE_UNSET,
+    amenities_clean=_LAYER_OVERRIDE_UNSET,
+) -> dict:
     """Load scoring layers from data/raw and map them to model layer names."""
-    layers = {
-        layer_id: _load_optional_raw(layer_id, target_epsg) for layer_id in OPTIONAL_RAW_LAYER_IDS
-    }
+    layers = {}
+    for layer_id in OPTIONAL_RAW_LAYER_IDS:
+        if layer_id == "trees" and trees is not _LAYER_OVERRIDE_UNSET:
+            layers[layer_id] = _explicit_override_frame(trees, target_epsg)
+        elif layer_id == "parks" and parks is not _LAYER_OVERRIDE_UNSET:
+            layers[layer_id] = _explicit_override_frame(parks, target_epsg)
+        elif layer_id == "street_lights" and street_lights is not _LAYER_OVERRIDE_UNSET:
+            layers[layer_id] = _explicit_override_frame(street_lights, target_epsg)
+        else:
+            layers[layer_id] = _load_optional_raw(layer_id, target_epsg)
 
     amenity_type_map = {
         "playgrounds": "playgrounds",
@@ -197,23 +238,27 @@ def build_layers_from_raw(target_epsg: int = 2039) -> dict:
         "bikes": "bicycle_track",
     }
 
-    amenities_clean_path = layer("amenities_clean").path
-    if not amenities_clean_path.is_file():
-        logging.info("metric omitted: amenities_clean")
-        amenities_clean = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
-        has_amenity_type = False
+    if amenities_clean is not _LAYER_OVERRIDE_UNSET:
+        amenities_clean_frame = _explicit_override_frame(amenities_clean, target_epsg)
+        has_amenity_type = "amenity_type" in amenities_clean_frame.columns
     else:
-        amenities_clean = _load_geojson(amenities_clean_path, target_epsg)
-        has_amenity_type = "amenity_type" in amenities_clean.columns
+        amenities_clean_path = layer("amenities_clean").path
+        if not amenities_clean_path.is_file():
+            logging.info("metric omitted: amenities_clean")
+            amenities_clean_frame = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+            has_amenity_type = False
+        else:
+            amenities_clean_frame = _load_geojson(amenities_clean_path, target_epsg)
+            has_amenity_type = "amenity_type" in amenities_clean_frame.columns
 
     for target_name, source_type in amenity_type_map.items():
         if has_amenity_type:
-            subset = amenities_clean[
-                amenities_clean["amenity_type"].astype(str).str.strip().str.lower() == source_type
+            subset = amenities_clean_frame[
+                amenities_clean_frame["amenity_type"].astype(str).str.strip().str.lower() == source_type
             ].copy()
             layers[target_name] = _sanitize_layer(subset)
         else:
-            layers[target_name] = amenities_clean.iloc[0:0].copy()
+            layers[target_name] = amenities_clean_frame.iloc[0:0].copy()
 
     return layers
 
@@ -221,9 +266,20 @@ def build_layers_from_raw(target_epsg: int = 2039) -> dict:
 def build_layers(
     shade_si_dir: Path | str | None = None,
     target_epsg: int = 2039,
+    *,
+    trees=_LAYER_OVERRIDE_UNSET,
+    parks=_LAYER_OVERRIDE_UNSET,
+    street_lights=_LAYER_OVERRIDE_UNSET,
+    amenities_clean=_LAYER_OVERRIDE_UNSET,
 ) -> dict:
     """Load scoring layers from data/raw and prepared ArcGIS SI artifacts."""
-    layers = build_layers_from_raw(target_epsg=target_epsg)
+    layers = build_layers_from_raw(
+        target_epsg=target_epsg,
+        trees=trees,
+        parks=parks,
+        street_lights=street_lights,
+        amenities_clean=amenities_clean,
+    )
     if shade_si_dir is not None:
         shade_si_dir = Path(shade_si_dir)
         street_path = shade_si_dir / STREET_SI_FILENAME
@@ -292,17 +348,12 @@ def calc_play(point: Point, layers: dict, include_details: bool = False):
     return final_score, {"playgrounds": playgrounds_score * 100}
 
 
-def calc_safety_and_mobility(point: Point, layers: dict, include_details: bool = False):
-    """
-    חישוב בטיחות ותנועה: תאורה, אופניים, תחנות אוטובוס ומקלטים.
-    """
+def calc_streetlight_subscore(point: Point, street_lights: gpd.GeoDataFrame | None) -> float:
+    """Return the scalar street-light overlay tier without other safety work."""
     buffer_300m = point.buffer(300)
-    buffer_50m = point.buffer(50)
-    
-    # 1. תאורת רחוב - משקל 0.15
     lights_score = 0.0
-    if "street_lights" in layers and not layers["street_lights"].empty:
-        lights_near = _features_intersecting(layers["street_lights"], point.buffer(315))
+    if street_lights is not None and not street_lights.empty:
+        lights_near = _features_intersecting(street_lights, point.buffer(315))
         if not lights_near.empty:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
@@ -312,16 +363,28 @@ def calc_safety_and_mobility(point: Point, layers: dict, include_details: bool =
                     illuminated_area = 0.0
                 else:
                     ul = unified_lights if unified_lights.is_valid else make_valid(unified_lights)
-                    if ul.is_empty:
-                        illuminated_area = 0.0
-                    else:
-                        illuminated_area = ul.intersection(buffer_300m).area
+                    illuminated_area = (
+                        0.0
+                        if ul.is_empty
+                        else ul.intersection(buffer_300m).area
+                    )
             percent_illuminated = (illuminated_area / buffer_300m.area) * 100
-            
             if percent_illuminated > 50:
                 lights_score = 1.0
             elif 30 <= percent_illuminated <= 50:
                 lights_score = 0.5
+    return lights_score * 100
+
+
+def calc_safety_and_mobility(point: Point, layers: dict, include_details: bool = False):
+    """
+    חישוב בטיחות ותנועה: תאורה, אופניים, תחנות אוטובוס ומקלטים.
+    """
+    buffer_300m = point.buffer(300)
+    buffer_50m = point.buffer(50)
+
+    # 1. תאורת רחוב - משקל 0.15
+    lights_score = calc_streetlight_subscore(point, layers.get("street_lights")) / 100.0
 
     # 2. אופניים - משקל 0.15
     bike_score = 0.0

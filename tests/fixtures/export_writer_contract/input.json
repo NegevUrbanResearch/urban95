@@ -1,0 +1,10 @@
+[
+  {"building_id":1,"npint":10,"npfloat":1.5,"finite":"nan","nullprop":null,"label":"row0","geometry":{"type":"Point","coordinates":[1.2345675,2.3456785]}},
+  {"building_id":2,"npint":11,"npfloat":2.5,"finite":"inf","nullprop":null,"label":"row1","geometry":{"type":"LineString","coordinates":[[3.0000005,4.0000005],[5.1234565,6.6543215]]}},
+  {"building_id":3,"npint":12,"npfloat":3.5,"finite":2.5,"nullprop":null,"label":"row2","geometry":{"type":"MultiLineString","coordinates":[[[7.1111115,8.2222225],[9.3333335,10.4444445]],[[11.5555555,12.6666665],[13.7777775,14.8888885]]]}},
+  {"building_id":4,"npint":13,"npfloat":4.5,"finite":2.5,"nullprop":null,"label":"row3","geometry":{"type":"Polygon","coordinates":[[[15.1234565,16.1234565],[17.1234565,18.1234565],[19.1234565,16.1234565],[15.1234565,16.1234565]]]}},
+  {"building_id":5,"npint":14,"npfloat":5.5,"finite":2.5,"nullprop":null,"label":"row4","geometry":{"type":"MultiPolygon","coordinates":[[[[20.1234565,21.1234565],[22.1234565,23.1234565],[24.1234565,21.1234565],[20.1234565,21.1234565]]]]}},
+  {"building_id":6,"npint":15,"npfloat":6.5,"finite":2.5,"nullprop":null,"label":"row5","geometry":{"type":"GeometryCollection","geometries":[{"type":"Point","coordinates":[25.1234565,26.1234565]},{"type":"LineString","coordinates":[[27.1234565,28.1234565],[29.1234565,30.1234565]]}]}},
+  {"building_id":7,"npint":16,"npfloat":7.5,"finite":2.5,"nullprop":null,"label":"null-geometry","geometry":null},
+  {"building_id":8,"npint":17,"npfloat":8.5,"finite":2.5,"nullprop":null,"label":"empty-geometry","geometry":{"type":"Point","coordinates":[]}}
+]

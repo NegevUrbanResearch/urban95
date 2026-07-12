@@ -1,10 +1,18 @@
 from pathlib import Path
+
 import geopandas as gpd
 from shapely.geometry import Point
+
+from core.geojson_utils import (
+    _write_minimal_geojson_stream as real_write_minimal_geojson_stream,
+    write_minimal_geojson as real_write_minimal_geojson,
+)
 from stages.export_web import export_web, REQUIRED_BUILDING_SCORE_COLUMNS
+
 
 def test_export_web_writes_buildings_once(monkeypatch, tmp_path):
     writes: list[str] = []
+    stream_calls: list[str] = []
     out_name = "buildings_accessibility.geojson"
     monkeypatch.setattr("stages.export_web.DOCS_DATA_DIR", tmp_path)
 
@@ -16,16 +24,20 @@ def test_export_web_writes_buildings_once(monkeypatch, tmp_path):
             for c in gdf.columns if c != gdf.geometry.name
         )
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('{"type":"FeatureCollection","features":[]}', encoding="utf-8")
+        real_write_minimal_geojson(gdf, path, **kw)
 
-    # Patch both the export_web binding AND prevent helper from writing via utils
+    # Count stage writes while retaining the real serializer and observer callback.
     monkeypatch.setattr("stages.export_web.write_minimal_geojson", capture_write)
+
+    def capture_stream(gdf, path, **kw):
+        stream_calls.append(Path(path).name)
+        return real_write_minimal_geojson_stream(gdf, path, **kw)
+
+    monkeypatch.setattr("stages.export_web._write_minimal_geojson_stream", capture_stream)
     monkeypatch.setattr(
         "stages.export_web.export_buildings_web_layer",
-        lambda gdf, out_path=None, **kw: gdf,  # prepare-only stub until helper is fixed
+        lambda gdf, out_path=None, **kw: gdf,  # keep building preparation out of this write-count test
     )
-    monkeypatch.setattr("stages.export_web.write_gzip_copy", lambda p: None)
-    monkeypatch.setattr("stages.export_web.build_buildings_lookup", lambda *a, **k: {"status": "built"})
     monkeypatch.setattr("stages.export_web._sync_raw_layer_to_docs", lambda *a, **k: None)
     monkeypatch.setattr(
         "stages.export_web._resolve_amenities_legacy",
@@ -40,9 +52,19 @@ def test_export_web_writes_buildings_once(monkeypatch, tmp_path):
     gdf = gpd.GeoDataFrame(props, geometry=[Point(34.7, 31.2)], crs="EPSG:4326")
     monkeypatch.setattr(
         "stages.export_web.layer",
-        lambda lid: type("L", (), {"path": tmp_path / out_name})(),
+        lambda lid: type(
+            "L",
+            (),
+            {
+                "path": tmp_path
+                / (
+                    out_name
+                    if lid == "publish_buildings"
+                    else "buildings_lookup.json"
+                )
+            },
+        )(),
     )
     export_web(gdf)
-    assert writes.count(out_name) == 1
-    # After prepare-only lands, also assert core.geojson_utils.write_minimal_geojson
-    # was not used for buildings (optional second assert via monkeypatch on that module).
+    assert len(stream_calls) == 1
+    assert stream_calls[0] != out_name
