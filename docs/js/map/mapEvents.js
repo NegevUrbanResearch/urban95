@@ -40,6 +40,7 @@
     var selection = requireObject(deps.selection, "deps.selection");
     var dashboards = requireObject(deps.dashboards, "deps.dashboards");
     var neighborhoodSidebar = requireObject(deps.neighborhoodSidebar, "deps.neighborhoodSidebar");
+    var citySidebar = requireObject(deps.citySidebar, "deps.citySidebar");
     var mapRenderers = requireObject(deps.mapRenderers, "deps.mapRenderers");
     var pointDataLoader = requireObject(deps.pointDataLoader, "deps.pointDataLoader");
     var perf = deps.perf || window.urban95Perf || {};
@@ -60,6 +61,7 @@
     requireMethod(selection, "deps.selection", "findClosestBuilding");
     requireMethod(selection, "deps.selection", "selectBuilding");
     requireMethod(neighborhoodSidebar, "deps.neighborhoodSidebar", "show");
+    requireMethod(citySidebar, "deps.citySidebar", "setSelection");
     [
       "getNeighborhoodFeatureAtPoint",
       "showNeighborhoodAreaTooltip",
@@ -299,10 +301,17 @@
     });
 
     map.on("click", "neighborhoods-fill", function (e) {
-      if (getCurrentMode() !== "neighborhood") return;
-      var feature = e.features && e.features.length > 0 ? e.features[0] : null;
+      var mode = getCurrentMode();
+      var feature = e.features && e.features[0];
       if (!feature) return;
-      neighborhoodSidebar.show(feature);
+      if (mode === "neighborhood") {
+        neighborhoodSidebar.show(feature);
+        return;
+      }
+      if (mode === "citywide") {
+        citySidebar.setSelection(feature); // sync opens sidebar; no flyTo / fitBounds
+        return;
+      }
     });
 
     map.on("click", "neighborhoods-surface", function (e) {
@@ -313,7 +322,10 @@
     });
 
     map.on("mouseenter", "neighborhoods-fill", function () {
-      if (getCurrentMode() === "neighborhood") map.getCanvas().style.cursor = "pointer";
+      var mode = getCurrentMode();
+      if (mode === "neighborhood" || mode === "citywide") {
+        map.getCanvas().style.cursor = "pointer";
+      }
     });
 
     map.on("mouseenter", "neighborhoods-surface", function () {
@@ -321,7 +333,8 @@
     });
 
     map.on("mouseleave", "neighborhoods-fill", function () {
-      if (getCurrentMode() === "neighborhood") {
+      var mode = getCurrentMode();
+      if (mode === "neighborhood" || mode === "citywide") {
         map.getCanvas().style.cursor = "";
         tooltip.style.display = "none";
       }

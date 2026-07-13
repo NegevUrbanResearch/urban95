@@ -83,6 +83,40 @@ function loadNeighborhoodSidebarModules(browser) {
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
 }
 
+function loadCitySidebarModules(browser) {
+  if (
+    browser.window.Urban95CityGapModes &&
+    browser.window.Urban95CityPanelRender &&
+    browser.window.Urban95CitySidebar
+  ) {
+    return;
+  }
+  runBrowserScript("docs/js/ui/cityGapThresholds.js", browser);
+  runBrowserScript("docs/js/ui/cityPanelRender.js", browser);
+  runBrowserScript("docs/js/ui/citySidebar.js", browser);
+}
+
+function createCitySidebarControlStub(calls) {
+  return {
+    isOpen: function () {
+      if (calls) calls.push("citySidebar:isOpen");
+      return false;
+    },
+    sync: function () {
+      if (calls) calls.push("citySidebar:sync");
+    },
+    hide: function () {
+      if (calls) calls.push("citySidebar:hide");
+    },
+    dismiss: function () {
+      if (calls) calls.push("citySidebar:dismiss");
+    },
+    setSelection: function (value) {
+      if (calls) calls.push("citySidebar:setSelection:" + (value == null ? "null" : "feature"));
+    },
+  };
+}
+
 function loadRenderState(browser) {
   if (!browser.window.Urban95RenderState) {
     runBrowserScript("docs/js/map/renderState.js", browser);
@@ -118,6 +152,7 @@ function runAppScript(browser) {
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
   loadNeighborhoodSidebarModules(browser);
+  loadCitySidebarModules(browser);
   runBrowserScript("docs/js/ui/amenityMode.js", browser);
   runBrowserScript("docs/js/ui/controlActions.js", browser);
   runBrowserScript("docs/js/map/staticPolygonCompanions.js", browser);
@@ -223,10 +258,16 @@ test("index loads core frontend modules before app.js", () => {
   assert.ok(sidebarChromeBindingsIndex < amenityModeIndex);
   const neighborhoodPanelRenderIndex = requireScriptIndex(scripts, "./js/ui/neighborhoodPanelRender.js");
   const neighborhoodSidebarIndex = requireScriptIndex(scripts, "./js/ui/neighborhoodSidebar.js");
+  const cityGapThresholdsIndex = requireScriptIndex(scripts, "./js/ui/cityGapThresholds.js");
+  const cityPanelRenderIndex = requireScriptIndex(scripts, "./js/ui/cityPanelRender.js");
+  const citySidebarIndex = requireScriptIndex(scripts, "./js/ui/citySidebar.js");
   const dashboardsIndex = requireScriptIndex(scripts, "./js/ui/dashboards.js");
   assert.ok(requireScriptIndex(scripts, "./js/ui/infoModal.js") < neighborhoodPanelRenderIndex);
   assert.ok(neighborhoodPanelRenderIndex < neighborhoodSidebarIndex);
-  assert.ok(neighborhoodSidebarIndex < dashboardsIndex);
+  assert.ok(neighborhoodSidebarIndex < cityGapThresholdsIndex);
+  assert.ok(cityGapThresholdsIndex < cityPanelRenderIndex);
+  assert.ok(cityPanelRenderIndex < citySidebarIndex);
+  assert.ok(citySidebarIndex < dashboardsIndex);
   assert.ok(dashboardsIndex < appIndex);
   const modeControllerIndex = requireScriptIndex(scripts, "./js/map/modeController.js");
   assert.ok(modeControllerIndex < appIndex);
@@ -547,6 +588,7 @@ test("core modules expose stable Urban95 namespaces", () => {
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebarChrome.js", browser);
   loadNeighborhoodSidebarModules(browser);
+  loadCitySidebarModules(browser);
   runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/ui/amenityMode.js", browser);
   runBrowserScript("docs/js/ui/controlActions.js", browser);
@@ -633,8 +675,6 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95ControlActions.create, "function");
   assert.equal(typeof browser.window.Urban95InfoModal.bind, "function");
   assert.equal(typeof browser.window.Urban95Dashboards.configure, "function");
-  assert.equal(typeof browser.window.Urban95Dashboards.renderCitywideModal, "function");
-  assert.equal(typeof browser.window.Urban95Dashboards.hideCitywideModal, "function");
   assert.equal(typeof browser.window.Urban95SidebarChromeBindings.create, "function");
   assert.equal(typeof browser.window.Urban95NeighborhoodPanelRender.bindCharts, "function");
   assert.equal(typeof browser.window.Urban95NeighborhoodSidebar.configure, "function");
@@ -642,6 +682,40 @@ test("core modules expose stable Urban95 namespaces", () => {
   assert.equal(typeof browser.window.Urban95NeighborhoodSidebar.sync, "function");
   assert.equal(typeof browser.window.Urban95NeighborhoodSidebar.hide, "function");
   assert.equal(typeof browser.window.Urban95NeighborhoodSidebar.isOpen, "function");
+  assert.equal(typeof browser.window.Urban95CityGapModes.normalizeMode, "function");
+  assert.equal(typeof browser.window.Urban95CityGapModes.computeCuts, "function");
+  assert.equal(typeof browser.window.Urban95CityGapModes.isInGap, "function");
+  assert.equal(typeof browser.window.Urban95CityGapModes.cutForMode, "function");
+  assert.equal(typeof browser.window.Urban95CityGapModes.compareOpForMode, "function");
+  // Element-wise: MODES array is created in a vm realm (deepEqual fails cross-realm).
+  assert.equal(browser.window.Urban95CityGapModes.MODES.length, 3);
+  assert.equal(browser.window.Urban95CityGapModes.MODES[0], "off");
+  assert.equal(browser.window.Urban95CityGapModes.MODES[1], "below_city_avg");
+  assert.equal(browser.window.Urban95CityGapModes.MODES[2], "large_weak");
+  assert.equal(browser.window.Urban95CityGapModes.MODE_OFF, "off");
+  assert.equal(browser.window.Urban95CityGapModes.MODE_BELOW_CITY_AVG, "below_city_avg");
+  assert.equal(browser.window.Urban95CityGapModes.MODE_LARGE_WEAK, "large_weak");
+  assert.equal(browser.window.Urban95CityGapModes.DEFAULT_MODE, "off");
+  assert.equal(browser.window.Urban95CityGapModes.normalizeMode("lt40"), "off");
+  assert.equal(browser.window.Urban95CityGapModes.normalizeMode("lt50"), "off");
+  assert.equal(browser.window.Urban95CityGapModes.normalizeMode("lt60"), "off");
+  assert.equal(browser.window.Urban95CityGapModes.normalizeMode("bottom_quartile"), "off");
+  assert.equal(typeof browser.window.Urban95CityGapModes.computeLargeWeakNames, "function");
+  assert.equal(typeof browser.window.Urban95CityGapModes.buildGapCuts, "function");
+  assert.equal(typeof browser.window.Urban95CityPanelRender.populateHeader, "function");
+  assert.equal(typeof browser.window.Urban95CityPanelRender.buildBodyHTML, "function");
+  assert.equal(typeof browser.window.Urban95CityPanelRender.bindCharts, "function");
+  assert.equal(typeof browser.window.Urban95CityPanelRender.destroyCharts, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.configure, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.openShell, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.sync, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.hide, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.dismiss, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.isOpen, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.setSelection, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.setGapMode, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.setGapState, "function");
+  assert.equal(typeof browser.window.Urban95CitySidebar.getGapState, "function");
   assert.equal(typeof browser.window.Urban95Dashboards.loadNeighborhoods, "function");
   assert.equal(typeof browser.window.Urban95Dashboards.loadNeighborhoodSurfaceData, "function");
   assert.equal(typeof browser.window.Urban95Dashboards.loadNeighborhoodChartsPayload, "function");
@@ -652,8 +726,7 @@ test("core modules expose stable Urban95 namespaces", () => {
     typeof browser.window.Urban95Dashboards.getNeighborhoodHexSurfaceOpacityExpression,
     "function"
   );
-  assert.equal(typeof browser.window.Urban95Dashboards.showCitywideModal, "function");
-  assert.equal(typeof browser.window.Urban95Dashboards.renderCitywideCharts, "function");
+  assert.equal(typeof browser.window.Urban95Dashboards.pieSlicesFromInventoryCounts, "function");
   assert.equal(typeof browser.window.Urban95NeighborhoodPanelRender.destroyCharts, "function");
   runBrowserScript("docs/js/map/modeController.js", browser);
   assert.equal(typeof browser.window.Urban95ModeController.create, "function");
@@ -950,16 +1023,7 @@ test("control actions own score-mode, filter, walk-minute, and escape reactions"
     selectedNeighborhood: { properties: { id: 5 } },
     canRefreshPointAnalysisAfterPointDataLoad: true,
   };
-  const classListWithShow = {
-    contains: function (name) {
-      return name === "show";
-    },
-  };
-  const classListWithoutShow = {
-    contains: function () {
-      return false;
-    },
-  };
+  let citySidebarOpen = false;
 
   const actions = browser.window.Urban95ControlActions.create({
     perf: {
@@ -1065,17 +1129,6 @@ test("control actions own score-mode, filter, walk-minute, and escape reactions"
         calls.push("clearRadius");
       },
     },
-    dashboards: {
-      renderCitywideModal: function () {
-        calls.push("showCitywide");
-      },
-      updateCitywideModalTitle: function () {
-        calls.push("citywideTitle");
-      },
-      hideCitywideModal: function () {
-        calls.push("hideCitywide");
-      },
-    },
     scoreSidebar: {
       isOpen: function () {
         calls.push("scoreSidebarOpen");
@@ -1099,6 +1152,27 @@ test("control actions own score-mode, filter, walk-minute, and escape reactions"
         return false;
       },
     },
+    citySidebar: {
+      isOpen: function () {
+        calls.push("citySidebar:isOpen");
+        return citySidebarOpen;
+      },
+      sync: function () {
+        calls.push("citySidebar:sync");
+      },
+      hide: function () {
+        calls.push("citySidebar:hide");
+        citySidebarOpen = false;
+      },
+      dismiss: function () {
+        calls.push("citySidebar:dismiss");
+        citySidebarOpen = false;
+      },
+      setSelection: function (value) {
+        calls.push("citySidebar:setSelection:" + (value == null ? "null" : "feature"));
+        citySidebarOpen = true;
+      },
+    },
     modeController: {
       switchMode: function (mode) {
         calls.push("switch:" + mode);
@@ -1114,9 +1188,7 @@ test("control actions own score-mode, filter, walk-minute, and escape reactions"
       },
     },
     ui: {
-      getCitywideModal: function () {
-        return { classList: classListWithShow };
-      },
+      clearTooltip: function () {},
     },
   });
 
@@ -1127,7 +1199,24 @@ test("control actions own score-mode, filter, walk-minute, and escape reactions"
   actions.onWalkMinutesChanged();
   await actions.onModeToggleRequested("citywide");
   state.currentMode = "citywide";
+  citySidebarOpen = true;
   actions.onEscape({ stopPropagation: function () { calls.push("stopPropagation"); } });
+  assert.equal(state.currentMode, "citywide");
+  assert.ok(!calls.includes("switch:house"));
+
+  const escapeDismissIndex = calls.indexOf("citySidebar:dismiss");
+  assert.notEqual(escapeDismissIndex, -1);
+  const callsAfterDismiss = calls.slice(escapeDismissIndex + 1);
+  assert.ok(!callsAfterDismiss.includes("switch:house"));
+
+  citySidebarOpen = false;
+  const callCountBeforeClosedEscape = calls.length;
+  actions.onEscape({ stopPropagation: function () { calls.push("stopPropagation"); } });
+  assert.equal(calls.slice(callCountBeforeClosedEscape).includes("citySidebar:dismiss"), false);
+  assert.ok(!calls.slice(callCountBeforeClosedEscape).includes("switch:house"));
+
+  await actions.onModeToggleRequested("citywide");
+  assert.ok(calls.includes("citySidebar:setSelection:null"));
 
   function assertSubsequence(sequence) {
     let cursor = 0;
@@ -1170,8 +1259,9 @@ test("control actions own score-mode, filter, walk-minute, and escape reactions"
     "phase:modeToggle:click",
     "switch:citywide",
     "scoreSidebarOpen",
-    "hideCitywide",
-    "switch:house",
+    "citySidebar:isOpen",
+    "citySidebar:dismiss",
+    "stopPropagation",
   ]);
 
   assert.ok(!calls.includes("amenities"));
@@ -1232,11 +1322,7 @@ test("control actions skip direct radius sync when amenity mode reselected the b
       updateRadiusInfo: () => calls.push("updateRadiusInfo"),
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: { isOpen: () => false, hide: () => {} },
     neighborhoodSidebar: {
       show: () => {},
@@ -1246,7 +1332,7 @@ test("control actions skip direct radius sync when amenity mode reselected the b
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
   });
 
   await actions.onScoreModeChanged("expanded");
@@ -1302,11 +1388,7 @@ test("control actions selected-building cold expanded switch keeps isochrones ba
       updateRadiusInfo: () => {},
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: { isOpen: () => false, hide: () => {} },
     neighborhoodSidebar: {
       show: () => {},
@@ -1316,7 +1398,7 @@ test("control actions selected-building cold expanded switch keeps isochrones ba
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
   });
 
   await actions.onScoreModeChanged("expanded");
@@ -1377,11 +1459,7 @@ test("control actions keep direct radius sync when amenity mode did not refresh 
       updateRadiusInfo: () => calls.push("updateRadiusInfo"),
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: { isOpen: () => false, hide: () => {} },
     neighborhoodSidebar: {
       show: () => {},
@@ -1391,7 +1469,7 @@ test("control actions keep direct radius sync when amenity mode did not refresh 
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
   });
 
   await actions.onScoreModeChanged("expanded");
@@ -1450,11 +1528,7 @@ test("control actions do not direct-sync stale rapid toggles when amenity mode r
       updateRadiusInfo: () => calls.push("updateRadiusInfo"),
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: { isOpen: () => false, hide: () => {} },
     neighborhoodSidebar: {
       show: () => {},
@@ -1464,7 +1538,7 @@ test("control actions do not direct-sync stale rapid toggles when amenity mode r
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
   });
 
   const first = actions.onScoreModeChanged("expanded");
@@ -1532,11 +1606,7 @@ test("control actions no-selection score-mode path keeps sidebar closed and skip
       updateRadiusInfo: () => calls.push("updateRadiusInfo"),
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: {
       isOpen: () => {
         calls.push("scoreSidebar:isOpen");
@@ -1552,7 +1622,7 @@ test("control actions no-selection score-mode path keeps sidebar closed and skip
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
   });
 
   await actions.onScoreModeChanged("expanded");
@@ -1605,11 +1675,7 @@ test("filter changes with selected building recompute selection before point-sou
       updateRadiusInfo: () => {},
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: { isOpen: () => false, hide: () => {} },
     neighborhoodSidebar: {
       show: () => {},
@@ -1619,7 +1685,7 @@ test("filter changes with selected building recompute selection before point-sou
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
   });
 
   actions.onFilterSelectionChanged();
@@ -1671,11 +1737,7 @@ test("filter changes refresh point sources when selected-building recompute is u
       updateRadiusInfo: () => {},
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: { isOpen: () => false, hide: () => {} },
     neighborhoodSidebar: {
       show: () => {},
@@ -1685,7 +1747,7 @@ test("filter changes refresh point sources when selected-building recompute is u
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
   });
 
   actions.onFilterSelectionChanged();
@@ -1753,11 +1815,7 @@ test("walk-minute selected building recompute precedes global recolor", () => {
       updateRadiusInfo: () => {},
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: { isOpen: () => false, hide: () => {} },
     neighborhoodSidebar: {
       show: () => {},
@@ -1767,7 +1825,7 @@ test("walk-minute selected building recompute precedes global recolor", () => {
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
-    ui: { getCitywideModal: () => null },
+    ui: { clearTooltip: () => {} },
     requestAnimationFrame: (callback) => {
       rafQueue.push(callback);
       return rafQueue.length;
@@ -4684,6 +4742,11 @@ test("map events register expected handlers and call injected dependencies", () 
         calls.push("neighborhoodSidebar.show");
       },
     },
+    citySidebar: {
+      setSelection: function () {
+        calls.push("citySidebar.setSelection");
+      },
+    },
     mapRenderers: {
       updateTreesSource: function () {
         calls.push("updateTreesSource");
@@ -4792,6 +4855,9 @@ test("map events zoomend skips authoritative tree and light loads", () => {
     neighborhoodSidebar: {
       show: function () {},
     },
+    citySidebar: {
+      setSelection: function () {},
+    },
     mapRenderers: {
       updateTreesSource: function () {
         calls.push("updateTreesSource");
@@ -4875,6 +4941,9 @@ test("map events ignore malformed house click and park hover payloads", () => {
     },
     neighborhoodSidebar: {
       show: function () {},
+    },
+    citySidebar: {
+      setSelection: function () {},
     },
     mapRenderers: {
       updateTreesSource: function () {},
@@ -4968,6 +5037,9 @@ test("park hover hides tooltip when deck hover takes over", () => {
     neighborhoodSidebar: {
       show: function () {},
     },
+    citySidebar: {
+      setSelection: function () {},
+    },
     mapRenderers: {
       updateTreesSource: function () {},
       updateStreetLightsSource: function () {},
@@ -5041,6 +5113,7 @@ test("map events fail fast when required dependencies are missing", () => {
         },
         dashboards: {},
         neighborhoodSidebar: {},
+        citySidebar: {},
         mapRenderers: {},
         pointDataLoader: {},
         tooltip: { style: {} },
@@ -5909,13 +5982,14 @@ test("mode controller uses explicit UI element injection instead of document loo
   );
 
   assert.match(appSource, /radiusInfo:\s*radiusInfoEl/);
-  assert.match(appSource, /citywideBody:\s*citywideBodyEl/);
+  assert.match(appSource, /citySidebar:\s*Urban95CitySidebar/);
+  assert.doesNotMatch(appSource, /citywideBody:\s*citywideBodyEl/);
   assert.doesNotMatch(modeSource, /documentRef/);
   assert.doesNotMatch(modeSource, /getElementById/);
   assert.doesNotMatch(modeSource, /querySelector\s*\(/);
 });
 
-test("control actions uses explicit modal accessors instead of document lookups", () => {
+test("control actions uses explicit city sidebar accessors instead of document lookups", () => {
   const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
   const controlActionsSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "ui", "controlActions.js"),
@@ -5924,14 +5998,21 @@ test("control actions uses explicit modal accessors instead of document lookups"
 
   assert.match(
     appSource,
-    /ui:\s*\{\s*getCitywideModal:\s*function \(\) \{\s*return citywideModalEl;\s*\},\s*clearTooltip:\s*function \(\) \{\s*tooltip\.textContent = "";\s*tooltip\.style\.display = "none";\s*\},\s*\}/s
+    /citySidebar:\s*\{\s*isOpen:\s*Urban95CitySidebar\.isOpen,\s*sync:\s*Urban95CitySidebar\.sync,\s*hide:\s*Urban95CitySidebar\.hide,\s*dismiss:\s*Urban95CitySidebar\.dismiss,\s*setSelection:\s*Urban95CitySidebar\.setSelection,\s*\}/s
+  );
+  assert.match(
+    appSource,
+    /ui:\s*\{\s*clearTooltip:\s*function \(\) \{\s*tooltip\.textContent = "";\s*tooltip\.style\.display = "none";\s*\},\s*\}/s
   );
   assert.match(controlActionsSource, /\["neighborhoodSidebar\.show", neighborhoodSidebar\.show\]/);
   assert.match(controlActionsSource, /\["neighborhoodSidebar\.sync", neighborhoodSidebar\.sync\]/);
   assert.match(controlActionsSource, /\["neighborhoodSidebar\.hide", neighborhoodSidebar\.hide\]/);
   assert.match(controlActionsSource, /\["neighborhoodSidebar\.isOpen", neighborhoodSidebar\.isOpen\]/);
-  assert.match(controlActionsSource, /\["ui\.getCitywideModal", ui\.getCitywideModal\]/);
-  assert.match(controlActionsSource, /var getCitywideModal = ui\.getCitywideModal;/);
+  assert.match(controlActionsSource, /\["citySidebar\.isOpen", citySidebar\.isOpen\]/);
+  assert.match(controlActionsSource, /\["citySidebar\.sync", citySidebar\.sync\]/);
+  assert.match(controlActionsSource, /\["citySidebar\.hide", citySidebar\.hide\]/);
+  assert.match(controlActionsSource, /\["citySidebar\.dismiss", citySidebar\.dismiss\]/);
+  assert.match(controlActionsSource, /\["citySidebar\.setSelection", citySidebar\.setSelection\]/);
   assert.match(controlActionsSource, /var clearTooltip =\s*typeof ui\.clearTooltip === "function" \? ui\.clearTooltip : function \(\) \{\};/);
   assert.match(controlActionsSource, /clearTooltip\(\);\s*clearDerivedCaches\(\);/);
   assert.doesNotMatch(controlActionsSource, /documentRef/);
@@ -5959,6 +6040,7 @@ test("control actions requires and receives state.getScoreMode", () => {
 
 function createModeControllerHarness(overrides) {
   const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/cityGapThresholds.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
 
   const calls = [];
@@ -6041,19 +6123,32 @@ function createModeControllerHarness(overrides) {
           calls.push(["dashboards:loadCitywideStats"]);
           return Promise.resolve({});
         },
-        hideCitywideModal() {
-          calls.push(["dashboards:hideCitywideModal"]);
-        },
-        renderCitywideModal() {
-          calls.push(["dashboards:renderCitywideModal"]);
-        },
-        showCitywideModal() {
-          calls.push(["dashboards:showCitywideModal"]);
-        },
       },
       neighborhoodSidebar: {
         hide() {
           calls.push(["neighborhoodSidebar:hide"]);
+        },
+      },
+      citySidebar: {
+        openShell() {
+          calls.push(["citySidebar:openShell"]);
+        },
+        sync() {
+          calls.push(["citySidebar:sync"]);
+        },
+        hide(options) {
+          calls.push(["citySidebar:hide", options]);
+        },
+        setSelection(value) {
+          calls.push(["citySidebar:setSelection", value]);
+        },
+        setGapState(mode, options) {
+          calls.push(["citySidebar:setGapState", mode, options || null]);
+        },
+      },
+      scoreSidebar: {
+        hide(options) {
+          calls.push(["scoreSidebar:hide", options]);
         },
       },
       mapRenderers: {
@@ -6075,6 +6170,9 @@ function createModeControllerHarness(overrides) {
         updateNeighborhoodColors() {
           calls.push(["renderers:updateNeighborhoodColors"]);
         },
+        setCityNeighborhoodSelectionHighlight(feature) {
+          calls.push(["renderers:setCityNeighborhoodSelectionHighlight", feature]);
+        },
       },
       selection: {
         clearRadiusSelection() {
@@ -6094,7 +6192,6 @@ function createModeControllerHarness(overrides) {
         classList: { toggle() {} },
       },
       radiusInfo: { style: { display: "block" } },
-      citywideBody: { innerHTML: "" },
     },
     state: {
       getCurrentMode() {
@@ -6105,6 +6202,9 @@ function createModeControllerHarness(overrides) {
       },
       setSelectedNeighborhood(value) {
         calls.push(["state:setSelectedNeighborhood", value]);
+      },
+      setCitySelection(value) {
+        calls.push(["state:setCitySelection", value]);
       },
     },
     scoring: {
@@ -6234,10 +6334,109 @@ test("mode controller logs async failures without unhandled rejections", async (
   });
 
   await citywideHarness.controller.switchMode("citywide");
-  assert.ok(
-    citywideHarness.calls.some(
+  assert.ok(citywideHarness.calls.some(
       (call) => call[0] === "logger:error" && String(call[1]).includes("citywide")
     )
+  );
+});
+
+test("mode controller citywide enter hides buildings, keeps legend, opens city sidebar, and fits bounds", async () => {
+  const harness = createModeControllerHarness(function (deps) {
+    deps.integrations.dashboards.loadNeighborhoods = function () {
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [] } }],
+      });
+    };
+  });
+
+  await harness.controller.switchMode("citywide");
+
+  assert.ok(
+    harness.calls.some(function (call) {
+      return (
+        call[0] === "map:setLayoutProperty" &&
+        call[1] === "buildings-fill" &&
+        call[2] === "visibility" &&
+        call[3] === "none"
+      );
+    })
+  );
+  assert.equal(
+    harness.calls.some(function (call) {
+      return call[0] === "map:setPaintProperty" && call[1] === "buildings-fill" && call[2] === "fill-opacity";
+    }),
+    false
+  );
+  assert.ok(
+    harness.calls.some(function (call) {
+      return call[0] === "assets:setLegendVisible" && call[1] === true;
+    })
+  );
+  assert.ok(
+    harness.calls.some(function (call) {
+      return (
+        call[0] === "citySidebar:setGapState" &&
+        call[1] === "off" &&
+        call[2] &&
+        call[2].sync === false
+      );
+    })
+  );
+  // Enter City must reset gap to relative DEFAULT_MODE ("off"), never absolute lt40/50/60.
+  assert.equal(
+    harness.calls.some(function (call) {
+      return (
+        call[0] === "citySidebar:setGapState" &&
+        (call[1] === "lt40" || call[1] === "lt50" || call[1] === "lt60")
+      );
+    }),
+    false
+  );
+  assert.ok(
+    harness.calls.some(function (call) {
+      return call[0] === "citySidebar:openShell";
+    })
+  );
+  assert.ok(
+    harness.calls.some(function (call) {
+      return call[0] === "citySidebar:sync";
+    })
+  );
+  const setGapStateIndex = harness.calls.findIndex(function (call) {
+    return call[0] === "citySidebar:setGapState";
+  });
+  const openShellIndex = harness.calls.findIndex(function (call) {
+    return call[0] === "citySidebar:openShell";
+  });
+  const syncIndex = harness.calls.findIndex(function (call) {
+    return call[0] === "citySidebar:sync";
+  });
+  const colorsIndex = harness.calls.findIndex(function (call) {
+    return call[0] === "renderers:updateNeighborhoodColors";
+  });
+  const fitBoundsIndex = harness.calls.findIndex(function (call) {
+    return call[0] === "map:fitBounds";
+  });
+  assert.ok(setGapStateIndex !== -1);
+  assert.ok(openShellIndex !== -1);
+  assert.ok(syncIndex !== -1);
+  assert.ok(colorsIndex !== -1);
+  assert.ok(fitBoundsIndex !== -1);
+  assert.ok(setGapStateIndex < colorsIndex);
+  assert.ok(colorsIndex < openShellIndex);
+  // Task 2 polish: pad/openShell before fitBounds, then sync content.
+  assert.ok(openShellIndex < fitBoundsIndex);
+  assert.ok(fitBoundsIndex < syncIndex);
+  assert.ok(
+    harness.calls.some(function (call) {
+      return (
+        call[0] === "map:fitBounds" &&
+        call[2] &&
+        call[2].padding === 40 &&
+        call[2].duration === 600
+      );
+    })
   );
 });
 
@@ -7393,11 +7592,7 @@ test("background isochrone failure does not poison a later direct selected-build
       updateRadiusInfo: () => {},
       clearRadiusSelection: () => {},
     },
-    dashboards: {
-      renderCitywideModal: () => {},
-      updateCitywideModalTitle: () => {},
-      hideCitywideModal: () => {},
-    },
+    citySidebar: createCitySidebarControlStub(),
     scoreSidebar: {
       isOpen: () => false,
       hide: () => {},
@@ -7416,7 +7611,7 @@ test("background isochrone failure does not poison a later direct selected-build
       setLayoutProperty: () => {},
     },
     ui: {
-      getCitywideModal: () => null,
+      clearTooltip: () => {},
     },
   });
 
@@ -9332,6 +9527,7 @@ function loadAppStatePrerequisites(browser) {
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
+  loadCitySidebarModules(browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
@@ -9544,11 +9740,11 @@ test("app.js fails fast when a required Urban95Dashboards member is missing", ()
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
-  delete browser.window.Urban95Dashboards.renderCitywideModal;
+  delete browser.window.Urban95Dashboards.loadCitywideStats;
 
   assert.throws(
     () => runAppScript(browser),
-    /Urban95Dashboards\.renderCitywideModal is required before docs\/app\.js/
+    /Urban95Dashboards\.loadCitywideStats is required before docs\/app\.js/
   );
 });
 
@@ -9573,11 +9769,44 @@ test("app.js fails fast when a required Urban95Dashboards member has the wrong t
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
-  browser.window.Urban95Dashboards.renderCitywideModal = 123;
+  browser.window.Urban95Dashboards.loadCitywideStats = 123;
 
   assert.throws(
     () => runAppScript(browser),
-    /Urban95Dashboards\.renderCitywideModal must be a function before docs\/app\.js/
+    /Urban95Dashboards\.loadCitywideStats must be a function before docs\/app\.js/
+  );
+});
+
+test("app.js fails fast when a required Urban95CitySidebar member is missing", () => {
+  const browser = createBrowserContext({
+    URBAN95_GENERATED_ARTIFACTS: {
+      buildings: {
+        status: "built",
+        output: "./data/buildings_accessibility.pmtiles",
+        source_layer: "buildings",
+      },
+    },
+  });
+
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/core/dataArtifacts.js", browser);
+  runBrowserScript("docs/js/core/loaders.js", browser);
+  runBrowserScript("docs/js/core/runtimeData.js", browser);
+  runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  runBrowserScript("docs/js/map/mapLayers.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
+  runBrowserScript("docs/js/ui/infoModal.js", browser);
+  runBrowserScript("docs/js/ui/sidebarChromeBindings.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
+  loadCitySidebarModules(browser);
+  runBrowserScript("docs/js/ui/dashboards.js", browser);
+  delete browser.window.Urban95CitySidebar.getGapState;
+
+  assert.throws(
+    () => runAppScript(browser),
+    /Urban95CitySidebar\.getGapState is required before docs\/app\.js/
   );
 });
 
@@ -9608,6 +9837,7 @@ function loadModeControllerAppPrerequisites(browser) {
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
+  loadCitySidebarModules(browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
   runBrowserScript("docs/js/ui/overlayVisibility.js", browser);
@@ -9893,6 +10123,15 @@ function runDesktopOnlyGateModule(overrides) {
   runBrowserScript("docs/js/core/desktopOnlyGate.js", browser);
   return browser.window.Urban95DesktopOnlyGate;
 }
+
+test("index includes city sidebar markup and removes citywide modal", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "index.html"), "utf8");
+  assert.match(html, /id="city-sidebar"/);
+  assert.match(html, /id="city-sidebar-body"/);
+  assert.match(html, /id="city-sidebar-close"/);
+  assert.doesNotMatch(html, /id="citywide-modal"/);
+  assert.doesNotMatch(html, /id="citywide-body"/);
+});
 
 test("index includes desktop-only overlay markup", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "index.html"), "utf8");

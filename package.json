@@ -9,8 +9,8 @@
   "scripts": {
     "start": "http-server . -c-1",
     "start:docs": "http-server docs -c-1",
-    "test": "node --test tests/frontend/module_contracts.test.js tests/frontend/shade_companion_contracts.test.js tests/frontend/score_model.test.js tests/frontend/control_sidebar.test.js",
-    "test:frontend": "node --test tests/frontend/module_contracts.test.js tests/frontend/shade_companion_contracts.test.js tests/frontend/score_model.test.js tests/frontend/control_sidebar.test.js"
+    "test": "node --test tests/frontend/module_contracts.test.js tests/frontend/shade_companion_contracts.test.js tests/frontend/score_model.test.js tests/frontend/control_sidebar.test.js tests/frontend/city_gap_thresholds.test.js",
+    "test:frontend": "node --test tests/frontend/module_contracts.test.js tests/frontend/shade_companion_contracts.test.js tests/frontend/score_model.test.js tests/frontend/control_sidebar.test.js tests/frontend/city_gap_thresholds.test.js"
   },
   "repository": {
     "type": "git",

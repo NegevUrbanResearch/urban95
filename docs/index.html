@@ -136,22 +136,30 @@
         aria-label="Close neighborhood details" hidden></button>
     </aside>
 
+    <aside
+      id="city-sidebar"
+      class="score-explain-sidebar city-sidebar"
+      aria-label="City overview"
+      aria-hidden="true"
+    >
+      <div class="score-explain-sidebar-inner city-sidebar-inner">
+        <header class="score-explain-sidebar-header city-sidebar-header">
+          <button type="button" id="city-sidebar-close"
+            class="score-explain-sidebar-close" aria-label="Close city overview">&times;</button>
+          <p class="score-explain-eyebrow" id="city-sidebar-eyebrow" hidden>City</p>
+          <div class="score-explain-hero-metrics" id="city-sidebar-hero"></div>
+          <div class="score-explain-header-meta" id="city-sidebar-meta"></div>
+        </header>
+        <p id="city-sidebar-empty" class="score-explain-empty" hidden></p>
+        <div id="city-sidebar-body" class="score-explain-sidebar-body city-sidebar-body" tabindex="-1"></div>
+      </div>
+      <button type="button" id="city-sidebar-backdrop" class="score-explain-backdrop"
+        aria-label="Close city overview" hidden></button>
+    </aside>
+
     <div id="tooltip"></div>
 
     <div id="filter-backdrop" class="filter-backdrop"></div>
-
-    <div id="citywide-modal" class="modal">
-      <div class="modal-content citywide-content">
-        <button id="citywide-close" class="modal-close">&times;</button>
-        <div class="modal-header">
-          <div class="modal-title">
-            <h2 id="citywide-modal-title">Beer Sheva — City Overview</h2>
-            <p id="citywide-modal-subtitle">Accessibility across the city</p>
-          </div>
-        </div>
-        <div class="citywide-body" id="citywide-body"></div>
-      </div>
-    </div>
 
     <div
       id="info-modal"
@@ -211,7 +219,7 @@
                   <em>Neighborhood</em> — Click a neighborhood for charts and stats.
                 </p>
                 <p>
-                  <em>City</em> — Opens a city dashboard (inventory, score distribution, neighborhood ranking); outlines stay on the map for context.
+                  <em>City</em> — Opens a city sidebar with citywide KPIs, score distribution, and neighborhood ranking. Click a neighborhood on the map or ranking to focus it; use Open neighborhood for details. Optional Show gaps modes: Off, Below map avg, or Large weak places (building mass) — highlights weak areas on the map’s 0–100 choropleth scale (Urban95 scores / Amenities Focus map percentiles).
                 </p>
               </li>
               <li>
@@ -321,6 +329,9 @@
     <script src="./js/ui/infoModal.js"></script>
     <script src="./js/ui/neighborhoodPanelRender.js"></script>
     <script src="./js/ui/neighborhoodSidebar.js"></script>
+    <script src="./js/ui/cityGapThresholds.js"></script>
+    <script src="./js/ui/cityPanelRender.js"></script>
+    <script src="./js/ui/citySidebar.js"></script>
     <script src="./js/ui/dashboards.js"></script>
     <script src="./js/map/modeController.js"></script>
     <script src="./js/map/mapEvents.js"></script>

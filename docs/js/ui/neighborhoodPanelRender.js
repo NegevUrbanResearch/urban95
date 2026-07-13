@@ -190,7 +190,7 @@
           }
         );
         var labels = dist.edges.slice(0, -1).map(function (edge, index) {
-          return edge + "-" + dist.edges[index + 1];
+          return Math.round(Number(edge)) + "-" + Math.round(Number(dist.edges[index + 1]));
         });
         var breakpoints = [0, 25, 50, 75, 100];
         chartInstances.push(

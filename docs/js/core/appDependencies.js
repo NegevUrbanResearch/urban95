@@ -258,28 +258,36 @@ requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar",
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "sync", "function");
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "hide", "function");
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "isOpen", "function");
+var Urban95CityGapModes = requireNamespace(window, "Urban95CityGapModes");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "MODES", "object");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "DEFAULT_MODE", "string");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "normalizeMode", "function");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "computeCuts", "function");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "computeLargeWeakNames", "function");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "buildGapCuts", "function");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "cutForMode", "function");
+requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "isInGap", "function");
+var Urban95CityPanelRender = requireNamespace(window, "Urban95CityPanelRender");
+requireNamespaceMember(Urban95CityPanelRender, "Urban95CityPanelRender", "populateHeader", "function");
+requireNamespaceMember(Urban95CityPanelRender, "Urban95CityPanelRender", "buildBodyHTML", "function");
+requireNamespaceMember(Urban95CityPanelRender, "Urban95CityPanelRender", "bindCharts", "function");
+requireNamespaceMember(Urban95CityPanelRender, "Urban95CityPanelRender", "destroyCharts", "function");
+var Urban95CitySidebar = requireNamespace(window, "Urban95CitySidebar");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "configure", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "openShell", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "sync", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "hide", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "dismiss", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "isOpen", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "setSelection", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "getSelection", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "setGapMode", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "setGapState", "function");
+requireNamespaceMember(Urban95CitySidebar, "Urban95CitySidebar", "getGapState", "function");
 var Urban95InfoModal = requireNamespace(window, "Urban95InfoModal");
 requireNamespaceMember(Urban95InfoModal, "Urban95InfoModal", "bind", "function");
 var Urban95Dashboards = requireNamespace(window, "Urban95Dashboards");
 requireNamespaceMember(Urban95Dashboards, "Urban95Dashboards", "configure", "function");
-requireNamespaceMember(
-  Urban95Dashboards,
-  "Urban95Dashboards",
-  "renderCitywideModal",
-  "function"
-);
-requireNamespaceMember(
-  Urban95Dashboards,
-  "Urban95Dashboards",
-  "updateCitywideModalTitle",
-  "function"
-);
-requireNamespaceMember(
-  Urban95Dashboards,
-  "Urban95Dashboards",
-  "hideCitywideModal",
-  "function"
-);
 requireNamespaceMember(Urban95Dashboards, "Urban95Dashboards", "loadNeighborhoods", "function");
 requireNamespaceMember(
   Urban95Dashboards,
@@ -312,7 +320,12 @@ requireNamespaceMember(
   "getNeighborhoodHexSurfaceOpacityExpression",
   "function"
 );
-requireNamespaceMember(Urban95Dashboards, "Urban95Dashboards", "showCitywideModal", "function");
+requireNamespaceMember(
+  Urban95Dashboards,
+  "Urban95Dashboards",
+  "pieSlicesFromInventoryCounts",
+  "function"
+);
 var Urban95ModeController = requireNamespace(window, "Urban95ModeController");
 requireNamespaceMember(Urban95ModeController, "Urban95ModeController", "create", "function");
 var Urban95MapEvents = requireNamespace(window, "Urban95MapEvents");

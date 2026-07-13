@@ -400,7 +400,8 @@
           "trees-vector": vectorSourceOrGeojson("trees", opts.treesPmtilesUrl),
           "street-lights": { type: "geojson", data: emptyFeatureCollection() },
           "street-lights-vector": vectorSourceOrGeojson("street_lights", opts.streetLightsPmtilesUrl),
-          neighborhoods: { type: "geojson", data: emptyFeatureCollection() },
+          // promoteId enables City feature-state highlight via properties.Name
+          neighborhoods: { type: "geojson", data: emptyFeatureCollection(), promoteId: "Name" },
           "neighborhood-score-surface": vectorSourceOrGeojson(
             "neighborhood_surface",
             opts.neighborhoodSurfacePmtilesUrl

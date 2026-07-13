@@ -183,6 +183,14 @@ const neighborhoodSidebarMetaEl = document.getElementById("neighborhood-sidebar-
 const neighborhoodSidebarBodyEl = document.getElementById("neighborhood-sidebar-body");
 const neighborhoodSidebarEmptyEl = document.getElementById("neighborhood-sidebar-empty");
 const neighborhoodSidebarBackdropEl = document.getElementById("neighborhood-sidebar-backdrop");
+const citySidebarEl = document.getElementById("city-sidebar");
+const citySidebarCloseEl = document.getElementById("city-sidebar-close");
+const citySidebarHeroEl = document.getElementById("city-sidebar-hero");
+const citySidebarEyebrowEl = document.getElementById("city-sidebar-eyebrow");
+const citySidebarMetaEl = document.getElementById("city-sidebar-meta");
+const citySidebarBodyEl = document.getElementById("city-sidebar-body");
+const citySidebarEmptyEl = document.getElementById("city-sidebar-empty");
+const citySidebarBackdropEl = document.getElementById("city-sidebar-backdrop");
 let controlsBinding = null;
 let controlSidebarAdapter = null;
 function getControlUiElements() {
@@ -434,6 +442,11 @@ Urban95MapRenderers.configure({
   amenityTypeConfig: AMENITY_TYPE_CONFIG,
   getAmenityConfig: getAmenityConfig,
   getCurrentMode: function () { return currentMode; },
+  getCitySelection: function () { return citySelection; },
+  getCityGapState: function () {
+    return Urban95CitySidebar.getGapState();
+  },
+  cityGapModes: Urban95CityGapModes,
   getScoreMode: getScoreModeState,
   getScoreMinutes: getScoreMinutes,
   getSelectedAmenityTypes: function () { return getSelectedAmenityTypesState(); },
@@ -655,13 +668,8 @@ let neighborhoodSurfaceData = null;
 let neighborhoodChartsPayload = null;
 let citywideStats = null;
 let selectedNeighborhood = null;
-let citywideCharts = [];
+let citySelection = null;
 let modeController = null;
-const citywideModalEl = document.getElementById("citywide-modal");
-const citywideCloseEl = document.getElementById("citywide-close");
-const citywideTitleEl = document.getElementById("citywide-modal-title");
-const citywideSubtitleEl = document.getElementById("citywide-modal-subtitle");
-const citywideBodyEl = document.getElementById("citywide-body");
 const radiusInfoEl = document.getElementById("radius-info");
 function switchMode(mode) {
   if (!modeController) {
@@ -716,17 +724,13 @@ auxiliaryOverlays = Urban95AuxiliaryOverlays.create({
 Urban95Dashboards.configure({
   map: map,
   fetchJsonWithGzipFallback: fetchJsonWithGzipFallback,
-  ensureChartJsLoaded: ensureChartJsLoaded,
   urls: {
     neighborhoods: NEIGHBORHOODS_URL,
     neighborhoodSurface: NEIGHBORHOOD_SURFACE_URL,
     neighborhoodCharts: NEIGHBORHOOD_CHARTS_URL,
     citywideStats: CITYWIDE_STATS_URL,
   },
-  scoreModel: Urban95ScoreModel,
   getScoreMode: getScoreModeState,
-  getScoreMinutes: getScoreMinutes,
-  escapeHtml: scoreExplain.escapeHtml,
   getNeighborhoodsData: function () { return neighborhoodsData; },
   setNeighborhoodsData: function (value) { neighborhoodsData = value; },
   getNeighborhoodSurfaceData: function () { return neighborhoodSurfaceData; },
@@ -735,38 +739,11 @@ Urban95Dashboards.configure({
   setNeighborhoodChartsPayload: function (value) { neighborhoodChartsPayload = value; },
   getCitywideStats: function () { return citywideStats; },
   setCitywideStats: function (value) { citywideStats = value; },
-  getCitywideCharts: function () { return citywideCharts; },
-  setCitywideCharts: function (value) { citywideCharts = value; },
   getAmenityConfig: getAmenityConfig,
-  getNeighborhoodPercentileKey: getNeighborhoodPercentileKey,
   getNeighborhoodSurfaceScorePropertyKey: getNeighborhoodSurfaceScorePropertyKey,
-  getActiveMetric: getActiveMetricState,
-  getWeightedNeighborhoodMetricValue: getWeightedNeighborhoodMetricValue,
-  hasWeightedNeighborhoodMetricData: hasWeightedNeighborhoodMetricData,
-  getWeightedHistogramDistribution: getWeightedHistogramDistribution,
-  weightedCategoryHighlightsFromSource: weightedCategoryHighlightsFromSource,
-  weightedSubcategoryComparisonRows: weightedSubcategoryComparisonRows,
-  renderWeightedSubcategoryComparisonList: scoreExplain.renderWeightedSubcategoryComparisonList,
-  buildHistogramDistributionFromScores: buildHistogramDistributionFromScores,
-  collectBuildingScores: collectBuildingScores,
-  getColorForValue: getColorForValue,
-  percentileBreakpoints: percentileBreakpoints,
   formatMetricNumber: formatMetricNumber,
   getOrdinalSuffix: scoreExplain.getOrdinalSuffix,
-  getScoreModeLabel: getScoreModeLabel,
   tooltipEl: tooltip,
-  switchMode: switchMode,
-  citywideModal: citywideModalEl,
-  citywideClose: citywideCloseEl,
-  citywideTitle: citywideTitleEl,
-  citywideSubtitle: citywideSubtitleEl,
-  citywideBody: citywideBodyEl,
-  requestAnimationFrame:
-    typeof window.requestAnimationFrame === "function"
-      ? window.requestAnimationFrame.bind(window)
-      : function (callback) {
-          return callback();
-        },
 });
 Urban95NeighborhoodSidebar.configure({
   getWeightedNeighborhoodMetricValue: getWeightedNeighborhoodMetricValue,
@@ -813,6 +790,64 @@ Urban95NeighborhoodSidebar.configure({
     heroPercentileMeterFillStyle: scoreExplain.heroPercentileMeterFillStyle,
     getCitywideStats: function () { return citywideStats; },
   },
+});
+Urban95CitySidebar.configure({
+  getScoreMode: getScoreModeState,
+  getScoreMinutes: getScoreMinutes,
+  getCitySelection: function () { return citySelection; },
+  setCitySelection: function (feature) { citySelection = feature; },
+  loadCitywideStats: Urban95Dashboards.loadCitywideStats,
+  getCitywideStats: function () { return citywideStats; },
+  getNeighborhoodsData: function () { return neighborhoodsData; },
+  ensureChartJsLoaded: ensureChartJsLoaded,
+  requestAnimationFrame:
+    typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame.bind(window)
+      : function (callback) {
+          return callback();
+        },
+  setSidebarPadding: scoreSidebarChrome.setSidebarPadding,
+  restoreFocusAfterHide: scoreSidebarChrome.restoreFocusAfterHide,
+  fitBounds: map.fitBounds.bind(map),
+  bbox: turf.bbox.bind(turf),
+  onGapStateChanged: function () {
+    Urban95MapRenderers.updateNeighborhoodColors();
+  },
+  onSelectionChanged: function (feature) {
+    Urban95MapRenderers.setCityNeighborhoodSelectionHighlight(feature);
+  },
+  onOpenNeighborhood: function (feature) {
+    Promise.resolve(switchMode("neighborhood")).then(function () {
+      Urban95NeighborhoodSidebar.show(feature);
+    });
+  },
+  getNeighborhoodAverageKey: getNeighborhoodAverageKey,
+  bulkPercentileRanks: bulkPercentileRanks,
+  getWeightedNeighborhoodMetricValue: getWeightedNeighborhoodMetricValue,
+  hasWeightedNeighborhoodMetricData: hasWeightedNeighborhoodMetricData,
+  renderDeps: {
+    escapeHtml: scoreExplain.escapeHtml,
+    formatMetricNumber: formatMetricNumber,
+    formatScoreInteger: formatScoreInteger,
+    getActiveMetric: getActiveMetricState,
+    getScoreModeLabel: getScoreModeLabel,
+    getOrdinalSuffix: scoreExplain.getOrdinalSuffix,
+    heroPercentileMeterFillStyle: scoreExplain.heroPercentileMeterFillStyle,
+    getWeightedHistogramDistribution: getWeightedHistogramDistribution,
+    getNeighborhoodPercentileKey: getNeighborhoodPercentileKey,
+    buildHistogramDistributionFromScores: buildHistogramDistributionFromScores,
+    collectBuildingScores: collectBuildingScores,
+    percentileBreakpoints: percentileBreakpoints,
+    getColorForValue: getColorForValue,
+  },
+  sidebarEl: citySidebarEl,
+  heroEl: citySidebarHeroEl,
+  eyebrowEl: citySidebarEyebrowEl,
+  metaEl: citySidebarMetaEl,
+  bodyEl: citySidebarBodyEl,
+  emptyEl: citySidebarEmptyEl,
+  closeButtonEl: citySidebarCloseEl,
+  backdropEl: citySidebarBackdropEl,
 });
 const iconLoader = Urban95IconLoader.create({
   map: map,
@@ -964,11 +999,6 @@ const controlActions = Urban95ControlActions.create({
     updateRadiusInfo: Urban95Selection.updateRadiusInfo,
     clearRadiusSelection: Urban95Selection.clearRadiusSelection,
   },
-  dashboards: {
-    renderCitywideModal: Urban95Dashboards.renderCitywideModal,
-    updateCitywideModalTitle: Urban95Dashboards.updateCitywideModalTitle,
-    hideCitywideModal: Urban95Dashboards.hideCitywideModal,
-  },
   scoreSidebar: {
     isOpen: Urban95ScoreSidebar.isOpen,
     hide: Urban95ScoreSidebar.hide,
@@ -980,6 +1010,13 @@ const controlActions = Urban95ControlActions.create({
     hide: Urban95NeighborhoodSidebar.hide,
     isOpen: Urban95NeighborhoodSidebar.isOpen,
   },
+  citySidebar: {
+    isOpen: Urban95CitySidebar.isOpen,
+    sync: Urban95CitySidebar.sync,
+    hide: Urban95CitySidebar.hide,
+    dismiss: Urban95CitySidebar.dismiss,
+    setSelection: Urban95CitySidebar.setSelection,
+  },
   modeController: {
     switchMode: switchMode,
   },
@@ -988,9 +1025,6 @@ const controlActions = Urban95ControlActions.create({
     setLayoutProperty: map.setLayoutProperty.bind(map),
   },
   ui: {
-    getCitywideModal: function () {
-      return citywideModalEl;
-    },
     clearTooltip: function () {
       tooltip.textContent = "";
       tooltip.style.display = "none";
@@ -1100,13 +1134,14 @@ modeController = Urban95ModeController.create({
     mapRenderers: Urban95MapRenderers,
     selection: Urban95Selection,
     neighborhoodSidebar: Urban95NeighborhoodSidebar,
+    citySidebar: Urban95CitySidebar,
+    scoreSidebar: Urban95ScoreSidebar,
   },
   ui: {
     modeHint: controlUi.modeHint,
     modeToggle: controlUi.modeToggle,
     indicatorsSection: controlUi.indicatorsSection,
     radiusInfo: radiusInfoEl,
-    citywideBody: citywideBodyEl,
   },
   state: {
     getCurrentMode: function () {
@@ -1117,6 +1152,9 @@ modeController = Urban95ModeController.create({
     },
     setSelectedNeighborhood: function (value) {
       selectedNeighborhood = value;
+    },
+    setCitySelection: function (feature) {
+      citySelection = feature;
     },
   },
   scoring: {
@@ -1238,6 +1276,7 @@ Urban95MapEvents.bind({
   selection: Urban95Selection,
   dashboards: Urban95Dashboards,
   neighborhoodSidebar: Urban95NeighborhoodSidebar,
+  citySidebar: Urban95CitySidebar,
   mapRenderers: Urban95MapRenderers,
   pointDataLoader: pointDataLoader,
   tooltip: tooltip,

@@ -24,9 +24,9 @@
     var amenityMode = deps.amenityMode || {};
     var renderers = deps.renderers || {};
     var selection = deps.selection || {};
-    var dashboards = deps.dashboards || {};
     var scoreSidebar = deps.scoreSidebar || {};
     var neighborhoodSidebar = deps.neighborhoodSidebar || {};
+    var citySidebar = deps.citySidebar || {};
     var modeController = deps.modeController || {};
     var map = deps.map || {};
     var ui = deps.ui || {};
@@ -41,7 +41,6 @@
         : typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
           ? window.requestAnimationFrame.bind(window)
           : null;
-    var getCitywideModal = ui.getCitywideModal;
 
     [
       ["perf.session", perf.session],
@@ -74,17 +73,18 @@
       ["selection.selectBuilding", selection.selectBuilding],
       ["selection.updateRadiusInfo", selection.updateRadiusInfo],
       ["selection.clearRadiusSelection", selection.clearRadiusSelection],
-      ["dashboards.renderCitywideModal", dashboards.renderCitywideModal],
-      ["dashboards.updateCitywideModalTitle", dashboards.updateCitywideModalTitle],
-      ["dashboards.hideCitywideModal", dashboards.hideCitywideModal],
       ["scoreSidebar.isOpen", scoreSidebar.isOpen],
       ["scoreSidebar.hide", scoreSidebar.hide],
       ["neighborhoodSidebar.show", neighborhoodSidebar.show],
       ["neighborhoodSidebar.sync", neighborhoodSidebar.sync],
       ["neighborhoodSidebar.hide", neighborhoodSidebar.hide],
       ["neighborhoodSidebar.isOpen", neighborhoodSidebar.isOpen],
+      ["citySidebar.isOpen", citySidebar.isOpen],
+      ["citySidebar.sync", citySidebar.sync],
+      ["citySidebar.hide", citySidebar.hide],
+      ["citySidebar.dismiss", citySidebar.dismiss],
+      ["citySidebar.setSelection", citySidebar.setSelection],
       ["modeController.switchMode", modeController.switchMode],
-      ["ui.getCitywideModal", ui.getCitywideModal],
     ].forEach(function (entry) {
       requireFunction(entry[1], entry[0]);
     });
@@ -147,11 +147,8 @@
         }
       } else if (currentMode === "citywide") {
         renderers.updateNeighborhoodColors();
-        var citywideModal = getCitywideModal();
-        if (citywideModal && citywideModal.classList && citywideModal.classList.contains("show")) {
-          dashboards.renderCitywideModal();
-        } else {
-          dashboards.updateCitywideModalTitle();
+        if (citySidebar.isOpen()) {
+          citySidebar.sync();
         }
       }
     }
@@ -294,6 +291,10 @@
     function onModeToggleRequested(mode) {
       perf.session("analysis mode -> " + mode);
       return perf.phase("modeToggle:click", function () {
+        if (mode === "citywide" && state.getCurrentMode() === "citywide") {
+          citySidebar.setSelection(null);
+          return;
+        }
         modeController.switchMode(mode);
       });
     }
@@ -331,11 +332,17 @@
         return;
       }
 
+      if (citySidebar.isOpen()) {
+        // Mirror chrome onClose: clear selection + highlight without sync; stay citywide.
+        citySidebar.dismiss();
+        if (event && typeof event.stopPropagation === "function") {
+          event.stopPropagation();
+        }
+        return;
+      }
+
       if (state.getCurrentMode() === "house") {
         selection.clearRadiusSelection();
-      } else if (state.getCurrentMode() === "citywide") {
-        dashboards.hideCitywideModal();
-        modeController.switchMode("house");
       }
     }
 

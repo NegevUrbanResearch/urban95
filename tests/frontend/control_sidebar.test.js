@@ -282,11 +282,13 @@ test("control sidebar point visibility refreshes amenities only in weighted mode
         updateRadiusInfo: () => {},
         clearRadiusSelection: () => {},
       },
-      dashboards: {
-        renderCitywideModal: () => {},
-        updateCitywideModalTitle: () => {},
-        hideCitywideModal: () => {},
-      },
+      citySidebar: {
+      isOpen: () => false,
+      sync: () => {},
+      hide: () => {},
+      dismiss: () => {},
+      setSelection: () => {},
+    },
       scoreSidebar: {
         isOpen: () => false,
         hide: () => {},
@@ -306,7 +308,7 @@ test("control sidebar point visibility refreshes amenities only in weighted mode
         setLayoutProperty: () => {},
       },
       ui: {
-        getCitywideModal: () => null,
+        clearTooltip: () => {},
       },
     });
     return { actions, calls };

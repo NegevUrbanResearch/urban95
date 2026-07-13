@@ -84,10 +84,12 @@ function createControlActionsDeps(overrides) {
       updateRadiusInfo: function () {},
       clearRadiusSelection: function () {},
     },
-    dashboards: {
-      renderCitywideModal: function () {},
-      updateCitywideModalTitle: function () {},
-      hideCitywideModal: function () {},
+    citySidebar: {
+      isOpen: function () { return false; },
+      sync: function () {},
+      hide: function () {},
+      dismiss: function () {},
+      setSelection: function () {},
     },
     scoreSidebar: {
       isOpen: function () { return false; },
@@ -105,7 +107,6 @@ function createControlActionsDeps(overrides) {
     },
     map: {},
     ui: {
-      getCitywideModal: function () { return null; },
       clearTooltip: overrides.clearTooltip || function () {},
     },
     controls: {
@@ -366,6 +367,7 @@ test("map events bind shade-si-fill tooltip with official class fields", () => {
     selection: { findClosestBuilding: function () {}, selectBuilding: function () {} },
     dashboards: { getNeighborhoodFeatureAtPoint: function () {}, showNeighborhoodAreaTooltip: function () {} },
     neighborhoodSidebar: { show: function () {} },
+    citySidebar: { setSelection: function () {} },
     mapRenderers: { updateTreesSource: function () {}, updateStreetLightsSource: function () {} },
     pointDataLoader: { loadTreesIfNeeded: function () {}, loadStreetLightsIfNeeded: function () {} },
     tooltip: tooltip,
@@ -434,6 +436,7 @@ test("map events show rounded building shade tooltip when shade heatmap is activ
     selection: { findClosestBuilding: function () {}, selectBuilding: function () {} },
     dashboards: { getNeighborhoodFeatureAtPoint: function () {}, showNeighborhoodAreaTooltip: function () {} },
     neighborhoodSidebar: { show: function () {} },
+    citySidebar: { setSelection: function () {} },
     mapRenderers: { updateTreesSource: function () {}, updateStreetLightsSource: function () {} },
     pointDataLoader: { loadTreesIfNeeded: function () {}, loadStreetLightsIfNeeded: function () {} },
     tooltip: tooltip,
@@ -509,6 +512,7 @@ test("map events clear stale building shade tooltip when active heatmap is no lo
     selection: { findClosestBuilding: function () {}, selectBuilding: function () {} },
     dashboards: { getNeighborhoodFeatureAtPoint: function () {}, showNeighborhoodAreaTooltip: function () {} },
     neighborhoodSidebar: { show: function () {} },
+    citySidebar: { setSelection: function () {} },
     mapRenderers: { updateTreesSource: function () {}, updateStreetLightsSource: function () {} },
     pointDataLoader: { loadTreesIfNeeded: function () {}, loadStreetLightsIfNeeded: function () {} },
     tooltip: tooltip,
