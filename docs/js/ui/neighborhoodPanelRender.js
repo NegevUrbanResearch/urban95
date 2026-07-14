@@ -8,7 +8,10 @@
 
     var scoreVal = Math.min(100, Math.max(0, Number(avgScore) || 0));
     var scoreDisplay = renderCtx.formatScoreInteger(scoreVal);
-    var kickerLabel = (categoryLabel || renderCtx.getScoreModeLabel()) + " score";
+    var kickerLabel =
+      !categoryLabel || categoryLabel === "Urban95" || categoryLabel === "Amenities Focus"
+        ? "Score"
+        : categoryLabel + " score";
 
     hero.innerHTML =
       '<div class="percentile-summary score-explain-sidebar-hero-compact">' +
@@ -66,9 +69,7 @@
       renderCtx.escapeHtml(renderCtx.getOrdinalSuffix(pctVal)) +
       " percentile \u2022 " +
       renderCtx.escapeHtml(String(scoreMinutes)) +
-      "-min walk \u2022 " +
-      renderCtx.escapeHtml(renderCtx.getScoreModeLabel()) +
-      "</span></div></div>";
+      "-min walk</span></div></div>";
   }
 
   function buildBodyHTMLWeighted(renderCtx, props, sfx, avgScore, cityAvg, selectedCategoryLabel) {

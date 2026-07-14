@@ -41,6 +41,11 @@
     return "";
   }
 
+  function scoreHeroKicker(label) {
+    if (!label || label === "Urban95" || label === "Amenities Focus") return "Score";
+    return label + " score";
+  }
+
   function populateHeaderBriefing(renderCtx, opts) {
     var hero = renderCtx && renderCtx.heroEl;
     var meta = renderCtx && renderCtx.metaEl;
@@ -53,14 +58,13 @@
     }
 
     if (meta) {
-      var metricLabel = opts.metricLabel || "";
-      var metaText = metricLabel;
+      var metaText = "";
       if (opts.isExpanded && opts.scoreMinutes != null && opts.scoreMinutes !== "") {
-        metaText =
-          metricLabel +
-          (metricLabel ? " \u2022 " : "") +
-          String(opts.scoreMinutes) +
-          "-min walk";
+        metaText = String(opts.scoreMinutes) + "-min walk";
+      }
+      if (!metaText) {
+        meta.innerHTML = "";
+        return;
       }
       meta.innerHTML =
         '<div class="score-explain-building-ctx">' +
@@ -83,10 +87,7 @@
       var pctRaw =
         selection.percentileValue != null ? Number(selection.percentileValue) : NaN;
       var minutes = opts.scoreMinutes != null ? String(opts.scoreMinutes) : "";
-      var scoreModeLabel = modeLabel(renderCtx);
-      var walkMeta =
-        (minutes ? minutes + "-min walk" : "") +
-        (scoreModeLabel ? (minutes ? " \u2022 " : "") + scoreModeLabel : "");
+      var walkMeta = minutes ? minutes + "-min walk" : "";
 
       if (Number.isFinite(pctRaw)) {
         var pctVal = Math.round(pctRaw);
@@ -151,8 +152,7 @@
     }
 
     var scoreRawWeighted = Number(selection.scoreValue);
-    var kickerLabel =
-      (opts.metricLabel || modeLabel(renderCtx) || "Urban95") + " score";
+    var kickerLabel = scoreHeroKicker(opts.metricLabel || modeLabel(renderCtx));
     var cityAvgRaw = Number(selection.cityAvgValue);
     var cityAvgText = Number.isFinite(cityAvgRaw)
       ? formatMetric(renderCtx, cityAvgRaw)

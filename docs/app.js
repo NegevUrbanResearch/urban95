@@ -1176,6 +1176,11 @@ modeController = Urban95ModeController.create({
         controlSidebarAdapter.syncMapLayers();
       }
     },
+    afterNeighborhoodLayersReady: function () {
+      if (auxiliaryOverlays && typeof auxiliaryOverlays.applyKidsPopulationVisibility === "function") {
+        auxiliaryOverlays.applyKidsPopulationVisibility();
+      }
+    },
     setLegendVisible: function (visible) {
       if (controlsBinding && typeof controlsBinding.setLegendVisible === "function") {
         controlsBinding.setLegendVisible(visible);

@@ -10,7 +10,7 @@ body {
 :root {
   --score-sidebar-width: clamp(300px, 26vw, 380px);
   --neighborhood-sidebar-width: var(--score-sidebar-width);
-  --city-sidebar-width: var(--score-sidebar-width);
+  --city-sidebar-width: clamp(320px, 28vw, 420px);
   --score-sidebar-z: 15;
   --horizon-bar-h: 28px;
   --horizon-sub-bar-h: 20px;
@@ -360,6 +360,10 @@ body.desktop-only-blocked {
   font-size: 15px;
   line-height: 1.45;
   color: #0f172a;
+}
+
+.city-sidebar {
+  width: var(--city-sidebar-width);
 }
 
 .score-explain-sidebar.is-open,
@@ -2108,7 +2112,7 @@ button.city-ranking-row {
 .cw-ranking-item:nth-child(3) .cw-rank-num { background: #fed7aa; color: #9a3412; }
 
 .cw-rank-name {
-  flex: 1;
+  flex: 1.6;
   font-size: 13px;
   font-weight: 500;
   color: #374151;
@@ -2119,7 +2123,7 @@ button.city-ranking-row {
 }
 
 .cw-rank-bar-wrap {
-  flex: 2;
+  flex: 1.2;
   height: 18px;
   background: #f3f4f6;
   border-radius: 9px;

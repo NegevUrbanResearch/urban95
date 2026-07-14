@@ -168,10 +168,14 @@
             : activeMetric.label || "Urban95";
         if (missingWeightedSubcategoryData) {
           if (renderCtx.heroEl) {
+            var unavailableKicker =
+              activeMetric && activeMetric.kind !== "weighted-overall" && activeMetric.label
+                ? activeMetric.label + " score"
+                : "Score";
             renderCtx.heroEl.innerHTML =
               '<div class="percentile-summary score-explain-sidebar-hero-compact">' +
               '<p class="score-explain-hero-kicker">' +
-              renderCtx.escapeHtml(selectedCategoryLabel + " score") +
+              renderCtx.escapeHtml(unavailableKicker) +
               '</p><div class="percentile-value">Unavailable</div></div>';
           }
           if (renderCtx.metaEl) {

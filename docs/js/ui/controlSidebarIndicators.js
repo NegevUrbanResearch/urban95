@@ -61,18 +61,20 @@
     function updateOverlayVisibility() {
       var state = readState();
       var el = getEl();
-      var showDemographicOverlays =
-        state.currentMode === "house" || state.currentMode === "neighborhood";
       if (el.indicatorsSection) {
-        el.indicatorsSection.classList.toggle("is-basemap-only", state.currentMode === "citywide");
-        el.indicatorsSection.classList.toggle("is-neighborhood-scale", state.currentMode === "neighborhood");
+        el.indicatorsSection.classList.remove("is-basemap-only");
+        el.indicatorsSection.classList.toggle(
+          "is-neighborhood-scale",
+          state.currentMode === "neighborhood"
+        );
       }
 
+      // Pop. Kids / SES stay available in house, neighborhood, and citywide.
       markup.getAuxiliaryRows().forEach(function (row) {
         var auxInput = el[row.inputId];
         if (!auxInput) return;
         var auxHost = auxInput.closest(".indicator-row--aux");
-        if (auxHost) auxHost.style.display = showDemographicOverlays ? "" : "none";
+        if (auxHost) auxHost.style.display = "";
       });
     }
 

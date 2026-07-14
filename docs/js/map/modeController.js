@@ -165,6 +165,10 @@
       typeof assets.onModeChanged === "function" ? assets.onModeChanged : function () {};
     var setLegendVisible =
       typeof assets.setLegendVisible === "function" ? assets.setLegendVisible : function () {};
+    var afterNeighborhoodLayersReady =
+      typeof assets.afterNeighborhoodLayersReady === "function"
+        ? assets.afterNeighborhoodLayersReady
+        : function () {};
 
     var turf = requireObject(geo.turf, "deps.geo.turf");
     requireMethod(turf, "deps.geo.turf", "bbox");
@@ -488,6 +492,7 @@
               if (map.getLayer("neighborhoods-line")) map.setLayoutProperty("neighborhoods-line", "visibility", "visible");
               if (map.getLayer("neighborhoods-label")) map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
             });
+            afterNeighborhoodLayersReady();
             logger.debug(function () {
               return ["[Neighborhood] Layers visible, source updated with", data.features.length, "features"];
             });
@@ -570,6 +575,7 @@
           if (map.getLayer("neighborhoods-label")) {
             map.setLayoutProperty("neighborhoods-label", "visibility", "visible");
           }
+          afterNeighborhoodLayersReady();
 
           // Pad/open chrome before fitBounds so a later sync open is a padding no-op
           // (same width → no resize) and does not cancel the 600ms ease.

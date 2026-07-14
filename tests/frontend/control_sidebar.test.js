@@ -15,7 +15,7 @@ function createMockIndicatorsHarness(browser, options) {
   options = options || {};
   const auxHosts = {};
   const elements = {
-    indicatorsSection: { classList: { toggle() {} } },
+    indicatorsSection: { classList: { toggle() {}, remove() {} } },
     indicatorsWeightedBlock: { hidden: false },
   };
   const indicatorsList = {
@@ -102,7 +102,7 @@ function createMockIndicatorsHarness(browser, options) {
     iconsBase: "./icons",
   });
 
-  return { elements, indicators, indicatorsList, state };
+  return { elements, indicators, indicatorsList, state, auxHosts };
 }
 
 test("control sidebar show actions come from UI registry instead of score model exports", () => {
@@ -224,6 +224,33 @@ test("control sidebar auxiliary toggles keep checked state after rerender", () =
   harness.state.activeHeatmapId = "u95.cat.safety_mobility";
   harness.indicators.renderIndicatorsSection();
   assert.equal(harness.elements["show-kids-population-toggle"].checked, true);
+});
+
+test("control sidebar auxiliary toggles stay visible in citywide mode", () => {
+  const browser = createBrowserContext();
+  loadControlSidebarModules(browser);
+
+  const harness = createMockIndicatorsHarness(browser, {
+    state: { currentMode: "citywide" },
+  });
+  const classState = { "is-basemap-only": false, "is-neighborhood-scale": false };
+  harness.elements.indicatorsSection.classList = {
+    toggle(name, force) {
+      classState[name] = !!force;
+    },
+    remove(name) {
+      classState[name] = false;
+    },
+    contains(name) {
+      return !!classState[name];
+    },
+  };
+
+  harness.indicators.renderIndicatorsSection();
+
+  assert.equal(classState["is-basemap-only"], false);
+  assert.equal(harness.auxHosts["show-kids-population-toggle"].style.display, "");
+  assert.equal(harness.auxHosts["show-socioeconomic-toggle"].style.display, "");
 });
 
 test("control sidebar point visibility refreshes amenities only in weighted mode", () => {

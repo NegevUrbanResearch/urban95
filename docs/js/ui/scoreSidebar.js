@@ -328,9 +328,8 @@
     var d = requireDeps();
     if (d.getScoreMode() === "weighted") {
       var metric = typeof d.getActiveMetric === "function" ? d.getActiveMetric() : null;
-      var weightedLabel =
-        !metric || metric.kind === "weighted-overall" ? "Urban95" : metric.label || "Urban95";
-      return weightedLabel + " score";
+      if (!metric || metric.kind === "weighted-overall") return "Score";
+      return metric.label ? metric.label + " score" : "Score";
     }
     return "Citywide percentile";
   }

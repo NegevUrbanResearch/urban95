@@ -222,10 +222,28 @@
       );
     }
 
+    function stackKidsPopulationLayer() {
+      if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) return;
+      // Keep the grid above neighborhood choropleth (citywide fill is ~0.6 and
+      // otherwise mutes the blues) but under boundary lines/labels.
+      if (map.getLayer("neighborhoods-line")) {
+        map.moveLayer(KIDS_POPULATION_LAYER_ID, "neighborhoods-line");
+        return;
+      }
+      if (map.getLayer("neighborhoods-label")) {
+        map.moveLayer(KIDS_POPULATION_LAYER_ID, "neighborhoods-label");
+        return;
+      }
+      if (map.getLayer("selected-building-outline")) {
+        map.moveLayer(KIDS_POPULATION_LAYER_ID, "selected-building-outline");
+      }
+    }
+
     function applyKidsPopulationVisibility() {
       if (!map.getLayer(KIDS_POPULATION_LAYER_ID)) return;
       var visible = overlayVisibility.isCanonicalLayerVisible("kids-population", false);
       map.setLayoutProperty(KIDS_POPULATION_LAYER_ID, "visibility", visible ? "visible" : "none");
+      if (visible) stackKidsPopulationLayer();
     }
 
     async function loadKidsPopulationGridLayer() {

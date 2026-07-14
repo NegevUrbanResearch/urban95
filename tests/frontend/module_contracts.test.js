@@ -8082,7 +8082,7 @@ test("controls bind validates dependencies and returns the coordinator surface",
 
   currentMode = "citywide";
   binding.syncOverlayVisibility();
-  assert.equal(ui.indicatorsSection.classList.contains("is-basemap-only"), true);
+  assert.equal(ui.indicatorsSection.classList.contains("is-basemap-only"), false);
 
   currentMode = "house";
   binding.syncOverlayVisibility();
