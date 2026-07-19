@@ -96,14 +96,10 @@
 
     function categoryVisible(categoryId) {
       var visibility = typeof getLayerVisibility === "function" ? getLayerVisibility() || {} : {};
-      var master = Object.prototype.hasOwnProperty.call(visibility, "survey")
-        ? visibility.survey === true
-        : false;
       var categoryKey = "survey:" + categoryId;
-      var categoryEnabled = Object.prototype.hasOwnProperty.call(visibility, categoryKey)
-        ? visibility[categoryKey] !== false
-        : true;
-      return master && categoryEnabled;
+      return Object.prototype.hasOwnProperty.call(visibility, categoryKey)
+        ? visibility[categoryKey] === true
+        : false;
     }
 
     function cleanupHover() {
@@ -261,7 +257,12 @@
       if (!coordinates) return;
       closePopup();
       popupCategory = categoryId;
-      popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false })
+      popup = new maplibregl.Popup({
+        closeButton: true,
+        closeOnClick: false,
+        className: "survey-observation-popup",
+        maxWidth: "none",
+      })
         .setLngLat(coordinates)
         .setDOMContent(observationCard(categoryId, feature.properties || {}))
         .addTo(map);

@@ -109,12 +109,17 @@
       return true;
     }
 
-    function applyOverlayToggleRowChange(row) {
+    function applyOverlayToggleRowChange(row, enabledOverride) {
       if (!row || !row.layerId) return false;
       var ui = getControlUiElements();
       var input = row.inputId && ui[row.inputId] ? ui[row.inputId] : null;
       var fallback = getOverlayDefaultVisible(row.layerId);
-      var enabled = input ? !!input.checked : isCanonicalLayerVisible(row.layerId, fallback);
+      var enabled =
+        typeof enabledOverride === "boolean"
+          ? enabledOverride
+          : input
+            ? !!input.checked
+            : isCanonicalLayerVisible(row.layerId, fallback);
       return applyCanonicalMetricShowAction({ kind: "point-layer", layer: row.layerId }, enabled);
     }
 

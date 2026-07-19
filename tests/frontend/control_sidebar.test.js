@@ -56,30 +56,6 @@ function createMockIndicatorsHarness(browser, options) {
           },
         };
       });
-      [
-        "show-survey-toggle",
-        "show-survey-walkability-barrier-toggle",
-        "show-survey-crossing-hazard-toggle",
-        "show-survey-loved-place-toggle",
-        "show-survey-community-anchor-toggle",
-      ].forEach(function (inputId) {
-        if (value.indexOf('id="' + inputId + '"') === -1) return;
-        elements[inputId] = {
-          id: inputId,
-          type: "checkbox",
-          checked:
-            typeof options.checkedFromHtml === "function"
-              ? options.checkedFromHtml(value, inputId)
-              : false,
-          dataset: {},
-          closest(selector) {
-            if (selector === ".survey-overlay-group" || selector === ".control-overlay-toggle") {
-              return { style: {} };
-            }
-            return null;
-          },
-        };
-      });
     },
   });
   elements.indicatorsList = indicatorsList;
@@ -188,14 +164,14 @@ test("control sidebar overlay defaults seed canonical layer visibility", () => {
     "kids-population": false,
     socioeconomic: false,
     survey: false,
-    "survey:walkability_barrier": true,
-    "survey:crossing_hazard": true,
-    "survey:loved_place": true,
-    "survey:community_anchor": true,
+    "survey:walkability_barrier": false,
+    "survey:crossing_hazard": false,
+    "survey:loved_place": false,
+    "survey:community_anchor": false,
   });
 });
 
-test("survey controls default master off with every category enabled", () => {
+test("survey controls default all categories off", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/ui/controlSidebarMarkup.js", browser);
   const markup = browser.window.Urban95ControlSidebarMarkup;
@@ -204,10 +180,10 @@ test("survey controls default master off with every category enabled", () => {
   });
 
   assert.equal(defaults.survey, false);
-  assert.equal(defaults["survey:walkability_barrier"], true);
-  assert.equal(defaults["survey:crossing_hazard"], true);
-  assert.equal(defaults["survey:loved_place"], true);
-  assert.equal(defaults["survey:community_anchor"], true);
+  assert.equal(defaults["survey:walkability_barrier"], false);
+  assert.equal(defaults["survey:crossing_hazard"], false);
+  assert.equal(defaults["survey:loved_place"], false);
+  assert.equal(defaults["survey:community_anchor"], false);
 });
 
 test("survey visibility resolves parent and category state separately", () => {
@@ -232,9 +208,55 @@ test("survey visibility resolves parent and category state separately", () => {
         loved_place: true,
         community_anchor: false,
       },
+      anyCategoryEnabled: true,
+      allCategoriesEnabled: false,
     }
   );
 });
+
+function createSurveyMetricShowTarget(metricId) {
+  const rowEl = {
+    getAttribute(name) {
+      return name === "data-metric-id" ? metricId : name === "data-category-stem" ? "survey" : null;
+    },
+    closest(selector) {
+      return selector === "[data-metric-id]" ? this : null;
+    },
+  };
+  return {
+    disabled: false,
+    getAttribute(name) {
+      return name === "data-action" ? "show" : null;
+    },
+    closest(selector) {
+      if (selector === "[data-action]") return this;
+      if (selector === "[data-metric-id]") return rowEl;
+      return null;
+    },
+  };
+}
+
+function createSurveyCollapseTarget() {
+  const rowEl = {
+    getAttribute(name) {
+      return name === "data-metric-id" ? "survey" : name === "data-category-stem" ? "survey" : null;
+    },
+    closest(selector) {
+      return selector === "[data-metric-id]" ? this : null;
+    },
+  };
+  return {
+    disabled: false,
+    getAttribute(name) {
+      return name === "data-action" ? "collapse" : null;
+    },
+    closest(selector) {
+      if (selector === "[data-action]") return this;
+      if (selector === "[data-metric-id]") return rowEl;
+      return null;
+    },
+  };
+}
 
 test("survey parent show action uses the isolated survey visibility callback", () => {
   const browser = createBrowserContext();
@@ -251,16 +273,7 @@ test("survey parent show action uses the isolated survey visibility callback", (
 
   harness.indicators.bind();
   harness.indicators.renderIndicatorsSection();
-  const masterShowButton = {
-    disabled: false,
-    getAttribute(name) {
-      return name === "data-action" ? "survey-show" : null;
-    },
-    closest(selector) {
-      return selector === "[data-action]" ? this : null;
-    },
-  };
-  harness.indicatorsList._handlers.click({ target: masterShowButton });
+  harness.indicatorsList._handlers.click({ target: createSurveyMetricShowTarget("survey") });
 
   assert.deepEqual(calls, [
     "survey:survey:walkability_barrier",
@@ -271,15 +284,12 @@ test("survey parent show action uses the isolated survey visibility callback", (
   ]);
 });
 
-test("survey parent uses the standard icon and eye control while enabling every category by default", () => {
+test("survey parent uses the shared indicator row controls with independent category toggles", () => {
   const browser = createBrowserContext();
   loadControlSidebarModules(browser);
   const calls = [];
   let harness;
   harness = createMockIndicatorsHarness(browser, {
-    checkedFromHtml(value, inputId) {
-      return value.indexOf('id="' + inputId + '" checked') !== -1;
-    },
     state: {
       layerVisibility: {
         survey: false,
@@ -289,9 +299,9 @@ test("survey parent uses the standard icon and eye control while enabling every 
         "survey:community_anchor": false,
       },
     },
-    onSurveyVisibilityChanged(row) {
-      calls.push(row.layerId);
-      harness.state.layerVisibility[row.layerId] = !!harness.elements[row.inputId].checked;
+    onSurveyVisibilityChanged(row, enabled) {
+      calls.push(row.layerId + ":" + (enabled ? "on" : "off"));
+      harness.state.layerVisibility[row.layerId] = !!enabled;
     },
   });
 
@@ -300,65 +310,57 @@ test("survey parent uses the standard icon and eye control while enabling every 
 
   assert.match(harness.indicatorsList.innerHTML, /horizon-icon/);
   assert.match(harness.indicatorsList.innerHTML, /town-hall\.svg/);
+  assert.match(harness.indicatorsList.innerHTML, /data-metric-id="survey"/);
   assert.match(
     harness.indicatorsList.innerHTML,
-    /class="indicator-btn indicator-show-btn" data-action="survey-show"[^>]*aria-pressed="false"/
+    /data-metric-id="survey"[^>]*>[\s\S]*?data-action="show"[^>]*aria-pressed="false"/
   );
-  assert.match(
-    harness.indicatorsList.innerHTML,
-    /id="show-survey-walkability-barrier-toggle" disabled/
-  );
+  assert.match(harness.indicatorsList.innerHTML, /indicator-heat-spacer/);
   assert.doesNotMatch(
     harness.indicatorsList.innerHTML,
-    /id="show-survey-walkability-barrier-toggle" checked/
+    /data-metric-id="survey"[^>]*>[\s\S]*?data-action="heat"/
   );
 
-  const masterShowButton = {
-    disabled: false,
-    getAttribute(name) {
-      return name === "data-action" ? "survey-show" : null;
-    },
-    closest(selector) {
-      return selector === "[data-action]" ? this : null;
-    },
-  };
-  harness.indicatorsList._handlers.click({ target: masterShowButton });
+  harness.indicatorsList._handlers.click({
+    target: createSurveyMetricShowTarget("survey.crossing_hazard"),
+  });
+
+  assert.equal(harness.state.layerVisibility["survey:crossing_hazard"], true);
+  assert.equal(harness.state.layerVisibility["survey:walkability_barrier"], false);
+  assert.equal(harness.state.layerVisibility.survey, true);
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-metric-id="survey\.crossing_hazard"[^>]*>[\s\S]*?aria-pressed="true"/
+  );
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-metric-id="survey\.walkability_barrier"[^>]*>[\s\S]*?aria-pressed="false"/
+  );
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-metric-id="survey"[^>]*>[\s\S]*?aria-pressed="false"/
+  );
+
+  calls.length = 0;
+  harness.indicatorsList._handlers.click({ target: createSurveyMetricShowTarget("survey") });
 
   assert.deepEqual(calls, [
-    "survey:walkability_barrier",
-    "survey:crossing_hazard",
-    "survey:loved_place",
-    "survey:community_anchor",
-    "survey",
+    "survey:walkability_barrier:on",
+    "survey:crossing_hazard:on",
+    "survey:loved_place:on",
+    "survey:community_anchor:on",
+    "survey:on",
   ]);
   assert.match(
     harness.indicatorsList.innerHTML,
-    /class="indicator-btn indicator-show-btn is-active" data-action="survey-show"[^>]*aria-pressed="true"/
+    /data-metric-id="survey"[^>]*>[\s\S]*?data-action="show"[^>]*aria-pressed="true"/
   );
-  [
-    "show-survey-walkability-barrier-toggle",
-    "show-survey-crossing-hazard-toggle",
-    "show-survey-loved-place-toggle",
-    "show-survey-community-anchor-toggle",
-  ].forEach(function (inputId) {
-    assert.equal(harness.elements[inputId].checked, true);
-  });
-
-  const crossingHazard = harness.elements["show-survey-crossing-hazard-toggle"];
-  crossingHazard.checked = false;
-  harness.indicatorsList._handlers.change({ target: crossingHazard });
-
-  assert.equal(harness.state.layerVisibility["survey:crossing_hazard"], false);
-  assert.equal(harness.elements["show-survey-crossing-hazard-toggle"].checked, false);
 });
 
 test("survey control renders as a collapsed indicator group and expands with preserved visibility", () => {
   const browser = createBrowserContext();
   loadControlSidebarModules(browser);
   const harness = createMockIndicatorsHarness(browser, {
-    checkedFromHtml(value, inputId) {
-      return value.indexOf('id="' + inputId + '" checked') !== -1;
-    },
     state: {
       layerVisibility: {
         survey: true,
@@ -374,42 +376,50 @@ test("survey control renders as a collapsed indicator group and expands with pre
   harness.indicators.renderIndicatorsSection();
 
   assert.match(harness.indicatorsList.innerHTML, /indicator-group--survey/);
-  assert.match(harness.indicatorsList.innerHTML, /data-action="survey-collapse" aria-expanded="false"/);
+  assert.match(harness.indicatorsList.innerHTML, /data-category-stem="survey"/);
+  assert.match(harness.indicatorsList.innerHTML, /data-action="collapse" aria-expanded="false"/);
   assert.doesNotMatch(harness.indicatorsList.innerHTML, /indicator-subs is-open/);
   assert.match(
     harness.indicatorsList.innerHTML,
-    /data-action="survey-show"[^>]*aria-pressed="true"/
+    /data-metric-id="survey"[^>]*>[\s\S]*?data-action="show"[^>]*aria-pressed="true"/
   );
-  assert.equal(harness.elements["show-survey-walkability-barrier-toggle"].checked, false);
-  assert.equal(harness.elements["show-survey-crossing-hazard-toggle"].checked, true);
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-metric-id="survey\.walkability_barrier"[^>]*>[\s\S]*?aria-pressed="false"/
+  );
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-metric-id="survey\.crossing_hazard"[^>]*>[\s\S]*?aria-pressed="true"/
+  );
 
-  const categoryRow = {};
+  const categoryRow = {
+    getAttribute(name) {
+      return name === "data-category-stem" ? "survey" : null;
+    },
+  };
   const categoryLabel = {
     closest(selector) {
       if (selector === "[data-action]" || selector === "input") return null;
-      return selector === ".indicator-row--survey[data-survey-group]" ? categoryRow : null;
+      return selector === ".indicator-row--category[data-category-stem]" ? categoryRow : null;
     },
   };
   harness.indicatorsList._handlers.click({ target: categoryLabel });
 
   assert.match(harness.indicatorsList.innerHTML, /indicator-subs is-open/);
-  assert.match(harness.indicatorsList.innerHTML, /data-action="survey-collapse" aria-expanded="true"/);
+  assert.match(harness.indicatorsList.innerHTML, /data-action="collapse" aria-expanded="true"/);
 
-  const collapseButton = {
-    disabled: false,
-    getAttribute(name) {
-      return name === "data-action" ? "survey-collapse" : null;
-    },
-    closest(selector) {
-      return selector === "[data-action]" ? this : null;
-    },
-  };
-  harness.indicatorsList._handlers.click({ target: collapseButton });
+  harness.indicatorsList._handlers.click({ target: createSurveyCollapseTarget() });
 
   assert.doesNotMatch(harness.indicatorsList.innerHTML, /indicator-subs is-open/);
-  assert.match(harness.indicatorsList.innerHTML, /data-action="survey-collapse" aria-expanded="false"/);
-  assert.equal(harness.elements["show-survey-walkability-barrier-toggle"].checked, false);
-  assert.equal(harness.elements["show-survey-crossing-hazard-toggle"].checked, true);
+  assert.match(harness.indicatorsList.innerHTML, /data-action="collapse" aria-expanded="false"/);
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-metric-id="survey\.walkability_barrier"[^>]*>[\s\S]*?aria-pressed="false"/
+  );
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-metric-id="survey\.crossing_hazard"[^>]*>[\s\S]*?aria-pressed="true"/
+  );
 });
 
 test("survey indicator group keeps unavailable controls disabled", () => {
@@ -425,9 +435,18 @@ test("survey indicator group keeps unavailable controls disabled", () => {
   );
 
   assert.match(html, /indicator-group--survey is-unavailable/);
-  assert.match(html, /id="show-survey-toggle"[^>]* disabled/);
-  assert.match(html, /id="show-survey-walkability-barrier-toggle" disabled/);
-  assert.doesNotMatch(html, /id="show-survey-walkability-barrier-toggle" checked/);
+  assert.match(
+    html,
+    /data-metric-id="survey"[^>]*>[\s\S]*?data-action="show"[^>]* disabled/
+  );
+  assert.match(
+    html,
+    /data-metric-id="survey\.walkability_barrier"[^>]*>[\s\S]*?data-action="show"[^>]* disabled/
+  );
+  assert.doesNotMatch(
+    html,
+    /data-metric-id="survey\.walkability_barrier"[^>]*>[\s\S]*?aria-pressed="true"/
+  );
 });
 
 test("control sidebar auxiliary rows reflect canonical visibility", () => {

@@ -63,25 +63,25 @@
     {
       layerId: "survey:walkability_barrier",
       inputId: "show-survey-walkability-barrier-toggle",
-      defaultChecked: true,
+      defaultChecked: false,
       snapshotVisibility: true,
     },
     {
       layerId: "survey:crossing_hazard",
       inputId: "show-survey-crossing-hazard-toggle",
-      defaultChecked: true,
+      defaultChecked: false,
       snapshotVisibility: true,
     },
     {
       layerId: "survey:loved_place",
       inputId: "show-survey-loved-place-toggle",
-      defaultChecked: true,
+      defaultChecked: false,
       snapshotVisibility: true,
     },
     {
       layerId: "survey:community_anchor",
       inputId: "show-survey-community-anchor-toggle",
-      defaultChecked: true,
+      defaultChecked: false,
       snapshotVisibility: true,
     },
   ];
@@ -228,16 +228,27 @@
 
   function resolveSurveyVisibility(layerVisibility) {
     var visibility = layerVisibility || {};
+    var categories = SURVEY_CATEGORY_ROWS.reduce(function (result, row) {
+      result[row.id] = window.Urban95RenderState
+        ? window.Urban95RenderState.isLayerVisible(visibility, row.layerId, false)
+        : visibility[row.layerId] === true;
+      return result;
+    }, {});
+    var anyCategoryEnabled = SURVEY_CATEGORY_ROWS.some(function (row) {
+      return !!categories[row.id];
+    });
+    var allCategoriesEnabled =
+      SURVEY_CATEGORY_ROWS.length > 0 &&
+      SURVEY_CATEGORY_ROWS.every(function (row) {
+        return !!categories[row.id];
+      });
     return {
       enabled: window.Urban95RenderState
         ? window.Urban95RenderState.isLayerVisible(visibility, "survey", false)
         : visibility.survey === true,
-      categories: SURVEY_CATEGORY_ROWS.reduce(function (result, row) {
-        result[row.id] = Object.prototype.hasOwnProperty.call(visibility, row.layerId)
-          ? visibility[row.layerId] !== false
-          : true;
-        return result;
-      }, {}),
+      categories: categories,
+      anyCategoryEnabled: anyCategoryEnabled,
+      allCategoriesEnabled: allCategoriesEnabled,
     };
   }
 
@@ -436,16 +447,24 @@
     var showDisabled = !!options.showDisabled;
     var showActive = !!options.showActive;
     var heatActive = !!options.heatActive;
+    var hideHeat = !!options.hideHeat;
     var showTitle = options.showTitle || "Show companion map layers";
     var heatTitle = options.heatTitle || "Color the map by this indicator score";
     var showAriaPressed = showActive ? "true" : "false";
     var heatAriaPressed = heatActive ? "true" : "false";
     var collapseMarkup = "";
     var iconsRenderer = options.iconsRenderer;
-    var iconMarkup = "";
+    var iconMarkup = options.leadingIconMarkup || row.leadingIconMarkup || "";
     var labelStyle = "";
+    var heatMarkup = "";
 
-    if (iconsRenderer) {
+    if (iconMarkup) {
+      if (row.kind === "category" && row.color) {
+        labelStyle = ' style="color:' + escapeHtml(row.color) + ';"';
+      } else if (row.kind === "subcategory") {
+        labelStyle = ' style="color:#64748b;"';
+      }
+    } else if (iconsRenderer) {
       if (row.kind === "category" && row.stem) {
         iconMarkup = iconsRenderer.renderIcon(iconsRenderer.getCategoryIcon(row.stem), row.color);
         if (row.color) {
@@ -472,6 +491,24 @@
         '">' +
         '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' +
         "</button>";
+    }
+
+    if (!hideHeat) {
+      heatMarkup =
+        '<button type="button" class="indicator-btn indicator-heat-btn indicator-btn--icon-only' +
+        (heatActive ? " is-active" : "") +
+        '" data-action="heat" title="' +
+        escapeHtml(heatTitle) +
+        '" aria-pressed="' +
+        heatAriaPressed +
+        '" aria-label="' +
+        escapeHtml((heatActive ? "Hide" : "Show") + " heatmap for " + row.label) +
+        '">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' +
+        "</button>";
+    } else {
+      // Keep the View column aligned with other indicator rows.
+      heatMarkup = '<span class="indicator-heat-spacer" aria-hidden="true"></span>';
     }
 
     return (
@@ -509,17 +546,8 @@
       '">' +
       (showActive ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
       "</button>" +
-      '<button type="button" class="indicator-btn indicator-heat-btn indicator-btn--icon-only' +
-      (heatActive ? " is-active" : "") +
-      '" data-action="heat" title="' +
-      escapeHtml(heatTitle) +
-      '" aria-pressed="' +
-      heatAriaPressed +
-      '" aria-label="' +
-      escapeHtml((heatActive ? "Hide" : "Show") + " heatmap for " + row.label) +
-      '">' +
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' +
-      "</button></span></span></div>"
+      heatMarkup +
+      "</span></span></div>"
     );
   }
 
@@ -527,15 +555,20 @@
     var categoryRow = options.categoryRow;
     var subRows = options.subRows || [];
     var expanded = !!options.expanded;
+    var hideHeat = !!options.hideHeat;
+    var heatTitle = options.heatTitle || "Color the map by this indicator score";
+    var defaultShowTitle = options.defaultShowTitle || "Show companion map layers";
     var categoryHtml = renderIndicatorRow({
       row: categoryRow,
       expanded: expanded,
       showDisabled: options.showDisabled,
       showActive: options.showActive,
       showTitle: options.showTitle,
-      heatTitle: options.heatTitle,
+      heatTitle: heatTitle,
       heatActive: options.heatActive,
+      hideHeat: hideHeat,
       iconsRenderer: options.iconsRenderer,
+      leadingIconMarkup: categoryRow.leadingIconMarkup,
     });
     var subHtml = subRows
       .map(function (sub) {
@@ -545,18 +578,22 @@
           expanded: false,
           showDisabled: !showResolution.supported,
           showActive: options.isShowEnabled(sub.metricId),
-          showTitle: showResolution.supported
-            ? "Show companion map layers"
-            : showResolution.reason,
-          heatTitle: options.heatTitle,
+          showTitle: showResolution.supported ? defaultShowTitle : showResolution.reason,
+          heatTitle: heatTitle,
           heatActive: !!options.activeHeatmapId && options.activeHeatmapId === sub.metricId,
+          hideHeat: hideHeat,
           iconsRenderer: options.iconsRenderer,
+          leadingIconMarkup: sub.leadingIconMarkup,
         });
       })
       .join("");
+    var footerHtml = options.footerHtml || "";
+    var extraGroupClass = options.extraGroupClass ? " " + options.extraGroupClass : "";
 
     return (
-      '<div class="indicator-group" data-category-stem="' +
+      '<div class="indicator-group' +
+      extraGroupClass +
+      '" data-category-stem="' +
       escapeHtml(categoryRow.stem) +
       '">' +
       categoryHtml +
@@ -565,6 +602,7 @@
       '">' +
       '<div class="indicator-subs-inner">' +
       subHtml +
+      footerHtml +
       "</div></div></div>"
     );
   }
@@ -669,6 +707,35 @@
     );
   }
 
+  function renderSurveyCategorySwatch(category) {
+    var shape = (category && category.shape) || "circle";
+    var color = (category && category.color) || "#6b7280";
+    return (
+      '<span class="survey-category-swatch" data-shape="' +
+      escapeHtml(shape) +
+      '" style="--survey-category-color:' +
+      escapeHtml(color) +
+      '">' +
+      (shape === "heart" ? "♥" : "") +
+      "</span>"
+    );
+  }
+
+  function getSurveyRowByMetricId(metricId) {
+    if (metricId === "survey") return SURVEY_MASTER_ROW;
+    if (typeof metricId !== "string" || metricId.indexOf("survey.") !== 0) return null;
+    var categoryId = metricId.slice("survey.".length);
+    return (
+      SURVEY_CATEGORY_ROWS.find(function (row) {
+        return row.id === categoryId;
+      }) || null
+    );
+  }
+
+  function isSurveyMetricId(metricId) {
+    return metricId === "survey" || (typeof metricId === "string" && metricId.indexOf("survey.") === 0);
+  }
+
   function renderSurveyOverlayGroup(
     layerVisibility,
     surveyCategories,
@@ -679,100 +746,67 @@
     var visibility = resolveSurveyVisibility(layerVisibility);
     var categories = surveyCategories || {};
     var unavailable = surveyAvailable === false;
-    var masterShowDisabled = unavailable ? " disabled" : "";
-    var masterShowActive = visibility.enabled ? " is-active" : "";
-    var masterShowUnavailable = unavailable ? " is-disabled" : "";
-    var masterShowPressed = visibility.enabled ? "true" : "false";
-    var categoryIcon = categories.community_anchor || {};
-    var iconMarkup = iconsRenderer
-      ? iconsRenderer.renderIcon(
-          iconsRenderer.getSubcategoryIcon("community"),
-          categoryIcon.color || "#7C3AED"
-        )
-      : "";
-    var categoryMarkup = SURVEY_CATEGORY_ROWS.map(function (row) {
+    var categoryColor = (categories.community_anchor || {}).color || "#7C3AED";
+    var categoryRow = {
+      depth: 0,
+      metricId: "survey",
+      label: "Community observations",
+      kind: "category",
+      stem: "survey",
+      leadingIconMarkup: iconsRenderer
+        ? iconsRenderer.renderIcon(iconsRenderer.getSubcategoryIcon("community"), categoryColor)
+        : "",
+    };
+    var subRows = SURVEY_CATEGORY_ROWS.map(function (row) {
       var category = categories[row.id] || {};
-      var checked = visibility.enabled && visibility.categories[row.id] ? " checked" : "";
-      var disabled = unavailable || !visibility.enabled ? " disabled" : "";
-      var swatch =
-        '<span class="survey-category-swatch" data-shape="' +
-        escapeHtml(category.shape || "circle") +
-        '" style="--survey-category-color:' +
-        escapeHtml(category.color || "#6b7280") +
-        '">' +
-        (category.shape === "heart" ? "♥" : "") +
-        "</span>";
-      return (
-        '<div class="indicator-row indicator-row--sub indicator-row--survey-category">' +
-        '<span class="indicator-label-wrap survey-category-label">' +
-        swatch +
-        '<span class="indicator-label">' +
-        escapeHtml(category.label || row.id) +
-        "</span></span>" +
-        '<span class="indicator-actions"><span class="indicator-actions-cols">' +
-        '<input class="survey-visibility-input" type="checkbox" id="' +
-        row.inputId +
-        '"' +
-        checked +
-        disabled +
-        ' aria-label="Show ' +
-        escapeHtml(category.label || row.id) +
-        ' community observations" />' +
-        '<label for="' +
-        row.inputId +
-        '" class="indicator-btn indicator-show-btn' +
-        (checked ? " is-active" : "") +
-        (disabled ? " is-disabled" : "") +
-        '" title="' +
-        (checked ? "Hide " : "Show ") +
-        escapeHtml(category.label || row.id) +
-        '" aria-hidden="true">' +
-        (checked ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
-        "</label></span></span></div>"
-      );
-    }).join("");
-    return (
-      '<div class="indicator-group indicator-group--survey' +
-      (unavailable ? " is-unavailable" : "") +
-      '">' +
-      '<div class="indicator-row indicator-row--category indicator-row--survey" data-survey-group="community-observations">' +
-      '<span class="indicator-label-wrap">' +
-      '<button type="button" class="indicator-collapse-btn' +
-      (expanded ? " is-expanded" : "") +
-      '" data-action="survey-collapse" aria-expanded="' +
-      (expanded ? "true" : "false") +
-      '" aria-label="' +
-      (expanded ? "Collapse" : "Expand") +
-      ' Community observations">' +
-      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' +
-      "</button>" +
-      iconMarkup +
-      '<span class="indicator-label">Community observations</span></span>' +
-      '<span class="indicator-actions"><span class="indicator-actions-cols">' +
-      '<button type="button" id="' +
-      SURVEY_MASTER_ROW.inputId +
-      '" class="indicator-btn indicator-show-btn' +
-      masterShowUnavailable +
-      masterShowActive +
-      '" data-action="survey-show" title="' +
-      (visibility.enabled ? "Hide" : "Show") +
-      ' community observations"' +
-      masterShowDisabled +
-      ' aria-pressed="' +
-      masterShowPressed +
-      '" aria-label="' +
-      (visibility.enabled ? "Hide" : "Show") +
-      ' community observations">' +
-      (visibility.enabled ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
-      "</button></span></span></div>" +
-      '<div class="indicator-subs' +
-      (expanded ? " is-open" : "") +
-      '"><div class="indicator-subs-inner" role="group" aria-label="Community observation categories">' +
-      categoryMarkup +
-      '<div class="survey-overlay-scope">' +
-      (unavailable ? "Community observations unavailable" : "Mapped responses from Ramot and Neve Ze’ev") +
-      "</div></div></div></div>"
-    );
+      return {
+        depth: 1,
+        metricId: "survey." + row.id,
+        label: category.label || row.id,
+        kind: "subcategory",
+        parentStem: "survey",
+        stem: row.id,
+        leadingIconMarkup: renderSurveyCategorySwatch(category),
+      };
+    });
+
+    function resolveShow(_metricId) {
+      if (unavailable) {
+        return { supported: false, reason: "Community observations unavailable" };
+      }
+      return { supported: true, reason: "" };
+    }
+
+    function isShowEnabled(metricId) {
+      if (metricId === "survey") return visibility.allCategoriesEnabled;
+      var row = getSurveyRowByMetricId(metricId);
+      if (!row) return false;
+      return !!visibility.categories[row.id];
+    }
+
+    return renderIndicatorCategoryGroup({
+      categoryRow: categoryRow,
+      subRows: subRows,
+      expanded: !!expanded,
+      showDisabled: unavailable,
+      showActive: visibility.allCategoriesEnabled,
+      showTitle: unavailable
+        ? "Community observations unavailable"
+        : "Show companion map layers",
+      defaultShowTitle: "Show companion map layers",
+      heatActive: false,
+      hideHeat: true,
+      activeHeatmapId: null,
+      resolveShow: resolveShow,
+      isShowEnabled: isShowEnabled,
+      extraGroupClass: "indicator-group--survey" + (unavailable ? " is-unavailable" : ""),
+      footerHtml:
+        '<div class="survey-overlay-scope">' +
+        (unavailable
+          ? "Community observations unavailable"
+          : "Mapped responses from Ramot and Neve Ze’ev") +
+        "</div>",
+    });
   }
 
   function renderKidsPopulationLegendHtml(maxKids) {
@@ -923,6 +957,8 @@
     getOverlayRowByLayerId: getOverlayRowByLayerId,
     getAuxiliaryRowByInputId: getAuxiliaryRowByInputId,
     getSurveyRowByInputId: getSurveyRowByInputId,
+    getSurveyRowByMetricId: getSurveyRowByMetricId,
+    isSurveyMetricId: isSurveyMetricId,
     resolveOverlayRowChecked: resolveOverlayRowChecked,
     resolveSurveyVisibility: resolveSurveyVisibility,
     buildOverlayVisibilitySnapshot: buildOverlayVisibilitySnapshot,

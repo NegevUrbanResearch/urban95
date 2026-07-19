@@ -2608,6 +2608,11 @@ button.city-ranking-row {
   white-space: normal;
 }
 
+.survey-observation-popup .maplibregl-popup-content {
+  padding: 0;
+  overflow: hidden;
+}
+
 .survey-observation-card {
   width: min(288px, calc(100vw - 32px));
   color: #243044;

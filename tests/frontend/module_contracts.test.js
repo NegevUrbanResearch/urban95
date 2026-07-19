@@ -2493,6 +2493,24 @@ test("survey overlay marks a missing optional payload unavailable without instal
   assert.equal(installCalls, 0);
 });
 
+test("survey click popup gives the observation card an unconstrained fitted shell", () => {
+  const overlaySource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "map", "surveyOverlay.js"),
+    "utf8"
+  );
+  const styleSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "style.css"),
+    "utf8"
+  );
+
+  assert.match(overlaySource, /className:\s*["']survey-observation-popup["']/);
+  assert.match(overlaySource, /maxWidth:\s*["']none["']/);
+  assert.match(
+    styleSource,
+    /\.survey-observation-popup\s+\.maplibregl-popup-content\s*\{[^}]*padding:\s*0;[^}]*overflow:\s*hidden;/s
+  );
+});
+
 test("survey overlay installs decoded category symbols once and shares labeled cards across hover and click", async () => {
   const popupInstances = [];
   function createElement(tagName) {

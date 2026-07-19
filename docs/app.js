@@ -1136,8 +1136,8 @@ controlsBinding = Urban95Controls.bind({
       overlayVisibility.applyOverlayToggleRowChange(row);
       controlSidebarAdapter.onOverlayVisibilityChanged();
     },
-    onSurveyVisibilityChanged: function (row) {
-      overlayVisibility.applyOverlayToggleRowChange(row);
+    onSurveyVisibilityChanged: function (row, enabled) {
+      overlayVisibility.applyOverlayToggleRowChange(row, enabled);
       surveyOverlay.syncVisibility();
     },
     onHeatmapSelectionChanged: controlActions.setActiveHeatmap,

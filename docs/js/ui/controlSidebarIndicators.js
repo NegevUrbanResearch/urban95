@@ -43,7 +43,7 @@
     var iconsBase = config.iconsBase;
     var iconsRenderer = weightedIndicatorIcons.create(iconsBase);
     var expandedCategoryStems = new Set();
-    var surveyGroupExpanded = false;
+    var SURVEY_CATEGORY_STEM = "survey";
 
     function ensureExpandedForActiveHeatmap(activeHeatmapId) {
       if (!activeHeatmapId) return;
@@ -121,7 +121,7 @@
         layerVisibility,
         window.Urban95Config ? window.Urban95Config.surveyCategories : {},
         readState().surveyAvailable !== false,
-        surveyGroupExpanded,
+        expandedCategoryStems.has(SURVEY_CATEGORY_STEM),
         iconsRenderer
       );
       el.indicatorsList.innerHTML =
@@ -133,10 +133,11 @@
       if (!categoryStem) return;
       var el = getEl();
       var group =
-        el.indicatorsList &&
-        el.indicatorsList.querySelector(
-          '.indicator-group[data-category-stem="' + categoryStem + '"]'
-        );
+        el.indicatorsList && typeof el.indicatorsList.querySelector === "function"
+          ? el.indicatorsList.querySelector(
+              '.indicator-group[data-category-stem="' + categoryStem + '"]'
+            )
+          : null;
       var willExpand = !expandedCategoryStems.has(categoryStem);
       if (willExpand) {
         expandedCategoryStems.add(categoryStem);
@@ -150,45 +151,52 @@
       renderIndicatorsSection();
     }
 
-    function toggleSurveyGroupExpanded() {
-      surveyGroupExpanded = !surveyGroupExpanded;
-      renderIndicatorsSection();
+    function syncSurveyMasterFromCategories() {
+      if (!markup.SURVEY_MASTER_ROW || typeof markup.resolveSurveyVisibility !== "function") return;
+      var visibility = markup.resolveSurveyVisibility(readState().layerVisibility);
+      onSurveyVisibilityChanged(markup.SURVEY_MASTER_ROW, !!visibility.anyCategoryEnabled);
     }
 
     function toggleSurveyVisibility() {
       var surveyRows = markup.SURVEY_CATEGORY_ROWS || [];
-      var masterRow = markup.SURVEY_MASTER_ROW;
-      var state = readState();
-      var currentlyVisible = markup.resolveSurveyVisibility
-        ? markup.resolveSurveyVisibility(state.layerVisibility).enabled
-        : false;
-      var nextVisible = !currentlyVisible;
-      var el = getEl();
+      var visibility = markup.resolveSurveyVisibility
+        ? markup.resolveSurveyVisibility(readState().layerVisibility)
+        : { allCategoriesEnabled: false };
+      // Match weighted category toggles: partial selection counts as off, so next click enables all.
+      var nextVisible = !visibility.allCategoriesEnabled;
 
-      if (nextVisible) {
-        surveyRows.forEach(function (row) {
-          if (el[row.inputId]) el[row.inputId].checked = true;
-          onSurveyVisibilityChanged(row);
-        });
-      }
-      if (masterRow) {
-        if (el[masterRow.inputId]) el[masterRow.inputId].checked = nextVisible;
-        onSurveyVisibilityChanged(masterRow);
+      surveyRows.forEach(function (row) {
+        onSurveyVisibilityChanged(row, nextVisible);
+      });
+      if (markup.SURVEY_MASTER_ROW) {
+        onSurveyVisibilityChanged(markup.SURVEY_MASTER_ROW, nextVisible);
       }
       renderIndicatorsSection();
+    }
+
+    function toggleSurveyMetric(metricId) {
+      if (metricId === "survey") {
+        toggleSurveyVisibility();
+        return true;
+      }
+      var row =
+        typeof markup.getSurveyRowByMetricId === "function"
+          ? markup.getSurveyRowByMetricId(metricId)
+          : null;
+      if (!row) return false;
+      var visibility = markup.resolveSurveyVisibility
+        ? markup.resolveSurveyVisibility(readState().layerVisibility)
+        : { categories: {} };
+      var currentlyShowing = !!visibility.categories[row.id];
+      onSurveyVisibilityChanged(row, !currentlyShowing);
+      syncSurveyMasterFromCategories();
+      renderIndicatorsSection();
+      return true;
     }
 
     function handleIndicatorListClick(e) {
       var actionBtn = e.target.closest("[data-action]");
       if (actionBtn && !actionBtn.disabled) {
-        if (actionBtn.getAttribute("data-action") === "survey-collapse") {
-          toggleSurveyGroupExpanded();
-          return;
-        }
-        if (actionBtn.getAttribute("data-action") === "survey-show") {
-          toggleSurveyVisibility();
-          return;
-        }
         var rowEl = actionBtn.closest("[data-metric-id]");
         if (!rowEl) return;
 
@@ -201,6 +209,7 @@
         if (!metricId) return;
 
         if (actionBtn.getAttribute("data-action") === "heat") {
+          if (markup.isSurveyMetricId && markup.isSurveyMetricId(metricId)) return;
           var currentHeatmapId = readState().activeHeatmapId;
           onHeatmapSelectionChanged(currentHeatmapId === metricId ? null : metricId);
           renderIndicatorsSection();
@@ -208,14 +217,14 @@
           return;
         }
 
-        if (!showController.toggle(metricId)) return;
-        renderIndicatorsSection();
-        return;
-      }
-
-      var surveyRow = e.target.closest(".indicator-row--survey[data-survey-group]");
-      if (surveyRow && !e.target.closest("input")) {
-        toggleSurveyGroupExpanded();
+        if (actionBtn.getAttribute("data-action") === "show") {
+          if (markup.isSurveyMetricId && markup.isSurveyMetricId(metricId)) {
+            toggleSurveyMetric(metricId);
+            return;
+          }
+          if (!showController.toggle(metricId)) return;
+          renderIndicatorsSection();
+        }
         return;
       }
 
@@ -232,12 +241,7 @@
       if (auxiliaryRow && auxiliaryRow.layerId) {
         onPointVisibilityChanged(auxiliaryRow);
         renderIndicatorsSection();
-        return;
       }
-      var surveyRow = markup.getSurveyRowByInputId(input.id);
-      if (!surveyRow || !surveyRow.layerId) return;
-      onSurveyVisibilityChanged(surveyRow);
-      renderIndicatorsSection();
     }
 
     function bindIndicatorEvents() {
