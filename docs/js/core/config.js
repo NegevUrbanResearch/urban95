@@ -21,6 +21,7 @@
     neighborhoodSurface: BASE + "/neighborhood_surface.geojson",
     neighborhoodCharts: BASE + "/neighborhood_charts.json",
     citywideStats: BASE + "/citywide_stats.json",
+    surveyResults: BASE + "/survey_results.geojson",
   };
 
   var generatedFallbacks = {
@@ -81,6 +82,13 @@
 
   var detailPointsMinZoom = 15;
 
+  var surveyCategories = {
+    walkability_barrier: { label: "Walkability barriers", color: "#F59E0B", shape: "diamond" },
+    crossing_hazard: { label: "Dangerous crossings", color: "#DC2626", shape: "triangle" },
+    loved_place: { label: "Loved places", color: "#DB2777", shape: "heart" },
+    community_anchor: { label: "Community anchors", color: "#7C3AED", shape: "circle" },
+  };
+
   window.Urban95Config = {
     BASE: BASE,
     ICONS_BASE: ICONS_BASE,
@@ -94,5 +102,6 @@
     stateKeys: stateKeys,
     modes: modes,
     detailPointsMinZoom: detailPointsMinZoom,
+    surveyCategories: surveyCategories,
   };
 })();

@@ -35,6 +35,9 @@ var STREET_LIGHTS_PMTILES_URL =
   requireStringMember(GENERATED_URLS, "Urban95DataArtifacts.urls", "streetLightsPmtiles");
 var NEIGHBORHOOD_CHARTS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "neighborhoodCharts");
 var CITYWIDE_STATS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "citywideStats");
+var SURVEY_RESULTS_URL = requireStringMember(CONFIG_URLS, "Urban95Config.urls", "surveyResults");
+var SURVEY_CATEGORIES =
+  requireNamespaceMember(Urban95Config, "Urban95Config", "surveyCategories", "object");
 var NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK =
   requireStringMember(MAP_CONTRACTS, "Urban95Config.mapContracts", "neighborhoodSurfaceSourceLayerFallback");
 var hasGeneratedArtifact =
@@ -330,6 +333,8 @@ var Urban95ModeController = requireNamespace(window, "Urban95ModeController");
 requireNamespaceMember(Urban95ModeController, "Urban95ModeController", "create", "function");
 var Urban95MapEvents = requireNamespace(window, "Urban95MapEvents");
 requireNamespaceMember(Urban95MapEvents, "Urban95MapEvents", "bind", "function");
+var Urban95SurveyOverlay = requireNamespace(window, "Urban95SurveyOverlay");
+requireNamespaceMember(Urban95SurveyOverlay, "Urban95SurveyOverlay", "create", "function");
 var Urban95AuxiliaryOverlays = requireNamespace(window, "Urban95AuxiliaryOverlays");
 requireNamespaceMember(Urban95AuxiliaryOverlays, "Urban95AuxiliaryOverlays", "create", "function");
 var Urban95OverlayVisibility = requireNamespace(window, "Urban95OverlayVisibility");
@@ -418,6 +423,8 @@ window.Urban95AppDependencies = {
   STREET_LIGHTS_PMTILES_URL: STREET_LIGHTS_PMTILES_URL,
   NEIGHBORHOOD_CHARTS_URL: NEIGHBORHOOD_CHARTS_URL,
   CITYWIDE_STATS_URL: CITYWIDE_STATS_URL,
+  SURVEY_RESULTS_URL: SURVEY_RESULTS_URL,
+  SURVEY_CATEGORIES: SURVEY_CATEGORIES,
   NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK: NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK,
   hasGeneratedArtifact: hasGeneratedArtifact,
   sourceLayer: sourceLayer,
@@ -478,6 +485,7 @@ window.Urban95AppDependencies = {
   Urban95Dashboards: Urban95Dashboards,
   Urban95ModeController: Urban95ModeController,
   Urban95MapEvents: Urban95MapEvents,
+  Urban95SurveyOverlay: Urban95SurveyOverlay,
   Urban95AuxiliaryOverlays: Urban95AuxiliaryOverlays,
   Urban95OverlayVisibility: Urban95OverlayVisibility,
   Urban95MapRenderers: Urban95MapRenderers,

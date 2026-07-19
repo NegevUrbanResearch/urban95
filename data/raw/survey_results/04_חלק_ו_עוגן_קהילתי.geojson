@@ -1,0 +1,405 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80422347784043,
+     31.2546568714055
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "מתנס התקווה, רחבה ליד הגנים המונטסורים, נפגשים כל חברי הקהילה המונטסורית בעיר",
+    "submission_id": "1275046"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76988852024079,
+     31.234995163658134
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "מתנס ופארק אגדות",
+    "submission_id": "1277729"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76984292268754,
+     31.234981403157256
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1298475"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.769750833511374,
+     31.234918716405588
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1304852"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76985339724691,
+     31.23494929531404
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1306289"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.769563212424785,
+     31.232228345385284
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק הקופים, בית חבד",
+    "submission_id": "1306725"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77868775837124,
+     31.23529416738049
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1307955"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.770619862247266,
+     31.23942949713754
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1311560"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76990461349488,
+     31.23500739521282
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "מרכז קהילתי פלח 5\n יש המון פעילויות לגיל הרך בזכות קירי הרכזת המדהימה של השכונה",
+    "submission_id": "1299169"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.7697693379336,
+     31.234843081344245
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1306264"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.769734211224666,
+     31.23484152701445
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "כשיש פעילויות זה שם אבל אין המון",
+    "submission_id": "1307007"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77068012156512,
+     31.239355421436226
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "נווה זאב",
+    "comment": "מתנס שכונתי",
+    "submission_id": "1309029"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82139386622518,
+     31.27783063471178
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "קהילת רמות שלום",
+    "submission_id": "1272862"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.779035808990045,
+     31.257375684938015
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "הגן של הקהילה שלנו",
+    "submission_id": "1272977"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82121357461438,
+     31.277740864859897
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "מרחב הורים וילדים באנדרטה",
+    "submission_id": "1277685"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.800130531657494,
+     31.280497875175364
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1284494"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.806669841054834,
+     31.288598000388248
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "בפארק למרות שלאחרונה יש בעיה של בני נוער שמשתוללים עם אופניים חשמלים ופנינו לעירייה וזה לא טופל",
+    "submission_id": "1309110"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80024480827638,
+     31.280519822263056
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "יש הרבה חוגים ופעילויות",
+    "submission_id": "1309195"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.769798329814904,
+     31.235161106988684
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "מרכז קהילתי פלח 5 - ממש לא בשכונה שלי (רמות), אך כאן מתקיימים מפגשים קבועים של החינוך הביתי בכל יום רביעי, בהם אני לוקחת חלק כבר שנים על אף שמעולם לא גרתי בשכונה.\nלצערי ברמות המפגשים של החינוך הביתי לא היו עקביים, ואולי מהסיבה הזו גם כשהתקיימו לא הייתה בהם תחושת קהילה (על אף שהכרתי הרבה מהאימהות שנכחו בהם ממפגשים בשכונות אחרות)",
+    "submission_id": "1272860"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80191250031333,
+     31.28227592194352
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "מרכז קהילתי רמות",
+    "submission_id": "1275058"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79997855947318,
+     31.280590119115466
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1306227"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80020552873612,
+     31.280632297649507
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "רמות ספורטיב",
+    "submission_id": "1306380"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79287928451152,
+     31.25642557083036
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "פארק הסופרים",
+    "submission_id": "1309249"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79995429515838,
+     31.280592564301124
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "מרכז קהילתי עם פעילות לילדים וג׳ימבורי",
+    "submission_id": "1309455"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80734825134278,
+     31.286210082339462
+    ]
+   },
+   "properties": {
+    "question": "עוגן קהילתי - מקום מפגש/שייכות",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1311552"
+   }
+  }
+ ]
+}

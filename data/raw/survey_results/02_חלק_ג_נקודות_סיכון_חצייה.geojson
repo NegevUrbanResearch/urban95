@@ -1,0 +1,677 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77036595344544,
+     31.23601343516235
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "כיכר נוראית, פקוקה, אנשים, רכבים, משאיות חותכות, רכבים עוצרים האמצע הדרך, הולכי רגל מכל הכיוונים, אין עוד מעברי חצייה בכביש ואנשים מתפרצים מכך מיני מקומות",
+    "submission_id": "1275046"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.768268465995796,
+     31.238802158586413
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "מעבר חצייה בכיכר דו נתיבית - סכנת חיים - הכיכר בנויה בצורה כזאת שמאפשרת לנהגים להמשיך בנסיעה כמעט ללא האטה ולכן הם לא מרגישים צורך לתת זכות להולכי רגל",
+    "submission_id": "1277729"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76622807816438,
+     31.238918367793122
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "אין שדה ראייה לשני הצדדים",
+    "submission_id": "1298465"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77322518825532,
+     31.238022425130755
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "כל הכיכר הזאת. רכבים חונים על ההכיכר, זה מסכן מכוניות אחרות והולכי רגל. אין פיקוח וצריך לאכוף חוקים.",
+    "submission_id": "1298475"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.7813211469705,
+     31.23550871570288
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1304852"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76628184318542,
+     31.23594616230848
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "צומת שמסביבה גני ילדים, בתי מגורים ומרכז מסחרי ואין בה מעבר חצייה בטוח ביניהם.",
+    "submission_id": "1306289"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77115211502028,
+     31.23324664656972
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "יוסף בורג 90",
+    "submission_id": "1306725"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.78446722030639,
+     31.233261324762758
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1306879"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77500434461907,
+     31.237004938990147
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1309003"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77002648636699,
+     31.240173305690988
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1311560"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77751960680404,
+     31.241461801676813
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1275361"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77650779024459,
+     31.238854905028933
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1306264"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77902865658953,
+     31.236081652349416
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "אין מעברי חצייה מסודרים ברחוב",
+    "submission_id": "1307007"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.767596355187266,
+     31.233030975220164
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "אין מעבר חצייה בין הבניינים לבית ספר וגנים",
+    "submission_id": "1309029"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77149782684805,
+     31.232976075368896
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "אי אפשר לחצות ברגל",
+    "submission_id": "1309058"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.772132072175744,
+     31.237513014908256
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "נווה זאב",
+    "comment": "מעבר חציה לא מוגדר ולא מסומן היטב לחציית תלמידיים לכיוון בית הספר נווה שלום ובחזרה, כביש ראשי ונהגים לא מעטים.. כדאי מאד להסדיר איזה מעבר זה שיהיה רישמי, כל בית הספר חוצה שם.",
+    "submission_id": "1311545"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.799044760875404,
+     31.277750535830588
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "במקום הזה לעיתים חונים על המדרכות או באמצע הכביש כדי להגיע לחנויות, הראות לא טובה ולעיתים קרובות הנהגים לא מאטים",
+    "submission_id": "1272856"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.821457093469824,
+     31.277888987308327
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "יש מעבר חצייה אבל לא תמיד עוצרים שם. לפעמים בגלל שלא רואים בזמן הולך רגל",
+    "submission_id": "1272862"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79900712868193,
+     31.27784710220949
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "מעבר שאינו בטוח",
+    "submission_id": "1272977"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80412602424624,
+     31.28672047136527
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "מכוניות מתקרבות במהירות מפחידה למעבר החצייה בדרך לכביש המהיר, שדה הראייה לא רחב כלל להולכי רגל",
+    "submission_id": "1275073"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.802937840577215,
+     31.272529652401293
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "אין מעבר חציה ואין שדה ראיה טוב למכוניות שמגיעות מהעיקול לאיטים במהירות גבוהה. משמש בעיקר \n למעבר של תושבי הרחובות הסמוכים להגיע עם הילדים לגן השעשועים מעבר לכביש",
+    "submission_id": "1277685"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79903445113451,
+     31.277836544743913
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "כביש סואן עם זוויות ראייה מוגבלות בגלל שהוא בשיפוע משמעותי. אפילו ברכב אני מנסה להמנע מהצומת הזה",
+    "submission_id": "1284494"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80231642723084,
+     31.27910102342244
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "שמו שם רמזורים לאחרונה אבל עדיין אנשים נוהגים כמו משוגעים יש שם ירידה עד הרמזור יש שם פניה ימינה שפעם ו מישהו עושה על המדרכה יש גם אופנועים שבגלל שאין במפרים לאחר הרמזור הם נותנים גס וזה מפחיד את כולנו וזה בלתי נסבל",
+    "submission_id": "1284592"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80102112982423,
+     31.282715212616427
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1306831"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80439029442154,
+     31.284469122462703
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1309001"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.804877747965904,
+     31.285218917705503
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "עיכול מסוכן , יש ירידה לכביש כביכול להולכי רגל כולם חוצים אבל אין מעבר חציה",
+    "submission_id": "1309009"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80407159775496,
+     31.28689908060728
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "נהגים מגיעים מהר מאוד",
+    "submission_id": "1309110"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80475544929504,
+     31.283010155249368
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "מעבר חצייה מחוק",
+    "submission_id": "1309124"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.802566505010965,
+     31.27802187779116
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "אנשים טסים שם בפניות ועל הכבישים בכלל",
+    "submission_id": "1309195"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80099349049852,
+     31.282631930210478
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "לא מאטים בכניסה לכיכר",
+    "submission_id": "1309212"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80631889199686,
+     31.286700470923403
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "הרחוב בעיקול, לרכבים אין שדה ראיה גם בגלל רכבים חונים וגם בגלל הזווית של הכביש . נוסעים מהר . יש גם אוטובוסים. מסוכן מאד",
+    "submission_id": "1309286"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.803387419592674,
+     31.2816125855677
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "אנשים נוסעים כמו משוגעים בכל השכונה, גם בכיכרות - בכיכר הזאת ספציפית לרוב לא עוצרים להולכי רגל (פעם כמעט דרסו אותי כשהייתי באמצע המעבר חצייה) \nבדרך כלל כשאני עם עגלה/טיולון נותנים לי זכות קדימה במעבר חצייה ברוב הכיכרות בשכונה, אבל בזאת משום מה .לרוב לא, בעיקר בכיוון מ/אל נחום שריג",
+    "submission_id": "1272860"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80457645060724,
+     31.27451370730602
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "נהגים נוסעים במהירות גבוהה",
+    "submission_id": "1275058"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80959175154567,
+     31.26672734978015
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "ברחוב יצחק יצחק מודעי אין מדרכה להולכי רגל  הילדים ואנשים הולכים על הכביש מסוכן ולא בטיחותי הכביש",
+    "submission_id": "1284596"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80396978461964,
+     31.284012016450617
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "כמו ברוב השכונה, הרחוב מוזנח ולא מטופח. מרספות שבורות, עקומות או לא קיימות. ערוגות עצים ללא עצים. מדרכות צרות. גינות מוזנחות. מעברים ציבוריים מטונפים. מעקות שבורות ויחסית חשוך.",
+    "submission_id": "1306227"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80586767196656,
+     31.28586778395997
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "מעבר מסוכן כי מכוניות לא מאטות",
+    "submission_id": "1306380"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82164331227328,
+     31.276225870430693
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "כל הכביש של האנדרטה - הוא ארוך מאוד ממעבר חצייה אחד לשני. בדיוק בחלק הכי רחב והכי מסוכן- אין מעגל תנועה / מעבר חצייה. אנחנו והורים רבים \n אחרים נאלצים לחצות לעבר הגן שנמצא באברהם אמיר 12)נעמת אגוז( עם הילדים, אני חוצה עם 2 ילדיח קטנים. בנקודה הזאת רכבים נוסעים בצורה מאוד צהירה, וזה ממש סכנת חיים. כל בוקר מחדש אני חוששת מהחצייה הזאת. כמו כן, אין במפרים אן שום דבר אחר שיאט את הנסיעה לאורך הכביש הזה. פנינו לעירייה מספר פעמים וזכינו לחוסר יחס וחוסר טיפול. כוסות רוח למת.",
+    "submission_id": "1306435"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.799248749148404,
+     31.281168982750966
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "מכוניות נוסעות מאוד מהר, כביש רחב ואין אי תנועה במרכז",
+    "submission_id": "1309249"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.804830320568975,
+     31.282923145209136
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "אין מעברי חציה, אין באמפרים",
+    "submission_id": "1309281"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80755209922791,
+     31.28686716949623
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "חסימת הכביש ע״י הורים מונעת שדה ראיה לנהגים אחרים",
+    "submission_id": "1311552"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.797911464584075,
+     31.281754427264623
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "גינה ממש מוזנחת, דשא לא מכוסח, זכוכיות שלא אוספים, קקי, מתקן לא מתוחזק, פוטנציאל מבוזבז מאוד",
+    "submission_id": "1311569"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.821587844262496,
+     31.275633308349025
+    ]
+   },
+   "properties": {
+    "question": "נקודת סיכון בחציית כבישים",
+    "neighborhood": "רמות",
+    "comment": "אין מעבר חציה לגן",
+    "submission_id": "1306953"
+   }
+  }
+ ]
+}

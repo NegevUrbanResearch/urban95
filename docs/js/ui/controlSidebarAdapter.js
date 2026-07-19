@@ -47,6 +47,7 @@
       if (typeof syncers.syncSchoolsVisibility === "function") syncers.syncSchoolsVisibility();
       if (typeof syncers.syncBusStopsVisibility === "function") syncers.syncBusStopsVisibility();
       if (typeof syncers.syncParksVisibility === "function") syncers.syncParksVisibility();
+      if (typeof syncers.syncSurveyVisibility === "function") syncers.syncSurveyVisibility();
       if (typeof syncers.syncStaticPolygonCompanionsVisibility === "function") {
         syncers.syncStaticPolygonCompanionsVisibility();
       }

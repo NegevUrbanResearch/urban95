@@ -15,6 +15,7 @@ ALL_STAGES: tuple[str, ...] = (
     "export_web",
     "neighborhoods",
 )
+STANDALONE_STAGES: tuple[str, ...] = ("survey", "rescore")
 
 STAGE_LAYER_IDS: dict[str, list[str]] = {
     "shade": ["shade_street", "shade_open_space"],
@@ -23,16 +24,22 @@ STAGE_LAYER_IDS: dict[str, list[str]] = {
     "score": ["buildings", "amenities_clean", "shade_si_street", "shade_si_open"],
     "export_web": [],
     "neighborhoods": [],
+    "survey": [
+        "survey_raw_walkability_barrier",
+        "survey_raw_crossing_hazard",
+        "survey_raw_loved_place",
+        "survey_raw_community_anchor",
+    ],
     "rescore": ["amenities_clean", "shade_si_street", "shade_si_open"],
 }
 
-# CLI `run` choices: run-all order + rescore alternate + synthetic `all`.
-STAGES: tuple[str, ...] = (*ALL_STAGES, "rescore", "all")
+# CLI `run` choices: run-all order + standalone alternates + synthetic `all`.
+STAGES: tuple[str, ...] = (*ALL_STAGES, *STANDALONE_STAGES, "all")
 
-if set(STAGE_LAYER_IDS) != set(ALL_STAGES) | {"rescore"}:
-    raise RuntimeError("STAGE_LAYER_IDS keys must equal ALL_STAGES + rescore")
-if tuple(s for s in STAGE_LAYER_IDS if s != "rescore") != ALL_STAGES:
-    raise RuntimeError("STAGE_LAYER_IDS insertion order must match ALL_STAGES")
+if set(STAGE_LAYER_IDS) != set(ALL_STAGES) | set(STANDALONE_STAGES):
+    raise RuntimeError("STAGE_LAYER_IDS keys must equal ALL_STAGES + STANDALONE_STAGES")
+if tuple(STAGE_LAYER_IDS)[: len(ALL_STAGES)] != ALL_STAGES:
+    raise RuntimeError("ALL_STAGES must be the STAGE_LAYER_IDS prefix")
 
 
 @dataclass
@@ -84,6 +91,15 @@ def _check_layer_ids(layer_ids: list[str]) -> PreflightReport:
     )
 
 
+def _check_stage_required_layer_ids(layer_ids: list[str]) -> PreflightReport:
+    missing_required = [
+        f"{layer_id}: {layer(layer_id).path}"
+        for layer_id in layer_ids
+        if not _exists(layer(layer_id).path)
+    ]
+    return PreflightReport(ok=not missing_required, missing_required=missing_required)
+
+
 def preflight(kind: str) -> PreflightReport:
     """Check all layers of the given kind (raw | intermediate | publish)."""
     if kind not in ("raw", "intermediate", "publish"):
@@ -120,6 +136,9 @@ def preflight_stage(stage: str) -> PreflightReport:
         for s in ALL_STAGES:
             report = report.merge(preflight_stage(s))
         return report
+
+    if stage == "survey":
+        return _check_stage_required_layer_ids(STAGE_LAYER_IDS[stage])
 
     layer_ids = STAGE_LAYER_IDS[stage]
     report = _check_layer_ids(layer_ids)

@@ -162,6 +162,7 @@ function runAppScript(browser) {
   runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
+  runBrowserScript("docs/js/map/surveyOverlay.js", browser);
   runBrowserScript("docs/js/map/auxiliaryOverlays.js", browser);
   runBrowserScript("docs/js/ui/overlayVisibility.js", browser);
   runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
@@ -2368,6 +2369,376 @@ test("map event binding lives in Urban95MapEvents instead of inline app handlers
   assert.match(eventsSource, /loadTreesIfNeeded/);
   assert.match(eventsSource, /neighborhoodSidebar\.show/);
   assert.match(eventsSource, /showNeighborhoodAreaTooltip/);
+});
+
+test("survey overlay loads before app dependencies and guards building clicks", () => {
+  const scripts = scriptSourcesFromIndex();
+  const surveyIndex = requireScriptIndex(scripts, "./js/map/surveyOverlay.js");
+  const dependenciesIndex = requireScriptIndex(scripts, "./js/core/appDependencies.js");
+  assert.ok(surveyIndex < dependenciesIndex);
+
+  const mapEvents = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "map", "mapEvents.js"),
+    "utf8"
+  );
+  assert.match(mapEvents, /isSurveyClick/);
+
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/mapEvents.js", browser);
+  const canvas = { style: {} };
+  let genericClickHandler = null;
+  let closestBuildingCalls = 0;
+  const map = {
+    on(eventName, layerIdOrHandler) {
+      if (eventName === "click" && typeof layerIdOrHandler === "function") {
+        genericClickHandler = layerIdOrHandler;
+      }
+    },
+    getCanvas() {
+      return canvas;
+    },
+    getZoom() {
+      return 15;
+    },
+    queryRenderedFeatures() {
+      return [];
+    },
+  };
+
+  browser.window.Urban95MapEvents.bind({
+    map,
+    selection: {
+      findClosestBuilding() {
+        closestBuildingCalls += 1;
+        return null;
+      },
+      selectBuilding() {},
+    },
+    dashboards: {
+      getNeighborhoodFeatureAtPoint() {
+        return null;
+      },
+      showNeighborhoodAreaTooltip() {},
+    },
+    neighborhoodSidebar: { show() {} },
+    citySidebar: { setSelection() {} },
+    mapRenderers: { updateTreesSource() {}, updateStreetLightsSource() {} },
+    pointDataLoader: { loadTreesIfNeeded() {}, loadStreetLightsIfNeeded() {} },
+    tooltip: { style: {}, textContent: "" },
+    buildingsFillLayerId: "buildings-fill",
+    getCurrentMode() {
+      return "house";
+    },
+    getDeckHovering() {
+      return false;
+    },
+    getLastDeckClickTime() {
+      return 0;
+    },
+    getScoreMode() {
+      return "weighted";
+    },
+    formatArea() {
+      return "";
+    },
+    isSurveyClick() {
+      return true;
+    },
+  });
+
+  assert.equal(typeof genericClickHandler, "function");
+  genericClickHandler({
+    originalEvent: { target: canvas },
+    point: { x: 20, y: 30 },
+    lngLat: { lng: 34.8, lat: 31.2 },
+  });
+  assert.equal(closestBuildingCalls, 0);
+});
+
+test("survey overlay marks a missing optional payload unavailable without installing map state", async () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/map/surveyOverlay.js", browser);
+
+  let availability = [];
+  let installCalls = 0;
+  const overlay = browser.window.Urban95SurveyOverlay.create({
+    map: {
+      addSource() {
+        installCalls += 1;
+      },
+      addLayer() {
+        installCalls += 1;
+      },
+      addImage() {
+        installCalls += 1;
+      },
+    },
+    maplibregl: {},
+    tooltip: { style: {}, classList: { add() {}, remove() {} } },
+    surveyResultsUrl: "./data/survey_results.geojson",
+    categories: {},
+    fetchJson() {
+      return Promise.resolve(null);
+    },
+    getLayerVisibility() {
+      return {};
+    },
+    onAvailabilityChanged(value) {
+      availability.push(value);
+    },
+  });
+
+  assert.equal(await overlay.load(), false);
+  assert.deepEqual(availability, [false]);
+  assert.equal(installCalls, 0);
+});
+
+test("survey overlay installs decoded category symbols once and shares labeled cards across hover and click", async () => {
+  const popupInstances = [];
+  function createElement(tagName) {
+    return {
+      tagName,
+      children: [],
+      className: "",
+      textContent: "",
+      dir: "",
+      style: {
+        values: {},
+        setProperty(name, value) {
+          this.values[name] = value;
+        },
+      },
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+      replaceChildren() {
+        this.children = Array.from(arguments);
+        this.textContent = "";
+      },
+    };
+  }
+  function fieldRows(card) {
+    return (card.children || []).filter((field) => field.className === "survey-observation-card__field").map((field) => ({
+      className: field.className,
+      label: field.children[0] && field.children[0].textContent,
+      value: field.children[1] && field.children[1].textContent,
+      valueDir: field.children[1] && field.children[1].dir,
+    }));
+  }
+  function cardShape(node) {
+    return {
+      className: node.className,
+      textContent: node.textContent,
+      dir: node.dir,
+      children: (node.children || []).map(cardShape),
+    };
+  }
+  const browser = createBrowserContext({
+    Image: function Image() {
+      this.decode = function () {
+        return Promise.resolve();
+      };
+    },
+    document: {
+      createElement(tagName) {
+        if (tagName === "canvas") {
+          return {
+            getContext() {
+              return {
+                drawImage() {},
+                getImageData() {
+                  return { width: 32, height: 32, data: new Uint8ClampedArray(32 * 32 * 4) };
+                },
+              };
+            },
+          };
+        }
+        return createElement(tagName);
+      },
+    },
+  });
+  runBrowserScript("docs/js/map/surveyOverlay.js", browser);
+
+  const sources = new Map();
+  const images = new Map();
+  const layers = new Map([["selected-building-outline", { id: "selected-building-outline" }]]);
+  const handlers = {};
+  const layoutCalls = [];
+  const map = {
+    getSource(id) {
+      return sources.get(id);
+    },
+    addSource(id, source) {
+      sources.set(id, source);
+    },
+    removeSource(id) {
+      sources.delete(id);
+    },
+    hasImage(id) {
+      return images.has(id);
+    },
+    addImage(id, imageData) {
+      images.set(id, imageData);
+    },
+    removeImage(id) {
+      images.delete(id);
+    },
+    getLayer(id) {
+      return layers.get(id);
+    },
+    addLayer(layer, beforeId) {
+      layers.set(layer.id, layer);
+      layer.beforeId = beforeId;
+    },
+    removeLayer(id) {
+      layers.delete(id);
+    },
+    on(eventName, layerId, handler) {
+      handlers[eventName + ":" + layerId] = handler;
+    },
+    setLayoutProperty(id, property, value) {
+      layoutCalls.push({ id, property, value });
+    },
+    queryRenderedFeatures(_point, options) {
+      return options.layers.includes("community-survey-walkability-barrier") ? [{}] : [];
+    },
+    getCanvas() {
+      return { style: {} };
+    },
+  };
+  const visibility = {
+    survey: false,
+    "survey:walkability_barrier": true,
+    "survey:crossing_hazard": true,
+    "survey:loved_place": true,
+    "survey:community_anchor": true,
+  };
+  const availability = [];
+  const tooltip = Object.assign(createElement("div"), { style: {}, classList: { add() {}, remove() {} } });
+  const categories = {
+    walkability_barrier: { label: "Barrier", color: "#f59e0b" },
+    crossing_hazard: { label: "Hazard", color: "#dc2626" },
+    loved_place: { label: "Loved", color: "#db2777" },
+    community_anchor: { label: "Anchor", color: "#7c3aed" },
+  };
+  const overlay = browser.window.Urban95SurveyOverlay.create({
+    map,
+    maplibregl: {
+      Popup: function Popup() {
+        this.setLngLat = function () { return this; };
+        this.setDOMContent = function (content) {
+          this.content = content;
+          return this;
+        };
+        this.addTo = function () {
+          popupInstances.push(this);
+          return this;
+        };
+        this.on = function () { return this; };
+        this.remove = function () {
+          this.removed = true;
+        };
+      },
+    },
+    tooltip,
+    surveyResultsUrl: "./data/survey_results.geojson",
+    categories,
+    fetchJson() {
+      return Promise.resolve({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [34.8, 31.2] },
+            properties: {
+              survey_category: "walkability_barrier",
+              question: "Where is walking difficult?",
+              neighborhood: "Ramot",
+              comment: "A safe test comment",
+            },
+          },
+        ],
+      });
+    },
+    getLayerVisibility() {
+      return visibility;
+    },
+    onAvailabilityChanged(value) {
+      availability.push(value);
+    },
+  });
+
+  assert.equal(await overlay.load(), true);
+  assert.equal(await overlay.load(), true);
+  assert.equal(sources.size, 1);
+  assert.equal(images.size, 4);
+  assert.ok([...images.values()].every((imageData) => imageData.width === 32 && imageData.height === 32));
+  const surveyLayers = [...layers.values()].filter((layer) => layer.source === "community-survey");
+  assert.equal(surveyLayers.length, 4);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(surveyLayers.map((layer) => layer.filter))),
+    [
+      ["==", ["get", "survey_category"], "walkability_barrier"],
+      ["==", ["get", "survey_category"], "crossing_hazard"],
+      ["==", ["get", "survey_category"], "loved_place"],
+      ["==", ["get", "survey_category"], "community_anchor"],
+    ]
+  );
+  assert.ok(surveyLayers.every((layer) => layer.beforeId === "selected-building-outline"));
+  assert.deepEqual(availability, [true]);
+  assert.equal(overlay.getBeforeLayerId(), "community-survey-walkability-barrier");
+  assert.equal(overlay.isSurveyClick({ point: { x: 10, y: 10 } }), false);
+  assert.equal(
+    layoutCalls.filter((call) => call.property === "visibility" && call.value === "none").length,
+    4
+  );
+
+  visibility.survey = true;
+  overlay.syncVisibility();
+  assert.equal(overlay.isSurveyClick({ point: { x: 10, y: 10 } }), true);
+  const observation = {
+    lngLat: [34.8, 31.2],
+    point: { x: 10, y: 20 },
+    features: [
+      {
+        geometry: { type: "Point", coordinates: [34.8, 31.2] },
+        properties: {
+          question: "Where is walking difficult?",
+          neighborhood: "רמות",
+          comment: "אין מעבר בטוח",
+        },
+      },
+    ],
+  };
+  handlers["mousemove:community-survey-walkability-barrier"](observation);
+  handlers["click:community-survey-walkability-barrier"](observation);
+  assert.equal(popupInstances.length, 1);
+  assert.equal((tooltip.children[0] || {}).className, "survey-observation-card");
+  assert.equal(popupInstances[0].content.className, "survey-observation-card");
+  assert.equal(tooltip.children[0].style.values["--survey-category-color"], "#f59e0b");
+  assert.equal(popupInstances[0].content.style.values["--survey-category-color"], "#f59e0b");
+  assert.equal(tooltip.children[0].children[0].className, "survey-observation-card__header");
+  assert.equal(popupInstances[0].content.children[0].className, "survey-observation-card__header");
+  assert.deepEqual(cardShape(popupInstances[0].content), cardShape(tooltip.children[0]));
+  const partialObservation = {
+    lngLat: [34.8, 31.2],
+    point: { x: 10, y: 20 },
+    features: [
+      {
+        geometry: { type: "Point", coordinates: [34.8, 31.2] },
+        properties: { question: "", neighborhood: "רמות", comment: "" },
+      },
+    ],
+  };
+  handlers["mousemove:community-survey-walkability-barrier"](partialObservation);
+  handlers["click:community-survey-walkability-barrier"](partialObservation);
+  assert.deepEqual(cardShape(popupInstances[1].content), cardShape(tooltip.children[0]));
+  assert.equal(tooltip.children[0].children.length, 2);
+  assert.equal(tooltip.children[0].children[1].className, "survey-observation-card__neighborhood");
+  visibility["survey:walkability_barrier"] = false;
+  overlay.syncVisibility();
+  assert.equal(popupInstances[0].removed, true);
 });
 
 test("special point render plan prefers generated vectors in weighted mode", () => {
@@ -8051,6 +8422,7 @@ test("controls bind validates dependencies and returns the coordinator surface",
       onWalkMinutesChanged() {},
       onModeToggleRequested() {},
       onPointVisibilityChanged() {},
+      onSurveyVisibilityChanged() {},
       onHeatmapSelectionChanged() {},
       onEscape() {},
       onMetricShowRequested() {},
@@ -8161,6 +8533,7 @@ test("controls binding fails fast when onHeatmapSelectionChanged is missing", ()
           onWalkMinutesChanged() {},
           onModeToggleRequested() {},
           onPointVisibilityChanged() {},
+          onSurveyVisibilityChanged() {},
           onEscape() {},
           clearDerivedCaches() {},
         },

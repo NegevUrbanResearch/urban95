@@ -1,0 +1,837 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.773621539391506,
+     31.241861184094827
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "אין מעבר חצייה. מסוכן מאוד",
+    "submission_id": "1275023"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77388501167298,
+     31.23860034583876
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "חורים בכבישים, מדרכות מפורקות",
+    "submission_id": "1275046"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76847767829896,
+     31.238196719049963
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "כל המדרכות צרות וחלקן משובשות. תנועה סואנת של רכבים. מסוכן לילדים ללכת לבד. כל המדרכות מלאות בחרא של כלבים.",
+    "submission_id": "1277729"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76639291824129,
+     31.239366585648767
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "החל מכאן לא בטוח לי ללכת בכביש עם הילד",
+    "submission_id": "1298465"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.767690896987936,
+     31.253282626494737
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1304837"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.777543544769294,
+     31.23537128323975
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1304852"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.78862219284881,
+     31.2403891256214
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "יש עץ גדול ליד המשטרה שהמדרכה סביבו לא ניתנת להליכה וחייב לרדת לכביש",
+    "submission_id": "1306269"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.767004251480124,
+     31.239138512207713
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "מדרכות עקומות",
+    "submission_id": "1306503"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.773183553265454,
+     31.237921522457086
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "נהגים לא מאפשרים להולכי רגל לחצות בבטחה ולידה האתר בניה חלק מהכביש  חסום  יש נהגים שטסים שם",
+    "submission_id": "1306568"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.7761343675708,
+     31.23966322176403
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "רחוב יוהנה עמוס רכבים ומשאיות. חניות שלא כחוק. עסקים  תופסים מדרכות וחייבים לרדת לכביש. פיצוציות פתוחות בלילות",
+    "submission_id": "1306688"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76929498607149,
+     31.232237519320083
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "יוסף בורג 90",
+    "submission_id": "1306725"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77939902571962,
+     31.235945296313513
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "יש שערים חשמליים של הבניינים סרן דב 7 וסרן דב 5 שכשיוצאים מהחניון רכבים מגיעים במהירות מכיוון חטיבה שמונה מהכיכר ולא רואים אותם בגלל חניה לאורך הרחוב",
+    "submission_id": "1307955"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.775047084220645,
+     31.2369372890933
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1309003"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77203696024693,
+     31.237330692968076
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1309237"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77818902957118,
+     31.2399865747396
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1275361"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77028369903564,
+     31.235417151378968
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "בטוח",
+    "submission_id": "1299169"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77556402860387,
+     31.2418353178442
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1306264"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77864910589314,
+     31.236154796689203
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "ברחוב הזה אין במפרים נוסעים מאוד מהר יוצאים מלהיות. רחוב ממש מסוכן",
+    "submission_id": "1307007"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.768331361393244,
+     31.23254604961198
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "קקי של כלבים",
+    "submission_id": "1309029"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77144741177396,
+     31.232999440056602
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "עיקול ונהגים לא רואים ואין מעבר חציה נורמלי",
+    "submission_id": "1309058"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76557586342097,
+     31.237935278050546
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1309741"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76717948913575,
+     31.235857484382443
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1304886"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77680910652387,
+     31.236217945470177
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1309252"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77218092884869,
+     31.237496612039774
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "נווה זאב",
+    "comment": "מעבר חציה לא ברור ולא מוגדר לכיוון בית הספר נווה שלום, תנועה מאד מסוכנת משני הכיוונים, המון המון תלמידים חוצים שם יום יום. זה נס שאף אחד לא נהרג.",
+    "submission_id": "1311545"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82086697347639,
+     31.27771560392157
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "איזור שמשלב בין כביש הולנדי, כביש ומדרכה. יש נטיה לחנות באיזור, מקשה על הראות בתור נהג אבל גם בתור הולך רגל די מפחיד ללכת באיזור גם בגלל בעיה של ראות וזווית",
+    "submission_id": "1272862"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79909625222271,
+     31.2777700210426
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "מעבר שאינו בטוח",
+    "submission_id": "1272977"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80979404877872,
+     31.272828698459044
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "אין תאורה בכביש הזה שמוביל לפארק הגדול של רמות",
+    "submission_id": "1277685"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.799622232094414,
+     31.28014429444196
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "בדרך לספורטיב יש כיכר בה יש מאפייה ומכולת. למרות שיש מקומות חנייה רבים במרחק של עד 2 דקות הליכה משם, אנשים חונים על מעבר החצייה, חוסמים את הכיכר, לעיתים גם עולים על המדרכה בכדי להשתמש בשירותי החנויות הללו",
+    "submission_id": "1284494"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.803212285041816,
+     31.27944945926395
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "גרים ברחוב",
+    "submission_id": "1284592"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.809823930263526,
+     31.26945434114013
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "אין מעברי חצייה ליד בית הספר",
+    "submission_id": "1307935"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.798096453305334,
+     31.2870321867133
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "אזור מסוכן מאוד לחצייה וליציאה עם רכבים מאחר ואין שדה ראייה",
+    "submission_id": "1308316"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80342071773812,
+     31.28172228384115
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "כיכר עם ראות בעייתית. נהגים לא עוצרים המעבר חציה",
+    "submission_id": "1308986"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80542198522017,
+     31.288795587608195
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1309110"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.802523208782084,
+     31.28180274647205
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "נוסעים מהר בכיכר",
+    "submission_id": "1309212"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.803308149991636,
+     31.282406422199763
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "בכל המעברים להולכי רגל מהרחוב הפנימי המובילים לרחוב הראשי (לוי אשכול) אין רמפות, רק מדרגות, כך שאין מעבר עם עגלה/טיולון (שלא לדבר על כיסא גלגלים, חלילה לא עלינו...)",
+    "submission_id": "1272860"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.804364814385096,
+     31.275232262164867
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "עצים יוצאים מהמדרכה, מדרכה שבורה",
+    "submission_id": "1275058"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.81081567704678,
+     31.27118980803799
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "צומת מסוכנת לילדים",
+    "submission_id": "1284596"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.804850050741514,
+     31.285279150118793
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "אבן שפה מונמכת שבעצם מוליכה אנשים לחצות כביש אבל אין סימון מעבר חציה וגם זה בדיוק בסיבוב של הכביש ומסוכן שם מאד! אין כמעט מעברי חציה בטוחים בתחום הזה",
+    "submission_id": "1306227"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.800571203231804,
+     31.282377492050635
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1306290"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.805046916008,
+     31.28666545950731
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "המון צואת כלבים, הליכה לא נעימה",
+    "submission_id": "1306380"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77234774136405,
+     31.25718569870777
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1306435"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.803803251124926,
+     31.28600527889296
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "יש שם עץ שמפריע וסיחים שצריך לגזום",
+    "submission_id": "1309085"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80729103088381,
+     31.282988760911014
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "בית",
+    "submission_id": "1309194"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79496923454787,
+     31.255674357702922
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "יש עמוד חשמל על המדרכה, אי אפשר לעבור בלי לרדת לכביש, בטח שלא עם עגלה",
+    "submission_id": "1309249"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80395056856513,
+     31.28229134102705
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "רכבים חונים על מדרכות, חלקים המדרכה שבורים",
+    "submission_id": "1309281"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.800276160240166,
+     31.283123239528535
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "הרבה רכבים שחונים על המדרכה או חוסמים נתיבים וגורמים להפרעות וחסימות",
+    "submission_id": "1309455"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79942500591279,
+     31.280201342746313
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1309576"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80758428573609,
+     31.28697413673948
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "חסימת הכביש ע״י הורים לצורך הורדת ילדים כך שנהגים אחרים לא יכולים לראות את הילדים",
+    "submission_id": "1311552"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79928365263614,
+     31.281119575273525
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "אין מעבר חצייה רכבים לא עוצרים, שלטי זכות קדימה מבלבלים משני הכיוונים",
+    "submission_id": "1311569"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79958772659304,
+     31.275855006624774
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1311763"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82161765389633,
+     31.27692051892253
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "בית",
+    "submission_id": "1306953"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.823799133300774,
+     31.27590696822543
+    ]
+   },
+   "properties": {
+    "question": "נקודת חסם לגבי הליכתיות בטוחה ונעימה",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1311600"
+   }
+  }
+ ]
+}

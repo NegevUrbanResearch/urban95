@@ -9,10 +9,18 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = REPO_ROOT / "data" / "raw"
+SURVEY_RAW_DIR = RAW_DIR / "survey_results"
 OUTPUT_DIR = REPO_ROOT / "output"
 DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"
 SCORED_BUILDINGS = OUTPUT_DIR / "buildings_scored.geojson"
 METRIC_COL_PREFIXES = ("score_", "amen_", "num_", "clean_")
+
+SURVEY_SOURCE_FILES = {
+    "walkability_barrier": "01_חלק_ג_חסמי_הליכתיות.geojson",
+    "crossing_hazard": "02_חלק_ג_נקודות_סיכון_חצייה.geojson",
+    "loved_place": "03_חלק_ד_מקומות_אהובים.geojson",
+    "community_anchor": "04_חלק_ו_עוגן_קהילתי.geojson",
+}
 
 
 @dataclass(frozen=True)
@@ -102,6 +110,18 @@ LAYERS: dict[str, Layer] = {
     "publish_buildings_lookup": Layer(
         "publish_buildings_lookup",
         DOCS_DATA_DIR / "buildings_lookup.json",
+        False,
+        "publish",
+    ),
+    **{
+        f"survey_raw_{category}": Layer(
+            f"survey_raw_{category}", SURVEY_RAW_DIR / filename, False, "raw"
+        )
+        for category, filename in SURVEY_SOURCE_FILES.items()
+    },
+    "publish_survey": Layer(
+        "publish_survey",
+        DOCS_DATA_DIR / "survey_results.geojson",
         False,
         "publish",
     ),

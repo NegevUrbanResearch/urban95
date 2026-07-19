@@ -24,6 +24,8 @@ const {
   STREET_LIGHTS_PMTILES_URL,
   NEIGHBORHOOD_CHARTS_URL,
   CITYWIDE_STATS_URL,
+  SURVEY_RESULTS_URL,
+  SURVEY_CATEGORIES,
   NEIGHBORHOOD_SURFACE_SOURCE_LAYER_FALLBACK,
   hasGeneratedArtifact,
   sourceLayer,
@@ -79,6 +81,7 @@ const {
   Urban95Dashboards,
   Urban95ModeController,
   Urban95MapEvents,
+  Urban95SurveyOverlay,
   Urban95AuxiliaryOverlays,
   Urban95OverlayVisibility,
   Urban95MapRenderers,
@@ -433,6 +436,8 @@ const pointDataLoader = createPointDataLoader({
     console.error("Failed to load " + kind + ":", err);
   },
 });
+let surveyAvailable = true;
+let surveyOverlay = null;
 Urban95MapRenderers.configure({
   map: map,
   urban95Perf: urban95Perf,
@@ -468,6 +473,9 @@ Urban95MapRenderers.configure({
   setLastDeckClickTime: function (value) { _lastDeckClickTime = value; },
   getWeightedShownAmenityTypes: getWeightedShownAmenityTypesState,
   getLayerVisibility: getLayerVisibilityState,
+  getSurveyBeforeLayerId: function () {
+    return surveyOverlay ? surveyOverlay.getBeforeLayerId() : undefined;
+  },
   getActiveMetric: getActiveMetricState,
   renderState: Urban95RenderState,
   scoreModel: Urban95ScoreModel,
@@ -692,6 +700,23 @@ const overlayVisibility = Urban95OverlayVisibility.create({
     }
   },
   map: map,
+});
+surveyOverlay = Urban95SurveyOverlay.create({
+  map: map,
+  maplibregl: maplibregl,
+  tooltip: tooltip,
+  surveyResultsUrl: SURVEY_RESULTS_URL,
+  categories: SURVEY_CATEGORIES,
+  fetchJson: function (url) {
+    return fetchJsonWithGzipFallback(url, { required: false });
+  },
+  getLayerVisibility: getLayerVisibilityState,
+  onAvailabilityChanged: function (available) {
+    surveyAvailable = !!available;
+    if (controlsBinding && typeof controlsBinding.renderIndicatorsSection === "function") {
+      controlsBinding.renderIndicatorsSection();
+    }
+  },
 });
 auxiliaryOverlays = Urban95AuxiliaryOverlays.create({
   map: map,
@@ -1052,6 +1077,7 @@ controlSidebarAdapter = Urban95ControlSidebarAdapter.create({
     syncSchoolsVisibility: auxiliaryOverlays.applySchoolsLayerVisibility,
     syncBusStopsVisibility: auxiliaryOverlays.applyBusStopsLayerVisibility,
     syncParksVisibility: overlayVisibility.applyParksVisibility,
+    syncSurveyVisibility: surveyOverlay.syncVisibility,
     syncStaticPolygonCompanionsVisibility: overlayVisibility.applyStaticPolygonCompanionsVisibility,
   },
 });
@@ -1081,6 +1107,7 @@ controlsBinding = Urban95Controls.bind({
       allFilterTypes: getAllFilterTypesState(),
       lastFilterRadioSelection: getLastFilterRadioSelectionState(),
       currentMode: currentMode,
+      surveyAvailable: surveyAvailable,
       layerVisibility: getLayerVisibilityState(),
     };
   },
@@ -1108,6 +1135,10 @@ controlsBinding = Urban95Controls.bind({
     onPointVisibilityChanged: function (row) {
       overlayVisibility.applyOverlayToggleRowChange(row);
       controlSidebarAdapter.onOverlayVisibilityChanged();
+    },
+    onSurveyVisibilityChanged: function (row) {
+      overlayVisibility.applyOverlayToggleRowChange(row);
+      surveyOverlay.syncVisibility();
     },
     onHeatmapSelectionChanged: controlActions.setActiveHeatmap,
     onEscape: controlActions.onEscape,
@@ -1295,11 +1326,20 @@ Urban95MapEvents.bind({
   getLastDeckClickTime: function () {
     return _lastDeckClickTime;
   },
+  isSurveyClick: function (event) {
+    return surveyOverlay ? surveyOverlay.isSurveyClick(event) : false;
+  },
   getScoreMode: getScoreModeState,
   getActiveHeatmapId: getActiveHeatmapIdState,
   getBuildingHoverProperties: getBuildingHoverProperties,
   formatArea: formatArea,
 });
+async function loadSurveyOverlayOnMapReady() {
+  if (surveyOverlay && (await surveyOverlay.load())) {
+    Urban95MapRenderers.updateDeckAmenityLayers({ caller: "surveyOverlay:installed" });
+  }
+}
+
 map.on("load", function () {
   if (controlSidebarAdapter) {
     setLayerVisibilityState(
@@ -1307,6 +1347,7 @@ map.on("load", function () {
     );
     controlSidebarAdapter.syncMapLayers();
   }
+  void loadSurveyOverlayOnMapReady();
 });
 map.on("load", auxiliaryOverlays.loadKidsPopulationGridLayer);
 map.on("load", auxiliaryOverlays.loadSocioeconomicLayer);

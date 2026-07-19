@@ -1,0 +1,773 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77139592170716,
+     31.23441722089507
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק האגדות, לצערנו בעתות מלחמה הוא סגור ואז הילדים אין להם מתקנים לשחק בהם. מאוד אוהבים את הסקייט פארק הקטן במתחם. צריך עוד כאלו בעיר ובשכונה. אין לנו מרחב של כדרוסל או כדורגל בשכונה",
+    "submission_id": "1275046"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.78408301649446,
+     31.25316644914474
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק האגדות",
+    "submission_id": "1275127"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76414859294892,
+     31.237655489512814
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק פנים שכונתי שקט עם מתקנים מגוונים אך גם פה מלא בחרא של כלבים בכל מקום",
+    "submission_id": "1277729"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.76668677219846,
+     31.24099512442351
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "יש פה ספסל שמאפשר לראות טוב כלי תחבורה שהילד מתעניין ולומד לדבר עליהם",
+    "submission_id": "1298465"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.771135747432716,
+     31.234784169090908
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "אחלה פארק.",
+    "submission_id": "1298475"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77056980133057,
+     31.235230620807286
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק גדול ובטוח",
+    "submission_id": "1306503"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.78293299674987,
+     31.236196906338535
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1306879"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.787082569673665,
+     31.2346835496365
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "קרוב לנחל, כיף לרכב באופניים, יש נוף טוב, מעניין",
+    "submission_id": "1307955"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77064622333273,
+     31.239391711280955
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1311560"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77047681808471,
+     31.235279546894496
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק האגדות\nממש נקי\nאווירה נעימה לשבת ולעשות פיקניק עם הילדים או סתם לשבת \nהמקום האהוב אלינו בשכונה",
+    "submission_id": "1299169"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.769687045194544,
+     31.241114661098027
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "",
+    "submission_id": "1306264"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77192804107872,
+     31.234173238974286
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "זה באמת פארק מושקע ונעים",
+    "submission_id": "1307007"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.769087586763405,
+     31.232799191697236
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק הקופים - גינה שקטה ליד הגן",
+    "submission_id": "1309029"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.769761076639675,
+     31.232795753671923
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק משחקים שלא חוצים כבישיפ",
+    "submission_id": "1309058"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.77054232636875,
+     31.239380526915326
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "נווה זאב",
+    "comment": "פארק במתחם אביגדור בפארק, הפרק מתחת לבית וללא כבישים, יש דשא, יש מתקנים,  יחסית מתוחזק,  נקיון לקוי.",
+    "submission_id": "1311545"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.81919428888016,
+     31.276103420904963
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק גדול, הרבה מדשאות, יש גם שטח די גדול לרכיבת אופניים/קורקינט",
+    "submission_id": "1272862"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80459613542733,
+     31.277856844806042
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק המשחקים",
+    "submission_id": "1272977"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.81888175010682,
+     31.27613315368312
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק מקסים ונעים, רחב, חסר צל במתקנים עצמם",
+    "submission_id": "1275073"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82144491514192,
+     31.273290563981956
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק באנדרטה, יש פה הרבה מרחב ולא המוני יש מקום לחקור דברים וגם לרוץ ולרכב על אופניים שטחים פתוחים למשחק כדורגל וגם גן שעשועים. יכול להעסיק מגוון של גילאים",
+    "submission_id": "1277685"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.8047365131788,
+     31.277783855898868
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק המשחקים עם הרבה מרחב, למרות שהוא במצב מוזנח וחלק מהמתקנים שבורים ולא עוברים תיקונים, הילדים מאוד נהנים לבלות שם וזה מותאם גם לגדולים יותר",
+    "submission_id": "1284494"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79950278997422,
+     31.287343936845502
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "זה פארק קטן עם מלא ילדים רואים שהפארק שמור ויש שם צל וספסלים לשבת קרובה לידלים",
+    "submission_id": "1284592"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80631103868765,
+     31.28375293692402
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "",
+    "submission_id": "1306307"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80592172222091,
+     31.278597682151617
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק המשחקים מקום מקסים לילדים עם מדשאות ושבילים מסודרים",
+    "submission_id": "1306941"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.822832643985755,
+     31.276822404672245
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "מפגש עם עוד ילדים קרוב יחסית לבית",
+    "submission_id": "1307935"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.79653580579907,
+     31.282800169369768
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "טיילת נחמדה",
+    "submission_id": "1308316"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.804601506121905,
+     31.283019849557316
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "קרוב לבית, מגודר, לרוב פנוי",
+    "submission_id": "1308986"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80670221615583,
+     31.28860604069555
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "גן שעשועים לילדים",
+    "submission_id": "1309110"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80413622962646,
+     31.278692273193165
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "יש הרבה מקום פנוי והרבה אטרקציות",
+    "submission_id": "1309195"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.803535155951984,
+     31.280250779806522
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "גינה שקטה ונקייה יחסית",
+    "submission_id": "1309212"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80762298293813,
+     31.285811025606378
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק בטיחותי בלי אפשרות לרות לכביש",
+    "submission_id": "1309269"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.807271650570335,
+     31.28630515745772
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "קרוב לבית",
+    "submission_id": "1309286"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.804598940897236,
+     31.27987797305176
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "יש גן שעשועים קטן עם מתקנים שלצידו יש דשא, מצרך מאוד נדיר בשכונה. גם כאן לא אידיאלי - רוב המדשאה בשיפוע די תלול, וחבל כי קשה לילדים לרוץ שם. בשאר המקומות שיש דשא בקרבתי הוא לצד כבישים כך שאי אפשר לתת לילדים להתרוצץ עליו בלב שקט.",
+    "submission_id": "1272860"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80632345907317,
+     31.27579724378584
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "אין מכוניות",
+    "submission_id": "1275058"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.81038954108954,
+     31.271212572216847
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "מקום מושלם לבילוי עם הילדים",
+    "submission_id": "1284596"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.807349378881966,
+     31.286267539501623
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "זו גינה נחמדה מאוד. המועדפת בשכונה. חבל שהיא טיפה רחוקה אבל בהחלט נחמדה. דרוש רק יותר תחזוקה.",
+    "submission_id": "1306227"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.807349378881966,
+     31.286267539501623
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "זו גינה נחמדה מאוד. המועדפת בשכונה. חבל שהיא טיפה רחוקה אבל בהחלט נחמדה. דרוש רק יותר תחזוקה.",
+    "submission_id": "1306227"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80748504400254,
+     31.28620702610943
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק הפירטים, מגוון מתקנים. אך לא מוצל מספיק.",
+    "submission_id": "1306380"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.81882810592652,
+     31.2763134903486
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק נעים",
+    "submission_id": "1306714"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.81995276793532,
+     31.27692239940549
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "שקט וקרוב",
+    "submission_id": "1306877"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.8051291005686,
+     31.286040359946252
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "אני אוהבת ללכת למשחקים האלו עם ילדיי נשמח אם תוכלו לרענן אותם ולחדש",
+    "submission_id": "1309085"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.799333609298586,
+     31.280105351858094
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "שטח גדול להסתובב בו",
+    "submission_id": "1309249"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.8048815512693,
+     31.277498087352146
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק מגודר, מסודר, אין גישה לכלי רכב לאיזור המשחקים",
+    "submission_id": "1309281"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.8044049025337,
+     31.277544180944627
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק סגור ובטוח למשחק עם הילדים",
+    "submission_id": "1309455"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80738759040835,
+     31.286393455960145
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "יש הרבה מתקנים וזה קרוב לבית אבל חסר הצללה וניקיון",
+    "submission_id": "1311552"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80017003937843,
+     31.282121193718147
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "גינה יפה ונעימה, מוגנת יחסית מגישה לכביש, עם עצים ודשא, לעיתים קרובות יש שם זכוכיות שבורות גרפיטי וקקי של כלבים",
+    "submission_id": "1311569"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.80362892150878,
+     31.280183004196118
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק נחמד וגדול",
+    "submission_id": "1306948"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82281287244275,
+     31.276852866284557
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "גינה נחמדה חבל שיש כביש קרוב ללא מחסום לילדים",
+    "submission_id": "1306953"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     34.82416033744813,
+     31.276671106106082
+    ]
+   },
+   "properties": {
+    "question": "מקום בשכונה אהוב במיוחד",
+    "neighborhood": "רמות",
+    "comment": "פארק מאוד אהוב, למרות שאין בו יותר. מדי, אבל הם נפגשים שם עם חברים. הפארק מאוד פופלארי בקרב ילדי השכונה. היה ראוי אם היה נקי יותר, חדש יותר. המתקנים מלפני 20 שנים לפחות.",
+    "submission_id": "1311600"
+   }
+  }
+ ]
+}

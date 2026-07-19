@@ -68,6 +68,12 @@ def _run_rescore() -> None:
     rescore_urban95_weighted()
 
 
+def _run_survey() -> None:
+    from stages.survey import publish_default_survey
+
+    publish_default_survey()
+
+
 STAGE_HANDLERS: dict[str, Callable[[], None]] = {
     "shade": _run_shade,
     "isochrones": _run_isochrones,
@@ -75,6 +81,7 @@ STAGE_HANDLERS: dict[str, Callable[[], None]] = {
     "score": _run_score,
     "export_web": _run_export_web,
     "neighborhoods": _run_neighborhoods,
+    "survey": _run_survey,
     "rescore": _run_rescore,
 }
 

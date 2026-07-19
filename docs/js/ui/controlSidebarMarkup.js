@@ -54,7 +54,66 @@
       defaultChecked: false,
       snapshotVisibility: true,
     },
+    {
+      layerId: "survey",
+      inputId: "show-survey-toggle",
+      defaultChecked: false,
+      snapshotVisibility: true,
+    },
+    {
+      layerId: "survey:walkability_barrier",
+      inputId: "show-survey-walkability-barrier-toggle",
+      defaultChecked: true,
+      snapshotVisibility: true,
+    },
+    {
+      layerId: "survey:crossing_hazard",
+      inputId: "show-survey-crossing-hazard-toggle",
+      defaultChecked: true,
+      snapshotVisibility: true,
+    },
+    {
+      layerId: "survey:loved_place",
+      inputId: "show-survey-loved-place-toggle",
+      defaultChecked: true,
+      snapshotVisibility: true,
+    },
+    {
+      layerId: "survey:community_anchor",
+      inputId: "show-survey-community-anchor-toggle",
+      defaultChecked: true,
+      snapshotVisibility: true,
+    },
   ];
+
+  var SURVEY_CATEGORY_ROWS = [
+    {
+      id: "walkability_barrier",
+      layerId: "survey:walkability_barrier",
+      inputId: "show-survey-walkability-barrier-toggle",
+    },
+    {
+      id: "crossing_hazard",
+      layerId: "survey:crossing_hazard",
+      inputId: "show-survey-crossing-hazard-toggle",
+    },
+    {
+      id: "loved_place",
+      layerId: "survey:loved_place",
+      inputId: "show-survey-loved-place-toggle",
+    },
+    {
+      id: "community_anchor",
+      layerId: "survey:community_anchor",
+      inputId: "show-survey-community-anchor-toggle",
+    },
+  ];
+
+  var SURVEY_MASTER_ROW = {
+    id: "survey",
+    layerId: "survey",
+    inputId: "show-survey-toggle",
+  };
 
   var AUXILIARY_LAYER_LABELS = {
     "kids-population": "Pop. Kids",
@@ -139,6 +198,14 @@
     );
   }
 
+  function getSurveyRowByInputId(inputId) {
+    return (
+      [SURVEY_MASTER_ROW].concat(SURVEY_CATEGORY_ROWS).find(function (row) {
+        return row.inputId === inputId;
+      }) || null
+    );
+  }
+
   function resolveOverlayRowChecked(row, layerVisibility) {
     var layerId = row.layerId || row.id;
     var fallback = !!row.defaultChecked;
@@ -157,6 +224,21 @@
           : !!row.defaultChecked;
       return acc;
     }, {});
+  }
+
+  function resolveSurveyVisibility(layerVisibility) {
+    var visibility = layerVisibility || {};
+    return {
+      enabled: window.Urban95RenderState
+        ? window.Urban95RenderState.isLayerVisible(visibility, "survey", false)
+        : visibility.survey === true,
+      categories: SURVEY_CATEGORY_ROWS.reduce(function (result, row) {
+        result[row.id] = Object.prototype.hasOwnProperty.call(visibility, row.layerId)
+          ? visibility[row.layerId] !== false
+          : true;
+        return result;
+      }, {}),
+    };
   }
 
   function renderModeSectionShell() {
@@ -587,6 +669,112 @@
     );
   }
 
+  function renderSurveyOverlayGroup(
+    layerVisibility,
+    surveyCategories,
+    surveyAvailable,
+    expanded,
+    iconsRenderer
+  ) {
+    var visibility = resolveSurveyVisibility(layerVisibility);
+    var categories = surveyCategories || {};
+    var unavailable = surveyAvailable === false;
+    var masterShowDisabled = unavailable ? " disabled" : "";
+    var masterShowActive = visibility.enabled ? " is-active" : "";
+    var masterShowUnavailable = unavailable ? " is-disabled" : "";
+    var masterShowPressed = visibility.enabled ? "true" : "false";
+    var categoryIcon = categories.community_anchor || {};
+    var iconMarkup = iconsRenderer
+      ? iconsRenderer.renderIcon(
+          iconsRenderer.getSubcategoryIcon("community"),
+          categoryIcon.color || "#7C3AED"
+        )
+      : "";
+    var categoryMarkup = SURVEY_CATEGORY_ROWS.map(function (row) {
+      var category = categories[row.id] || {};
+      var checked = visibility.enabled && visibility.categories[row.id] ? " checked" : "";
+      var disabled = unavailable || !visibility.enabled ? " disabled" : "";
+      var swatch =
+        '<span class="survey-category-swatch" data-shape="' +
+        escapeHtml(category.shape || "circle") +
+        '" style="--survey-category-color:' +
+        escapeHtml(category.color || "#6b7280") +
+        '">' +
+        (category.shape === "heart" ? "♥" : "") +
+        "</span>";
+      return (
+        '<div class="indicator-row indicator-row--sub indicator-row--survey-category">' +
+        '<span class="indicator-label-wrap survey-category-label">' +
+        swatch +
+        '<span class="indicator-label">' +
+        escapeHtml(category.label || row.id) +
+        "</span></span>" +
+        '<span class="indicator-actions"><span class="indicator-actions-cols">' +
+        '<input class="survey-visibility-input" type="checkbox" id="' +
+        row.inputId +
+        '"' +
+        checked +
+        disabled +
+        ' aria-label="Show ' +
+        escapeHtml(category.label || row.id) +
+        ' community observations" />' +
+        '<label for="' +
+        row.inputId +
+        '" class="indicator-btn indicator-show-btn' +
+        (checked ? " is-active" : "") +
+        (disabled ? " is-disabled" : "") +
+        '" title="' +
+        (checked ? "Hide " : "Show ") +
+        escapeHtml(category.label || row.id) +
+        '" aria-hidden="true">' +
+        (checked ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
+        "</label></span></span></div>"
+      );
+    }).join("");
+    return (
+      '<div class="indicator-group indicator-group--survey' +
+      (unavailable ? " is-unavailable" : "") +
+      '">' +
+      '<div class="indicator-row indicator-row--category indicator-row--survey" data-survey-group="community-observations">' +
+      '<span class="indicator-label-wrap">' +
+      '<button type="button" class="indicator-collapse-btn' +
+      (expanded ? " is-expanded" : "") +
+      '" data-action="survey-collapse" aria-expanded="' +
+      (expanded ? "true" : "false") +
+      '" aria-label="' +
+      (expanded ? "Collapse" : "Expand") +
+      ' Community observations">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' +
+      "</button>" +
+      iconMarkup +
+      '<span class="indicator-label">Community observations</span></span>' +
+      '<span class="indicator-actions"><span class="indicator-actions-cols">' +
+      '<button type="button" id="' +
+      SURVEY_MASTER_ROW.inputId +
+      '" class="indicator-btn indicator-show-btn' +
+      masterShowUnavailable +
+      masterShowActive +
+      '" data-action="survey-show" title="' +
+      (visibility.enabled ? "Hide" : "Show") +
+      ' community observations"' +
+      masterShowDisabled +
+      ' aria-pressed="' +
+      masterShowPressed +
+      '" aria-label="' +
+      (visibility.enabled ? "Hide" : "Show") +
+      ' community observations">' +
+      (visibility.enabled ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
+      "</button></span></span></div>" +
+      '<div class="indicator-subs' +
+      (expanded ? " is-open" : "") +
+      '"><div class="indicator-subs-inner" role="group" aria-label="Community observation categories">' +
+      categoryMarkup +
+      '<div class="survey-overlay-scope">' +
+      (unavailable ? "Community observations unavailable" : "Mapped responses from Ramot and Neve Ze’ev") +
+      "</div></div></div></div>"
+    );
+  }
+
   function renderKidsPopulationLegendHtml(maxKids) {
     var max = Number.isFinite(maxKids) && maxKids > 0 ? maxKids : 1;
     var labels = [0, 0.25, 0.5, 0.75, 1]
@@ -729,10 +917,14 @@
   window.Urban95ControlSidebarMarkup = {
     OVERLAY_DEFAULTS: OVERLAY_DEFAULTS,
     AUXILIARY_OVERLAY_ROWS: AUXILIARY_OVERLAY_ROWS,
+    SURVEY_CATEGORY_ROWS: SURVEY_CATEGORY_ROWS,
+    SURVEY_MASTER_ROW: SURVEY_MASTER_ROW,
     escapeHtml: escapeHtml,
     getOverlayRowByLayerId: getOverlayRowByLayerId,
     getAuxiliaryRowByInputId: getAuxiliaryRowByInputId,
+    getSurveyRowByInputId: getSurveyRowByInputId,
     resolveOverlayRowChecked: resolveOverlayRowChecked,
+    resolveSurveyVisibility: resolveSurveyVisibility,
     buildOverlayVisibilitySnapshot: buildOverlayVisibilitySnapshot,
     forEachOverlayInputId: forEachOverlayInputId,
     renderSidebarSkeletonHtml: renderSidebarSkeletonHtml,
@@ -743,6 +935,7 @@
     renderIndicatorCategoryGroup: renderIndicatorCategoryGroup,
     renderIndicatorsTreeMarkup: renderIndicatorsTreeMarkup,
     renderAuxiliarySegmentedRow: renderAuxiliarySegmentedRow,
+    renderSurveyOverlayGroup: renderSurveyOverlayGroup,
     renderLegendHtml: renderLegendHtml,
     renderCompanionLegendHtml: renderCompanionLegendHtml,
   };

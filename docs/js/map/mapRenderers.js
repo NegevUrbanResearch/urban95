@@ -29,7 +29,16 @@
   function configure(nextDeps) {
     clearPendingDeckUpdateTimer(deps);
     cancelPendingDeckIdleWait();
-    deps = nextDeps || null;
+    deps = nextDeps
+      ? Object.assign(
+          {
+            getSurveyBeforeLayerId: function () {
+              return undefined;
+            },
+          },
+          nextDeps
+        )
+      : null;
     lastDeckRenderStateKey = null;
     visibleAmenityFeaturesStamp = 0;
     citySelectedNeighborhoodName = null;
@@ -1131,7 +1140,8 @@
       var deckLib = window.deck;
       if (!deckLib) return;
 
-      var iconLayer = new deckLib.IconLayer({
+      var surveyBeforeLayerId = d.getSurveyBeforeLayerId();
+      var iconLayerOptions = {
         id: "amenity-cluster-icons",
         data: clusteredAmenities,
         pickable: true,
@@ -1240,9 +1250,11 @@
             }
           );
         },
-      });
+      };
+      if (surveyBeforeLayerId) iconLayerOptions.beforeId = surveyBeforeLayerId;
+      var iconLayer = new deckLib.IconLayer(iconLayerOptions);
 
-      var textLayer = new deckLib.TextLayer({
+      var textLayerOptions = {
         id: "amenity-cluster-counts",
         data: clusteredAmenities.filter(function (item) {
           return item.isCluster;
@@ -1261,7 +1273,9 @@
         getAlignmentBaseline: "center",
         fontFamily: "Inter, system-ui, sans-serif",
         fontWeight: 700,
-      });
+      };
+      if (surveyBeforeLayerId) textLayerOptions.beforeId = surveyBeforeLayerId;
+      var textLayer = new deckLib.TextLayer(textLayerOptions);
 
       perfSpan(d, "renderer:deckSetProps", function () {
         return { clusters: clusteredAmenities.length, layers: 2 };

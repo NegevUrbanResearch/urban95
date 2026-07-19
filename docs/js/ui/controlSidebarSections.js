@@ -69,6 +69,10 @@
       callbacks.onPointVisibilityChanged,
       "callbacks.onPointVisibilityChanged"
     );
+    var onSurveyVisibilityChanged = requireFunction(
+      callbacks.onSurveyVisibilityChanged,
+      "callbacks.onSurveyVisibilityChanged"
+    );
     var onHeatmapSelectionChanged = requireFunction(
       callbacks.onHeatmapSelectionChanged,
       "callbacks.onHeatmapSelectionChanged"
@@ -178,6 +182,7 @@
       getEl: getEl,
       readState: readState,
       onPointVisibilityChanged: onPointVisibilityChanged,
+      onSurveyVisibilityChanged: onSurveyVisibilityChanged,
       onHeatmapSelectionChanged: onHeatmapSelectionChanged,
       renderLegend: renderLegend,
       iconsBase: iconsBase,
@@ -314,6 +319,7 @@
       syncOverlayVisibility: indicatorsController.updateOverlayVisibility,
       syncWalkFilterVisibility: indicatorsController.syncWalkFilterVisibility,
       syncIndicatorsVisibility: indicatorsController.syncIndicatorsVisibility,
+      renderIndicatorsSection: indicatorsController.renderIndicatorsSection,
     };
   }
 

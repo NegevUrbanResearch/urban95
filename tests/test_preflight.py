@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import core.preflight as preflight_mod
-from core.preflight import preflight_stage
+from core.preflight import ALL_STAGES, preflight_stage
 
 
 def test_amenity_metrics_fails_without_isochrones(monkeypatch):
@@ -44,3 +44,13 @@ def test_score_requires_scored_buildings(monkeypatch):
     report = preflight_stage("score")
     assert report.ok is False
     assert any("SCORED_BUILDINGS" in m for m in report.missing_required)
+
+
+def test_survey_is_standalone_and_requires_all_raw_exports(monkeypatch):
+    monkeypatch.setattr(preflight_mod, "_exists", lambda path: False)
+
+    report = preflight_stage("survey")
+
+    assert "survey" not in ALL_STAGES
+    assert report.ok is False
+    assert len(report.missing_required) == 4

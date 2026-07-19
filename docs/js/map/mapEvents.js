@@ -84,6 +84,8 @@
     var getCurrentMode = requireFunction(deps.getCurrentMode, "deps.getCurrentMode");
     var getDeckHovering = requireFunction(deps.getDeckHovering, "deps.getDeckHovering");
     var getLastDeckClickTime = requireFunction(deps.getLastDeckClickTime, "deps.getLastDeckClickTime");
+    var isSurveyClick =
+      typeof deps.isSurveyClick === "function" ? deps.isSurveyClick : function () { return false; };
     var getScoreMode = requireFunction(deps.getScoreMode, "deps.getScoreMode");
     var getActiveHeatmapId =
       typeof deps.getActiveHeatmapId === "function" ? deps.getActiveHeatmapId : function () { return null; };
@@ -141,6 +143,7 @@
       if (!e || !e.originalEvent || !e.originalEvent.target || !e.lngLat) return;
       if (e.originalEvent.target !== map.getCanvas()) return;
       if (Date.now() - getLastDeckClickTime() < 300) return;
+      if (isSurveyClick(e)) return;
 
       perfMark("map:buildingClick:start", function () {
         return { mode: getCurrentMode(), scoreMode: getScoreMode(), zoom: Math.round(map.getZoom() * 100) / 100 };

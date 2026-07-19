@@ -45,6 +45,7 @@
       closeFilterPopup: sidebarSections.closeFilterPopup,
       syncFilterUiForScoreMode: sidebarSections.syncFilterUiForScoreMode,
       syncOverlayVisibility: sidebarSections.syncOverlayVisibility,
+      renderIndicatorsSection: sidebarSections.renderIndicatorsSection,
       refreshLegend: sidebarSections.renderLegend,
       setLegendVisible: sidebarSections.setLegendVisible,
       syncSidebarContent: sidebarSections.syncSidebarContent,
