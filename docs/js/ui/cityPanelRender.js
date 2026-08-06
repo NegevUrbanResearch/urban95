@@ -1,6 +1,11 @@
 (function () {
   "use strict";
 
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95CityPanelRender requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   function escape(renderCtx, value) {
     return renderCtx.escapeHtml(value == null ? "" : String(value));
   }
@@ -345,7 +350,7 @@
   function sparkColor(scoreValue) {
     var neighborhood = Math.max(0, Math.min(100, Number(scoreValue) || 0));
     if (neighborhood >= 70) return "#22c55e";
-    if (neighborhood >= 40) return "#eab308";
+    if (neighborhood >= 40) return palette.gold;
     return "#ef4444";
   }
 
@@ -423,7 +428,7 @@
       var bars = sparkBarPercents(scoreRaw, cityAvgRaw, useMaxRelative);
       var scoreBar = bars.score;
       var cityAvgBar = bars.city;
-      var barColor = useMaxRelative ? "#2563eb" : sparkColor(scoreBar);
+      var barColor = useMaxRelative ? palette.accent : sparkColor(scoreBar);
 
       html += '<div class="u95-compare-container">';
       html +=
@@ -572,7 +577,7 @@
       renderCtx && typeof renderCtx.getColorForValue === "function"
         ? renderCtx.getColorForValue.bind(renderCtx)
         : function () {
-            return "#2563eb";
+            return palette.accent;
           };
 
     chartInstances.push(

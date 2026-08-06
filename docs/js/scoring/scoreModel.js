@@ -1,27 +1,32 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95ScoreModel requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   var AMENITY_TYPE_CONFIG = {
-    trees: { color: "#2E7D32", icon: "park-alt1", label: "Trees" },
-    healthcare: { color: "#C62828", icon: "hospital", label: "Healthcare" },
-    education: { color: "#8E24AA", icon: "school", label: "Education" },
-    commercial: { color: "#EF6C00", icon: "shop", label: "Commercial" },
-    services: { color: "#00897B", icon: "town-hall", label: "Services" },
-    religious_institutions: { color: "#AD1457", icon: "place-of-worship", label: "Religious" },
-    parks_and_recreation: { color: "#7CB342", icon: "restaurant", label: "Recreation" },
-    public_institutions: { color: "#8D6E63", icon: "building", label: "Public" },
-    fitness: { color: "#D81B60", icon: "fitness-centre", label: "Fitness" },
-    transportation: { color: "#F9A825", icon: "bus", label: "Transport" },
-    financial_services: { color: "#3949AB", icon: "bank", label: "Financial" },
-    tourism: { color: "#00ACC1", icon: "lodging", label: "Tourism" },
-    senior_services_and_living: { color: "#FF7043", icon: "home", label: "Senior" },
-    health: { color: "#C62828", icon: "marker", label: "Healthcare" },
-    businesscenters: { color: "#1d4ed8", icon: "marker", label: "Business Centers" },
-    "community-centers": { color: "#7e22ce", icon: "marker", label: "Community Centers" },
-    playgrounds: { color: "#ea580c", icon: "marker", label: "Playgrounds" },
-    shelters: { color: "#0f766e", icon: "marker", label: "Shelters" },
-    "street-lights": { color: "#EAB308", icon: "marker", label: "Street Lights" }
+    trees: { color: palette.sage, icon: "park-alt1", label: "Trees" },
+    healthcare: { color: palette.coral, icon: "hospital", label: "Healthcare" },
+    education: { color: palette.lavender, icon: "town-hall", label: "Education" },
+    commercial: { color: palette.blue, icon: "shop", label: "Commercial" },
+    services: { color: palette.lavender, icon: "town-hall", label: "Services" },
+    religious_institutions: { color: palette.orchid, icon: "place-of-worship", label: "Religious" },
+    parks_and_recreation: { color: palette.sage, icon: "restaurant", label: "Recreation" },
+    public_institutions: { color: palette.lavender, icon: "building", label: "Public" },
+    fitness: { color: palette.coral, icon: "fitness-centre", label: "Fitness" },
+    transportation: { color: palette.peach, icon: "bus", label: "Transport" },
+    financial_services: { color: palette.blue, icon: "bank", label: "Financial" },
+    tourism: { color: palette.sky, icon: "lodging", label: "Tourism" },
+    senior_services_and_living: { color: palette.peach, icon: "home", label: "Senior" },
+    health: { color: palette.coral, icon: "marker", label: "Healthcare" },
+    businesscenters: { color: palette.blue, icon: "marker", label: "Business Centers" },
+    "community-centers": { color: palette.lavender, icon: "marker", label: "Community Centers" },
+    playgrounds: { color: palette.coral, icon: "marker", label: "Playgrounds" },
+    shelters: { color: palette.peach, icon: "marker", label: "Shelters" },
+    "street-lights": { color: palette.gold, icon: "lighthouse", label: "Street Lights" },
   };
 
-  var DEFAULT_CONFIG = { color: "#6b7280", icon: "marker", label: "Other" };
+  var DEFAULT_CONFIG = { color: palette.gray, icon: "marker", label: "Other" };
 
   var CLEAN_WEIGHTS = {
     trees: 4.0,
@@ -49,12 +54,14 @@
     { key: "street-lights", label: "Street lights", shortTag: "street-light points" },
   ];
 
+  // Palette narrative: sky = ambient comfort · green = living places · coral = child play ·
+  // amber = mobility/caution · purple = care institutions. Only nature owns green.
   var WEIGHTED_CATEGORY_COMPONENTS = [
-    { stem: "environmental_quality", label: "Environmental Quality", weight: 0.2, color: "#2E7D32" },
-    { stem: "nature", label: "Nature", weight: 0.15, color: "#7CB342" },
-    { stem: "play", label: "Play", weight: 0.15, color: "#EF6C00" },
-    { stem: "safety_mobility", label: "Safety & Mobility", weight: 0.25, color: "#2563EB" },
-    { stem: "family_services", label: "Family Services", weight: 0.25, color: "#8E24AA" },
+    { stem: "environmental_quality", label: "Environmental Quality", weight: 0.2, color: palette.sky },
+    { stem: "nature", label: "Nature", weight: 0.15, color: palette.sage },
+    { stem: "play", label: "Play", weight: 0.15, color: palette.coral },
+    { stem: "safety_mobility", label: "Safety & Mobility", weight: 0.25, color: palette.peach },
+    { stem: "family_services", label: "Family Services", weight: 0.25, color: palette.lavender },
   ];
 
   var WEIGHTED_CATEGORY_BY_STEM = WEIGHTED_CATEGORY_COMPONENTS.reduce(function (acc, comp) {

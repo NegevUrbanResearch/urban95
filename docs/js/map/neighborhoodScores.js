@@ -1,4 +1,11 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error(
+      "Urban95NeighborhoodScores requires Urban95Palette (load js/core/palette.js first)"
+    );
+  }
+
   function requireFunction(value, name) {
     if (typeof value !== "function") {
       throw new Error("Urban95NeighborhoodScores.create requires " + name);
@@ -43,7 +50,7 @@
         ["to-number", ["get", scoreKey], 0],
         0, "#ef4444",
         25, "#f97316",
-        50, "#eab308",
+        50, palette.gold,
         75, "#84cc16",
         100, "#22c55e",
       ],

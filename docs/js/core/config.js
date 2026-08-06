@@ -1,4 +1,9 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95Config requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   var BASE = "./data";
   var ICONS_BASE = "./icons";
 
@@ -83,10 +88,10 @@
   var detailPointsMinZoom = 15;
 
   var surveyCategories = {
-    walkability_barrier: { label: "Walkability barriers", color: "#F59E0B", shape: "diamond" },
-    crossing_hazard: { label: "Dangerous crossings", color: "#DC2626", shape: "triangle" },
-    loved_place: { label: "Loved places", color: "#DB2777", shape: "heart" },
-    community_anchor: { label: "Community anchors", color: "#7C3AED", shape: "circle" },
+    walkability_barrier: { label: "Walkability barriers", color: palette.peach, shape: "diamond" },
+    crossing_hazard: { label: "Dangerous crossings", color: palette.coral, shape: "triangle" },
+    loved_place: { label: "Loved places", color: palette.orchid, shape: "heart" },
+    community_anchor: { label: "Community anchors", color: palette.sky, shape: "circle" },
   };
 
   window.Urban95Config = {

@@ -1,4 +1,11 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error(
+      "Urban95ControlSidebarFilters requires Urban95Palette (load js/core/palette.js first)"
+    );
+  }
+
   function requireObject(value, name) {
     if (!value || typeof value !== "object") {
       throw new Error("Urban95ControlSidebarFilters missing " + name);
@@ -183,12 +190,12 @@
         el.filterItems.appendChild(label);
       }
 
-      appendItem("all", "#6b7280", "All types");
+      appendItem("all", palette.gray, "All types");
 
       if (treesData && treesData.features && treesData.features.length > 0) {
         allFilterTypes.push("trees");
         var treesConfig = getAmenityConfig("trees");
-        appendItem("trees", treesConfig.color || "#6b7280", treesConfig.label || "Trees");
+        appendItem("trees", treesConfig.color || palette.gray, treesConfig.label || "Trees");
       }
 
       if (streetLightsData && streetLightsData.features && streetLightsData.features.length > 0) {
@@ -196,7 +203,7 @@
         var lightsConfig = getAmenityConfig("street-lights");
         appendItem(
           "street-lights",
-          lightsConfig.color || "#6b7280",
+          lightsConfig.color || palette.gray,
           lightsConfig.label || "Street lights"
         );
       }
@@ -208,7 +215,7 @@
         .forEach(function (type) {
           allFilterTypes.push(type);
           var itemConfig = getAmenityConfig(type);
-          appendItem(type, itemConfig.color || "#6b7280", itemConfig.label || type);
+          appendItem(type, itemConfig.color || palette.gray, itemConfig.label || type);
         });
 
       setAllFilterTypes(allFilterTypes);

@@ -1,4 +1,9 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95SurveyOverlay requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   var SOURCE_ID = "community-survey";
   var HOVER_CARD_CLASS = "survey-observation-tooltip";
   var CATEGORY_IDS = [
@@ -352,7 +357,7 @@
             CATEGORY_IDS.map(function (categoryId) {
               var marker = MARKERS[categoryId];
               var category = categories[categoryId] || {};
-              return svgToImageData(marker.svg(category.color || "#6b7280")).then(function (imageData) {
+              return svgToImageData(marker.svg(category.color || palette.gray)).then(function (imageData) {
                 return { categoryId: categoryId, imageData: imageData };
               });
             })

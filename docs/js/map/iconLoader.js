@@ -13,8 +13,11 @@
     return value;
   }
 
+  // Hard-required by map symbol layers (trees / lights / schools / bus overlays).
+  var MAP_LAYER_ICONS = ["park-alt1", "lighthouse", "bus", "marker", "town-hall"];
+
   function iconNamesFromScoreModel(scoreModel) {
-    var names = new Set();
+    var names = new Set(MAP_LAYER_ICONS);
     var amenityTypeConfig = requireObject(scoreModel.AMENITY_TYPE_CONFIG, "deps.scoreModel.AMENITY_TYPE_CONFIG");
     var defaultConfig = requireObject(scoreModel.DEFAULT_CONFIG, "deps.scoreModel.DEFAULT_CONFIG");
 

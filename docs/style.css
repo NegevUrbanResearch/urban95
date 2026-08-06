@@ -14,6 +14,27 @@ body {
   --score-sidebar-z: 15;
   --horizon-bar-h: 28px;
   --horizon-sub-bar-h: 20px;
+
+  /* Brand / indicator palette tokens are owned by docs/js/core/palette.js
+     (Urban95Palette) and applied to :root before first paint. Fallbacks below
+     match that module so CSS still resolves if the script is delayed. */
+  --palette-coral: #e05a56;
+  --palette-peach: #d9944f;
+  --palette-yellow: #d4c44a;
+  --palette-gold: #eab308;
+  --palette-mint: #5dcc62;
+  --palette-sage: #4a9e49;
+  --palette-sky: #3aade0;
+  --palette-blue: #5a84f5;
+  --palette-lavender: #8f5ce8;
+  --palette-orchid: #e05ee3;
+
+  --app-accent: var(--palette-blue);
+  --app-accent-soft: var(--palette-sky);
+  --app-accent-deep: #3f6ae8;
+  --app-accent-ink: #3556b0;
+  --app-hero-from: #4a62b8;
+  --app-hero-to: var(--palette-blue);
 }
 
 /* Desktop-only gate (mobile / narrow viewports) */
@@ -29,7 +50,7 @@ body.desktop-only-blocked {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--app-hero-from) 0%, var(--app-accent) 100%);
 }
 
 .desktop-only-overlay[hidden] {
@@ -49,7 +70,7 @@ body.desktop-only-blocked {
   align-items: center;
   gap: 14px;
   padding: 24px 24px 20px;
-  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, var(--app-accent-deep) 0%, var(--app-accent) 100%);
   color: #fff;
 }
 
@@ -90,7 +111,7 @@ body.desktop-only-blocked {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+  background: linear-gradient(135deg, var(--app-hero-from) 0%, var(--app-accent) 100%);
   z-index: 9999;
   display: flex;
   align-items: center;
@@ -249,7 +270,7 @@ body.desktop-only-blocked {
 }
 
 .radius-count a {
-  color: #2563eb;
+  color: var(--app-accent);
   text-decoration: underline;
   cursor: pointer;
 }
@@ -283,7 +304,7 @@ body.desktop-only-blocked {
   font-size: 42px;
   line-height: 1;
   font-weight: 800;
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .percentile-value span {
@@ -447,7 +468,7 @@ body.desktop-only-blocked {
 }
 
 .score-explain-sidebar-close:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--app-accent);
   outline-offset: 2px;
 }
 
@@ -608,7 +629,7 @@ body.desktop-only-blocked {
 }
 
 .horizon-row:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--app-accent);
   outline-offset: 2px;
 }
 
@@ -659,8 +680,8 @@ body.desktop-only-blocked {
 }
 
 .horizon-icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   display: inline-block;
   background-color: var(--horizon-icon-color, #64748b);
@@ -672,6 +693,11 @@ body.desktop-only-blocked {
   mask-position: center;
   -webkit-mask-size: contain;
   mask-size: contain;
+  filter:
+    drop-shadow(0.4px 0 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(-0.4px 0 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(0 0.4px 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(0 -0.4px 0 var(--horizon-icon-color, #64748b));
 }
 
 .horizon-sub-label {
@@ -681,8 +707,8 @@ body.desktop-only-blocked {
 }
 
 .horizon-sub-label .horizon-icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .horizon-sub-label .horizon-label-top {
@@ -768,7 +794,7 @@ body.desktop-only-blocked {
 }
 
 .horizon-group.is-filter-highlight > .horizon-row {
-  background: color-mix(in srgb, var(--filter-highlight-color, #2563eb) 10%, #fff);
+  background: color-mix(in srgb, var(--filter-highlight-color, var(--app-accent)) 10%, #fff);
 }
 
 .horizon-chart-expanded .horizon-group.is-filter-highlight > .horizon-row {
@@ -903,7 +929,7 @@ button.city-ranking-row {
 
 .city-ranking-row.is-active {
   background: #f8fafc;
-  border-inline-start: 3px solid #2563eb;
+  border-inline-start: 3px solid var(--app-accent);
   padding-inline-start: 7px;
 }
 
@@ -949,9 +975,9 @@ button.city-ranking-row {
   width: 100%;
   margin: 0;
   padding: 8px 12px;
-  border: 1px solid #2563eb;
+  border: 1px solid var(--app-accent);
   border-radius: 8px;
-  background: #2563eb;
+  background: var(--app-accent);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -960,12 +986,12 @@ button.city-ranking-row {
 }
 
 .city-open-neighborhood-btn:hover {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+  background: var(--app-accent-deep);
+  border-color: var(--app-accent-deep);
 }
 
 .city-open-neighborhood-btn:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--app-accent);
   outline-offset: 2px;
 }
 
@@ -1323,7 +1349,7 @@ button.city-ranking-row {
 }
 
 .score-explain-radius-note-label {
-  color: #1d4ed8;
+  color: var(--app-accent-deep);
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.05em;
@@ -1349,7 +1375,7 @@ button.city-ranking-row {
   letter-spacing: 0.05em;
   line-height: 1.1;
   text-transform: uppercase;
-  color: #1d4ed8;
+  color: var(--app-accent-deep);
 }
 
 .score-explain-demographics-row {
@@ -1386,7 +1412,7 @@ button.city-ranking-row {
   letter-spacing: 0.03em;
   line-height: 1.15;
   text-transform: uppercase;
-  color: #3b82f6;
+  color: var(--app-accent);
 }
 
 .demo-chip-value {
@@ -1395,7 +1421,7 @@ button.city-ranking-row {
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  color: #1d4ed8;
+  color: var(--app-accent-deep);
 }
 
 .demo-chip-meta {
@@ -1446,7 +1472,7 @@ button.city-ranking-row {
 .score-explain-sidebar .score-explain-formula-fold summary {
   font-size: var(--sidebar-note-font, 13px);
   font-weight: 800;
-  color: #1d4ed8;
+  color: var(--app-accent-deep);
   cursor: pointer;
 }
 
@@ -1504,7 +1530,7 @@ button.city-ranking-row {
 
 .formula-chip-safety {
   border-color: rgba(37, 99, 235, 0.24);
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .formula-chip-family {
@@ -1570,7 +1596,7 @@ button.city-ranking-row {
 .score-explain-hero-num {
   font-size: 28px;
   font-weight: 800;
-  color: #1d4ed8;
+  color: var(--app-accent-deep);
   line-height: 1.05;
   letter-spacing: -0.02em;
 }
@@ -1595,7 +1621,7 @@ button.city-ranking-row {
   height: 100%;
   max-width: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #93c5fd, #2563eb);
+  background: linear-gradient(90deg, #93c5fd, var(--app-accent));
   transition: width 0.35s ease;
 }
 
@@ -1705,7 +1731,7 @@ button.city-ranking-row {
 .score-explain-metric-pct {
   font-size: 14px;
   font-weight: 700;
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .score-explain-card-bar {
@@ -1757,7 +1783,7 @@ button.city-ranking-row {
 .score-explain-toggle-btn {
   border: 1px solid #bfdbfe;
   background: #eff6ff;
-  color: #1d4ed8;
+  color: var(--app-accent-deep);
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 11px;
@@ -1892,7 +1918,7 @@ button.city-ranking-row {
 .cw-stat-value {
   font-size: 22px;
   font-weight: 800;
-  color: #2563eb;
+  color: var(--app-accent);
   line-height: 1.1;
 }
 
@@ -1964,7 +1990,7 @@ button.city-ranking-row {
 .u95-highlight-score {
   font-size: 24px;
   line-height: 1;
-  color: #1d4ed8;
+  color: var(--app-accent-deep);
   font-weight: 800;
   margin-bottom: 4px;
 }
@@ -1992,7 +2018,7 @@ button.city-ranking-row {
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  background: #3b82f6;
+  background: var(--app-accent);
   margin-right: 5px;
   vertical-align: -1px;
 }
@@ -2204,7 +2230,7 @@ button.city-ranking-row {
 }
 
 .modal-header {
-  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, var(--app-accent-deep) 0%, var(--app-accent) 100%);
   padding: 24px 24px 20px;
   display: flex;
   align-items: center;
@@ -2261,7 +2287,7 @@ button.city-ranking-row {
 }
 
 .modal-tab.active {
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .modal-tab.active::after {
@@ -2271,7 +2297,7 @@ button.city-ranking-row {
   left: 0;
   right: 0;
   height: 2px;
-  background: #2563eb;
+  background: var(--app-accent);
   border-radius: 2px 2px 0 0;
 }
 
@@ -2408,7 +2434,7 @@ button.city-ranking-row {
   margin: 0 24px 24px;
   width: calc(100% - 48px);
   padding: 14px;
-  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, var(--app-accent-deep) 0%, var(--app-accent) 100%);
   color: #fff;
   border: none;
   border-radius: 10px;

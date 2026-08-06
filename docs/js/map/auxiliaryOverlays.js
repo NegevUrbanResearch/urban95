@@ -1,4 +1,10 @@
 (function () {
+  if (!window.Urban95Palette) {
+    throw new Error(
+      "Urban95AuxiliaryOverlays requires Urban95Palette (load js/core/palette.js first)"
+    );
+  }
+
   var ROAD_LAYER_IDS = [
     "roads-casing",
     "roads-fill",
@@ -517,14 +523,16 @@
             source: SCHOOLS_SOURCE_ID,
             minzoom: detailPointsMinZoom,
             layout: {
+              // town-hall SDF reads cleanly; Maki "school" (apple) fragments at map sizes
               "icon-image": "town-hall",
-              "icon-size": ["interpolate", ["linear"], ["zoom"], 11, 1.1, 14, 1.45, 18, 2],
+              // Match tree / street-light point scale (layer only shows at detail zoom).
+              "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 1.2],
               "icon-allow-overlap": true,
               "icon-ignore-placement": true,
               visibility: "none",
             },
             paint: {
-              "icon-color": "#dc2626",
+              "icon-color": window.Urban95Palette.lavender,
               "icon-opacity": 0.95,
             },
           },
@@ -569,7 +577,7 @@
               visibility: "none",
             },
             paint: {
-              "icon-color": "#2563EB",
+              "icon-color": window.Urban95Palette.peach,
               "icon-opacity": 0.95,
             },
           },

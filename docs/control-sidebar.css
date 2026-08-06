@@ -35,7 +35,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 16px 14px 12px;
-  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, var(--app-accent-deep) 0%, var(--app-accent) 100%);
   color: #fff;
 }
 
@@ -166,18 +166,18 @@
 }
 
 .radio-option input:checked ~ span {
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .radio-option:has(input:checked) {
-  border-color: #3b82f6;
+  border-color: var(--app-accent);
   background: #eff6ff;
 }
 
 .segmented-options > label:has(input:checked) {
   border-color: transparent;
   background: #fff;
-  color: #3b82f6;
+  color: var(--app-accent);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
@@ -242,7 +242,7 @@
 }
 
 .filter-btn:hover {
-  border-color: #3b82f6;
+  border-color: var(--app-accent);
 }
 
 .filter-btn svg {
@@ -356,7 +356,7 @@
 .filter-item input {
   width: 14px;
   height: 14px;
-  accent-color: var(--row-accent, #3b82f6);
+  accent-color: var(--row-accent, var(--app-accent));
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -402,7 +402,7 @@
 .radius-opt.active,
 .mode-opt.active {
   background: #fff;
-  color: #3b82f6;
+  color: var(--app-accent);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
@@ -532,7 +532,7 @@
 }
 
 .indicator-row--aux .segmented-options > label:hover {
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .indicator-group--survey {
@@ -598,16 +598,27 @@
   mask-position: center;
   -webkit-mask-size: contain;
   mask-size: contain;
+  /* Optical weight at 14–16px without growing the hit box */
+  filter:
+    drop-shadow(0.45px 0 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(-0.45px 0 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(0 0.45px 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(0 -0.45px 0 var(--horizon-icon-color, #64748b));
 }
 
 .indicator-row--category .indicator-label-wrap .horizon-icon {
-  width: 16px;
-  height: 16px;
+  width: 19px;
+  height: 19px;
 }
 
 .indicator-row--sub .indicator-label-wrap .horizon-icon {
-  width: 14px;
-  height: 14px;
+  width: 17px;
+  height: 17px;
+  filter:
+    drop-shadow(0.55px 0 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(-0.55px 0 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(0 0.55px 0 var(--horizon-icon-color, #64748b))
+    drop-shadow(0 -0.55px 0 var(--horizon-icon-color, #64748b));
 }
 
 .indicator-collapse-btn {
@@ -627,7 +638,7 @@
 }
 
 .indicator-collapse-btn:hover {
-  color: #2563eb;
+  color: var(--app-accent);
   background: rgba(37, 99, 235, 0.08);
 }
 
@@ -745,7 +756,7 @@
 
 .indicator-btn:hover:not(:disabled) {
   border-color: #93c5fd;
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .indicator-btn:active:not(:disabled) {
@@ -753,9 +764,9 @@
 }
 
 .indicator-btn.is-active {
-  border-color: #2563eb;
+  border-color: var(--app-accent);
   background: #eff6ff;
-  color: #2563eb;
+  color: var(--app-accent);
 }
 
 .indicator-btn.is-disabled,

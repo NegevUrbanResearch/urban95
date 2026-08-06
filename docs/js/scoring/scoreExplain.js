@@ -1,22 +1,27 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95ScoreExplain requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   var SCORE_EXPLAIN_CLEAN_ICON_BY_KEY = {
-    trees: "park-alt1",
-    parks: "park",
-    playgrounds: "playground",
-    health: "hospital",
-    education: "school",
-    bus_stops: "bus",
-    shelters: "shelter",
-    "community-centers": "town-hall",
-    businesscenters: "shop",
-    "street-lights": "lighthouse",
+    trees: "trees",
+    parks: "park-access",
+    playgrounds: "playgrounds",
+    health: "health-services",
+    education: "education",
+    bus_stops: "bus-stops",
+    shelters: "shelters",
+    "community-centers": "community-centers",
+    businesscenters: "business-centers",
+    "street-lights": "street-lights",
   };
 
   var SCORE_EXPLAIN_ROW_ICON_BY_LABEL = {
     "Amenity POIs (count)": "shop",
-    "Trees (\u00d7\u00bc)": "park-alt1",
-    "Street lights (\u00d7\u00bc)": "lighthouse",
-    "Trees (weighted)": "park-alt1",
+    "Trees (\u00d7\u00bc)": "trees",
+    "Street lights (\u00d7\u00bc)": "street-lights",
+    "Trees (weighted)": "trees",
     "Other manifest-weighted": "marker",
   };
 
@@ -75,7 +80,7 @@
     function getScoreExplainRowIconColor(row, barColor) {
       if (!row) return iconNeutral;
       if (state.getScoreMode() === "weighted" && !row.amenityType && !row.cleanKey) {
-        return barColor || "#64748b";
+        return barColor || palette.slate;
       }
       return iconNeutral;
     }
@@ -151,7 +156,7 @@
     }
 
     function horizonBarFillStyle(baseColor, widthPct) {
-      var base = parseColorChannels(baseColor || "#2563eb");
+      var base = parseColorChannels(baseColor || palette.accent);
       var light = channelsToCss(mixChannels(base, 0.45));
       var full = channelsToCss(base);
       return (
@@ -166,7 +171,7 @@
     }
 
     function horizonSubBarFillStyle(parentColor, widthPct, subIndex, subCount) {
-      var base = parseColorChannels(parentColor || "#2563eb");
+      var base = parseColorChannels(parentColor || palette.accent);
       var count = Math.max(1, subCount);
       var index = Math.max(0, Math.min(subIndex, count - 1));
       var subMix = count === 1 ? 0.32 : 0.5 - (index / (count - 1)) * 0.28;
@@ -186,7 +191,7 @@
     function renderHorizonLabelCell(label, iconName, weightTagHtml, labelColor, opts) {
       opts = opts || {};
       var iconColor =
-        opts.iconColor != null ? opts.iconColor : labelColor != null ? labelColor : "#64748b";
+        opts.iconColor != null ? opts.iconColor : labelColor != null ? labelColor : palette.slate;
       var colorLabelText = opts.colorLabelText !== false && labelColor != null && labelColor !== "";
       var html = '<span class="horizon-label"';
       if (colorLabelText) html += ' style="color:' + escapeHtml(labelColor) + '"';
@@ -362,7 +367,7 @@
       ordered.forEach(function (row) {
         var neighborhood = Math.max(0, Math.min(100, Number(row.neighborhood) || 0));
         var city = Math.max(0, Math.min(100, Number(row.city) || 0));
-        var color = neighborhood >= 70 ? "#22c55e" : neighborhood >= 40 ? "#eab308" : "#ef4444";
+        var color = neighborhood >= 70 ? "#22c55e" : neighborhood >= 40 ? palette.gold : "#ef4444";
         html += '<div class="u95-compare-item">';
         html += '<div class="u95-compare-name">' + escapeHtml(row.label) + "</div>";
         html += '<div class="u95-compare-bar-wrap">';
@@ -681,7 +686,7 @@
     function explainRankBarColor(percentile) {
       if (percentile == null) return "#94a3b8";
       if (percentile >= 70) return "#22c55e";
-      if (percentile >= 40) return "#eab308";
+      if (percentile >= 40) return palette.gold;
       return "#ef4444";
     }
 

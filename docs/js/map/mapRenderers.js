@@ -1,4 +1,9 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95MapRenderers requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   var deps = null;
   var missingBuildingIdLogged = false;
   var lastDeckRenderStateKey = null;
@@ -10,7 +15,7 @@
 
   var NEIGHBORHOODS_LINE_COLOR = "#1e3a5f";
   var NEIGHBORHOODS_LINE_WIDTH = 2.5;
-  var NEIGHBORHOODS_LINE_COLOR_SELECTED = "#0f172a";
+  var NEIGHBORHOODS_LINE_COLOR_SELECTED = palette.ink;
   var NEIGHBORHOODS_LINE_WIDTH_SELECTED = 4.5;
 
   function clearPendingDeckUpdateTimer(currentDeps) {
@@ -641,7 +646,7 @@
         "icon-ignore-placement": true,
       },
       paint: {
-        "icon-color": "#2E7D32",
+        "icon-color": d.getAmenityConfig("trees").color,
         "icon-opacity": 0.9,
       },
     });
@@ -660,7 +665,7 @@
           "icon-ignore-placement": true,
         },
         paint: {
-          "icon-color": "#2E7D32",
+          "icon-color": d.getAmenityConfig("trees").color,
           "icon-opacity": 0.9,
         },
       });
@@ -672,7 +677,7 @@
       type: "symbol",
       source: "street-lights",
       layout: {
-        "icon-image": "marker",
+        "icon-image": "lighthouse",
         "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.55, 18, 1.1],
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
@@ -691,7 +696,7 @@
         minzoom: d.urban95DetailPointsMinZoom,
         layout: {
           visibility: "none",
-          "icon-image": "marker",
+          "icon-image": "lighthouse",
           "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.55, 18, 1.1],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true,
@@ -1774,7 +1779,7 @@
         25,
         "#f97316",
         50,
-        "#eab308",
+        palette.gold,
         75,
         "#84cc16",
         100,
@@ -1805,7 +1810,7 @@
       ];
 
       if (d.getCurrentMode() === "neighborhood") {
-        d.map.setPaintProperty("neighborhoods-fill", "fill-color", "#0f172a");
+        d.map.setPaintProperty("neighborhoods-fill", "fill-color", palette.ink);
         d.map.setPaintProperty("neighborhoods-fill", "fill-opacity", 0.01);
         resetNeighborhoodsLinePaint(d.map);
         updateNeighborhoodSurfaceData();

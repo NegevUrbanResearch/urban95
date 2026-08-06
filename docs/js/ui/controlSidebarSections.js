@@ -97,7 +97,10 @@
       ),
     });
     var amenityConfig = scoreModel.AMENITY_TYPE_CONFIG || {};
-    var defaultConfig = scoreModel.DEFAULT_CONFIG || { color: "#6b7280" };
+    var defaultConfig =
+      scoreModel.DEFAULT_CONFIG || {
+        color: window.Urban95Palette.gray,
+      };
     var getAmenityConfig =
       typeof scoreModel.getAmenityConfig === "function"
         ? scoreModel.getAmenityConfig

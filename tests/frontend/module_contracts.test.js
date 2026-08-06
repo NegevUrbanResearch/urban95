@@ -1,4 +1,4 @@
-﻿const fs = require("node:fs");
+const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -9523,7 +9523,7 @@ test("score explanation module builds weighted breakdowns without app.js helpers
     breakdown.weightedCategories[0].subrows[0].valueLabel,
     "55 / 100"
   );
-  assert.equal(explain.getWeightedCategoryIcon("nature"), "park");
+  assert.equal(explain.getWeightedCategoryIcon("nature"), "nature");
   assert.equal(typeof explain.renderHorizonIcon, "undefined");
   assert.equal(typeof explain.buildFilteredFormulaLine, "undefined");
   assert.equal(typeof explain.parseColorChannels, "undefined");
@@ -9534,7 +9534,7 @@ test("score explanation module builds weighted breakdowns without app.js helpers
   assert.equal(typeof explain.getPercentileSeriesForMinutes, "undefined");
   assert.equal(typeof explain.percentileForSeries, "undefined");
   assert.match(
-    explain.renderHorizonLabelCell("Nature", "park", "", "#7CB342"),
+    explain.renderHorizonLabelCell("Nature", "nature", "", "#4a9e49"),
     /horizon-icon/
   );
 });

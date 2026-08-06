@@ -309,7 +309,7 @@ test("survey parent uses the shared indicator row controls with independent cate
   harness.indicators.renderIndicatorsSection();
 
   assert.match(harness.indicatorsList.innerHTML, /horizon-icon/);
-  assert.match(harness.indicatorsList.innerHTML, /town-hall\.svg/);
+  assert.match(harness.indicatorsList.innerHTML, /community-centers\.svg/);
   assert.match(harness.indicatorsList.innerHTML, /data-metric-id="survey"/);
   assert.match(
     harness.indicatorsList.innerHTML,

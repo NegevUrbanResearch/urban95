@@ -699,11 +699,11 @@ test("startup loads shadeSi with gzip fallback and syncs companion visibility", 
   assert.ok(companionSyncCalls.includes("sync"));
 });
 
-test("weighted shade icon uses garden and app.js avoids shade-only visibility branch", () => {
+test("weighted shade icon uses shade asset and app.js avoids shade-only visibility branch", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   const icons = browser.window.Urban95WeightedIndicatorIcons.create("./icons");
-  assert.equal(icons.getSubcategoryIcon("shade"), "garden");
+  assert.equal(icons.getSubcategoryIcon("shade"), "shade");
 
   const appSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "app.js"), "utf8");
   assert.match(appSource, /syncStaticPolygonCompanionsVisibility/);

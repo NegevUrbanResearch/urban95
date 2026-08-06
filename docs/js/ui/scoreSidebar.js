@@ -1,4 +1,9 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95ScoreSidebar requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   var deps = null;
   var sidebarChrome = null;
   var scoreExplainFitRaf = 0;
@@ -221,7 +226,7 @@
       '<div class="horizon-chart' + (partialFilter ? " score-explain-chart-partial-filter" : "") + '">';
     categories.forEach(function (cat, idx) {
       var pct = Math.min(100, Math.max(0, Number(cat.value) || 0));
-      var color = cat.color || "#2563eb";
+      var color = cat.color || palette.accent;
       var highlighted = d.isScoreExplainCategoryFilterHighlighted(cat);
       html += '<div class="horizon-group' + (highlighted ? " is-filter-highlight" : "") + '" data-cat-idx="' + idx + '"';
       if (highlighted) {
@@ -302,7 +307,7 @@
           var v = Number(row.value) || 0;
           barW = maxVal > 0 ? Math.min(100, Math.max(0, (v / maxVal) * 100)) : 0;
         }
-        var barColor = pct != null ? d.explainRankBarColor(pct) : "#2563eb";
+        var barColor = pct != null ? d.explainRankBarColor(pct) : palette.accent;
 
         var highlighted = d.isScoreExplainRowFilterHighlighted(row);
         html += '<div class="horizon-group' + (highlighted ? " is-filter-highlight" : "") + '">';

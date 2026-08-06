@@ -1,4 +1,9 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95ModeController requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   function requireObject(value, name) {
     if (!value || typeof value !== "object") {
       throw new Error("Urban95ModeController requires " + name);
@@ -319,14 +324,14 @@
           id: "neighborhoods-fill",
           type: "fill",
           source: "neighborhoods",
-          paint: { "fill-color": "#3b82f6", "fill-opacity": 0.6 },
+          paint: { "fill-color": palette.accent, "fill-opacity": 0.6 },
           layout: { visibility: "none" },
         });
         map.addLayer({
           id: "neighborhoods-line",
           type: "line",
           source: "neighborhoods",
-          paint: { "line-color": "#1e3a5f", "line-width": 2.5, "line-opacity": 0.9 },
+          paint: { "line-color": palette.heroFrom, "line-width": 2.5, "line-opacity": 0.9 },
           layout: { visibility: "none" },
         });
         map.addLayer({

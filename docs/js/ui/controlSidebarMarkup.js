@@ -1,4 +1,11 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error(
+      "Urban95ControlSidebarMarkup requires Urban95Palette (load js/core/palette.js first)"
+    );
+  }
+
   var OVERLAY_DEFAULTS = [
     {
       layerId: "urban-nature",
@@ -459,23 +466,18 @@
     var heatMarkup = "";
 
     if (iconMarkup) {
-      if (row.kind === "category" && row.color) {
-        labelStyle = ' style="color:' + escapeHtml(row.color) + ';"';
-      } else if (row.kind === "subcategory") {
-        labelStyle = ' style="color:#64748b;"';
+      if (row.kind === "subcategory") {
+        labelStyle = ' style="color:' + palette.slate + ';"';
       }
     } else if (iconsRenderer) {
       if (row.kind === "category" && row.stem) {
         iconMarkup = iconsRenderer.renderIcon(iconsRenderer.getCategoryIcon(row.stem), row.color);
-        if (row.color) {
-          labelStyle = ' style="color:' + escapeHtml(row.color) + ';"';
-        }
       } else if (row.kind === "subcategory" && row.stem) {
         iconMarkup = iconsRenderer.renderIcon(
           iconsRenderer.getSubcategoryIcon(row.stem),
           iconsRenderer.ICON_NEUTRAL
         );
-        labelStyle = ' style="color:#64748b;"';
+        labelStyle = ' style="color:' + palette.slate + ';"';
       }
     }
 
@@ -504,7 +506,26 @@
         '" aria-label="' +
         escapeHtml((heatActive ? "Hide" : "Show") + " heatmap for " + row.label) +
         '">' +
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">' +
+        '<rect x="0.75" y="0.75" width="14.5" height="14.5" rx="3.25" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+        '<g stroke="currentColor" stroke-width="0.55">' +
+        '<rect x="2" y="2" width="2.85" height="2.85" rx="0.35" fill="#fef6ab"/>' +
+        '<rect x="5.05" y="2" width="2.85" height="2.85" rx="0.35" fill="#f27c7c"/>' +
+        '<rect x="8.1" y="2" width="2.85" height="2.85" rx="0.35" fill="#fef6ab"/>' +
+        '<rect x="11.15" y="2" width="2.85" height="2.85" rx="0.35" fill="#9fd1a1"/>' +
+        '<rect x="2" y="5.05" width="2.85" height="2.85" rx="0.35" fill="#f49172"/>' +
+        '<rect x="5.05" y="5.05" width="2.85" height="2.85" rx="0.35" fill="#fbb97f"/>' +
+        '<rect x="8.1" y="5.05" width="2.85" height="2.85" rx="0.35" fill="#fef6ab"/>' +
+        '<rect x="11.15" y="5.05" width="2.85" height="2.85" rx="0.35" fill="#60bd91"/>' +
+        '<rect x="2" y="8.1" width="2.85" height="2.85" rx="0.35" fill="#f27c7c"/>' +
+        '<rect x="5.05" y="8.1" width="2.85" height="2.85" rx="0.35" fill="#f49172"/>' +
+        '<rect x="8.1" y="8.1" width="2.85" height="2.85" rx="0.35" fill="#9fd1a1"/>' +
+        '<rect x="11.15" y="8.1" width="2.85" height="2.85" rx="0.35" fill="#60bd91"/>' +
+        '<rect x="2" y="11.15" width="2.85" height="2.85" rx="0.35" fill="#f27c7c"/>' +
+        '<rect x="5.05" y="11.15" width="2.85" height="2.85" rx="0.35" fill="#f27c7c"/>' +
+        '<rect x="8.1" y="11.15" width="2.85" height="2.85" rx="0.35" fill="#fbb97f"/>' +
+        '<rect x="11.15" y="11.15" width="2.85" height="2.85" rx="0.35" fill="#9fd1a1"/>' +
+        "</g></svg>" +
         "</button>";
     } else {
       // Keep the View column aligned with other indicator rows.
@@ -709,7 +730,7 @@
 
   function renderSurveyCategorySwatch(category) {
     var shape = (category && category.shape) || "circle";
-    var color = (category && category.color) || "#6b7280";
+    var color = (category && category.color) || palette.gray;
     return (
       '<span class="survey-category-swatch" data-shape="' +
       escapeHtml(shape) +
@@ -746,7 +767,7 @@
     var visibility = resolveSurveyVisibility(layerVisibility);
     var categories = surveyCategories || {};
     var unavailable = surveyAvailable === false;
-    var categoryColor = (categories.community_anchor || {}).color || "#7C3AED";
+    var categoryColor = (categories.community_anchor || {}).color || palette.sky;
     var categoryRow = {
       depth: 0,
       metricId: "survey",

@@ -1,4 +1,9 @@
 (function () {
+  var palette = window.Urban95Palette;
+  if (!palette) {
+    throw new Error("Urban95MapShell requires Urban95Palette (load js/core/palette.js first)");
+  }
+
   function emptyFeatureCollection() {
     return { type: "FeatureCollection", features: [] };
   }
@@ -454,7 +459,7 @@
             type: "fill",
             source: "radius-circle",
             paint: {
-              "fill-color": "#3b82f6",
+              "fill-color": palette.accent,
               "fill-opacity": 0.15,
             },
           },
@@ -463,7 +468,7 @@
             type: "line",
             source: "radius-circle",
             paint: {
-              "line-color": "#3b82f6",
+              "line-color": palette.accent,
               "line-width": 2,
               "line-dasharray": [4, 2],
             },
@@ -473,7 +478,7 @@
             type: "line",
             source: "selected-building",
             paint: {
-              "line-color": "#3b82f6",
+              "line-color": palette.accent,
               "line-width": 3,
             },
           },
