@@ -79,8 +79,11 @@ function runControlActionsModule() {
 
 function loadNeighborhoodSidebarModules(browser) {
   runBrowserScript("docs/js/ui/sidebarChromeBindings.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodSelection.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareRender.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareApply.js", browser);
 }
 
 function loadCitySidebarModules(browser) {
@@ -160,6 +163,7 @@ function runAppScript(browser) {
   runBrowserScript("docs/js/map/neighborhoodScores.js", browser);
   runBrowserScript("docs/js/map/renderState.js", browser);
   runBrowserScript("docs/js/map/iconLoader.js", browser);
+  runBrowserScript("docs/js/map/neighborhoodSelectionHighlight.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);
   runBrowserScript("docs/js/map/surveyOverlay.js", browser);
@@ -257,14 +261,32 @@ test("index loads core frontend modules before app.js", () => {
   const sidebarChromeBindingsIndex = requireScriptIndex(scripts, "./js/ui/sidebarChromeBindings.js");
   assert.ok(scoreSidebarChromeIndex < sidebarChromeBindingsIndex);
   assert.ok(sidebarChromeBindingsIndex < amenityModeIndex);
+  const neighborhoodSelectionIndex = requireScriptIndex(scripts, "./js/ui/neighborhoodSelection.js");
   const neighborhoodPanelRenderIndex = requireScriptIndex(scripts, "./js/ui/neighborhoodPanelRender.js");
+  const neighborhoodCompareRenderIndex = requireScriptIndex(
+    scripts,
+    "./js/ui/neighborhoodCompareRender.js"
+  );
   const neighborhoodSidebarIndex = requireScriptIndex(scripts, "./js/ui/neighborhoodSidebar.js");
+  const neighborhoodCompareApplyIndex = requireScriptIndex(
+    scripts,
+    "./js/ui/neighborhoodCompareApply.js"
+  );
+  const neighborhoodSelectionHighlightIndex = requireScriptIndex(
+    scripts,
+    "./js/map/neighborhoodSelectionHighlight.js"
+  );
   const cityGapThresholdsIndex = requireScriptIndex(scripts, "./js/ui/cityGapThresholds.js");
   const cityPanelRenderIndex = requireScriptIndex(scripts, "./js/ui/cityPanelRender.js");
   const citySidebarIndex = requireScriptIndex(scripts, "./js/ui/citySidebar.js");
   const dashboardsIndex = requireScriptIndex(scripts, "./js/ui/dashboards.js");
   assert.ok(requireScriptIndex(scripts, "./js/ui/infoModal.js") < neighborhoodPanelRenderIndex);
-  assert.ok(neighborhoodPanelRenderIndex < neighborhoodSidebarIndex);
+  assert.ok(neighborhoodSelectionIndex < neighborhoodSidebarIndex);
+  assert.ok(neighborhoodPanelRenderIndex < neighborhoodCompareRenderIndex);
+  assert.ok(neighborhoodCompareRenderIndex < neighborhoodSidebarIndex);
+  assert.ok(neighborhoodSidebarIndex < neighborhoodCompareApplyIndex);
+  assert.ok(neighborhoodCompareApplyIndex < cityGapThresholdsIndex);
+  assert.ok(neighborhoodSelectionHighlightIndex < requireScriptIndex(scripts, "./js/map/mapRenderers.js"));
   assert.ok(neighborhoodSidebarIndex < cityGapThresholdsIndex);
   assert.ok(cityGapThresholdsIndex < cityPanelRenderIndex);
   assert.ok(cityPanelRenderIndex < citySidebarIndex);
@@ -1153,6 +1175,14 @@ test("control actions own score-mode, filter, walk-minute, and escape reactions"
         return false;
       },
     },
+    compareApply: {
+      resync: function () {
+        calls.push("compareApply:resync");
+      },
+      clearAll: function () {
+        calls.push("compareApply:clearAll");
+      },
+    },
     citySidebar: {
       isOpen: function () {
         calls.push("citySidebar:isOpen");
@@ -1331,6 +1361,10 @@ test("control actions skip direct radius sync when amenity mode reselected the b
       hide: () => {},
       isOpen: () => false,
     },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
+    },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
     ui: { clearTooltip: () => {} },
@@ -1396,6 +1430,10 @@ test("control actions selected-building cold expanded switch keeps isochrones ba
       sync: () => {},
       hide: () => {},
       isOpen: () => false,
+    },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
@@ -1468,6 +1506,10 @@ test("control actions keep direct radius sync when amenity mode did not refresh 
       hide: () => {},
       isOpen: () => false,
     },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
+    },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
     ui: { clearTooltip: () => {} },
@@ -1536,6 +1578,10 @@ test("control actions do not direct-sync stale rapid toggles when amenity mode r
       sync: () => {},
       hide: () => {},
       isOpen: () => false,
+    },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
@@ -1621,6 +1667,10 @@ test("control actions no-selection score-mode path keeps sidebar closed and skip
       hide: () => {},
       isOpen: () => false,
     },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
+    },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
     ui: { clearTooltip: () => {} },
@@ -1684,6 +1734,10 @@ test("filter changes with selected building recompute selection before point-sou
       hide: () => {},
       isOpen: () => false,
     },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
+    },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
     ui: { clearTooltip: () => {} },
@@ -1745,6 +1799,10 @@ test("filter changes refresh point sources when selected-building recompute is u
       sync: () => {},
       hide: () => {},
       isOpen: () => false,
+    },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
@@ -1823,6 +1881,10 @@ test("walk-minute selected building recompute precedes global recolor", () => {
       sync: () => {},
       hide: () => {},
       isOpen: () => false,
+    },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
     },
     modeController: { switchMode: () => {} },
     map: { getLayer: () => false, setLayoutProperty: () => {} },
@@ -1961,9 +2023,20 @@ test("icon loader registers amenity icons with fallback and non-fatal warnings",
 
   await iconLoader.loadAmenityIcons();
 
+  // MAP_LAYER_ICONS (park-alt1, lighthouse, bus, marker, town-hall) always load,
+  // plus amenity/default icons from the injected scoreModel config.
+  const expectedIconNames = [
+    "bus",
+    "lighthouse",
+    "marker",
+    "park",
+    "park-alt1",
+    "school",
+    "town-hall",
+  ];
   assert.deepEqual(Object.keys(iconLoader).sort(), ["areIconsLoaded", "loadAmenityIcons"]);
-  assert.deepEqual(Array.from(mapImages.keys()).sort(), ["marker", "park", "school"]);
-  ["marker", "park", "school"].forEach(function (name) {
+  assert.deepEqual(Array.from(mapImages.keys()).sort(), expectedIconNames);
+  expectedIconNames.forEach(function (name) {
     assert.equal(mapImages.get(name).options.sdf, true);
   });
   assert.deepEqual(warnings, []);
@@ -2031,12 +2104,26 @@ test("icon loader falls back to direct image loading when blob URL support is un
 
   await iconLoader.loadAmenityIcons();
 
+  // Direct-image path still registers MAP_LAYER_ICONS plus scoreModel icons.
   assert.deepEqual(fetchedUrls, []);
   assert.deepEqual(imageUrls.sort(), [
+    "./icons/bus.svg",
+    "./icons/lighthouse.svg",
     "./icons/marker%2Fdefault.svg",
+    "./icons/marker.svg",
     "./icons/park%20playground.svg",
+    "./icons/park-alt1.svg",
+    "./icons/town-hall.svg",
   ]);
-  assert.deepEqual(Array.from(mapImages.keys()).sort(), ["marker/default", "park playground"]);
+  assert.deepEqual(Array.from(mapImages.keys()).sort(), [
+    "bus",
+    "lighthouse",
+    "marker",
+    "marker/default",
+    "park playground",
+    "park-alt1",
+    "town-hall",
+  ]);
   assert.deepEqual(warnings, []);
   assert.equal(iconLoader.areIconsLoaded(), true);
 });
@@ -2367,7 +2454,7 @@ test("map event binding lives in Urban95MapEvents instead of inline app handlers
   assert.doesNotMatch(appSource, /map\.on\("zoomend"/);
   assert.match(eventsSource, /findClosestBuilding/);
   assert.match(eventsSource, /loadTreesIfNeeded/);
-  assert.match(eventsSource, /neighborhoodSidebar\.show/);
+  assert.match(eventsSource, /compareApply\.applyClick/);
   assert.match(eventsSource, /showNeighborhoodAreaTooltip/);
 });
 
@@ -2420,7 +2507,7 @@ test("survey overlay loads before app dependencies and guards building clicks", 
       },
       showNeighborhoodAreaTooltip() {},
     },
-    neighborhoodSidebar: { show() {} },
+    compareApply: { applyClick() {} },
     citySidebar: { setSelection() {} },
     mapRenderers: { updateTreesSource() {}, updateStreetLightsSource() {} },
     pointDataLoader: { loadTreesIfNeeded() {}, loadStreetLightsIfNeeded() {} },
@@ -5126,9 +5213,9 @@ test("map events register expected handlers and call injected dependencies", () 
         calls.push("showNeighborhoodAreaTooltip");
       },
     },
-    neighborhoodSidebar: {
-      show: function () {
-        calls.push("neighborhoodSidebar.show");
+    compareApply: {
+      applyClick: function () {
+        calls.push("compareApply.applyClick");
       },
     },
     citySidebar: {
@@ -5201,7 +5288,7 @@ test("map events register expected handlers and call injected dependencies", () 
   ).handler({
     features: [{ properties: { name: "N" } }],
   });
-  assert.ok(calls.includes("neighborhoodSidebar.show"));
+  assert.ok(calls.includes("compareApply.applyClick"));
 });
 
 test("map events zoomend skips authoritative tree and light loads", () => {
@@ -5241,8 +5328,8 @@ test("map events zoomend skips authoritative tree and light loads", () => {
       },
       showNeighborhoodAreaTooltip: function () {},
     },
-    neighborhoodSidebar: {
-      show: function () {},
+    compareApply: {
+      applyClick: function () {},
     },
     citySidebar: {
       setSelection: function () {},
@@ -5328,8 +5415,8 @@ test("map events ignore malformed house click and park hover payloads", () => {
       getNeighborhoodFeatureAtPoint: function () {},
       showNeighborhoodAreaTooltip: function () {},
     },
-    neighborhoodSidebar: {
-      show: function () {},
+    compareApply: {
+      applyClick: function () {},
     },
     citySidebar: {
       setSelection: function () {},
@@ -5423,8 +5510,8 @@ test("park hover hides tooltip when deck hover takes over", () => {
       getNeighborhoodFeatureAtPoint: function () {},
       showNeighborhoodAreaTooltip: function () {},
     },
-    neighborhoodSidebar: {
-      show: function () {},
+    compareApply: {
+      applyClick: function () {},
     },
     citySidebar: {
       setSelection: function () {},
@@ -5501,7 +5588,7 @@ test("map events fail fast when required dependencies are missing", () => {
           selectBuilding: function () {},
         },
         dashboards: {},
-        neighborhoodSidebar: {},
+        compareApply: {},
         citySidebar: {},
         mapRenderers: {},
         pointDataLoader: {},
@@ -6559,13 +6646,20 @@ function createModeControllerHarness(overrides) {
         updateNeighborhoodColors() {
           calls.push(["renderers:updateNeighborhoodColors"]);
         },
-        setCityNeighborhoodSelectionHighlight(feature) {
-          calls.push(["renderers:setCityNeighborhoodSelectionHighlight", feature]);
-        },
       },
       selection: {
         clearRadiusSelection() {
           calls.push(["selection:clearRadiusSelection"]);
+        },
+      },
+      selectionHighlight: {
+        applyCitySelection(feature) {
+          calls.push(["highlight:applyCitySelection", feature]);
+        },
+      },
+      compareApply: {
+        clearAll(options) {
+          calls.push(["compareApply:clearAll", options || null]);
         },
       },
     },
@@ -7991,6 +8085,10 @@ test("background isochrone failure does not poison a later direct selected-build
       sync: () => {},
       hide: () => {},
       isOpen: () => false,
+    },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
     },
     modeController: {
       switchMode: () => {},
@@ -9916,8 +10014,12 @@ function loadAppStatePrerequisites(browser) {
   runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
+  runBrowserScript("docs/js/map/neighborhoodSelectionHighlight.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodSelection.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareRender.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareApply.js", browser);
   loadCitySidebarModules(browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
   runBrowserScript("docs/js/map/modeController.js", browser);
@@ -10190,6 +10292,7 @@ test("app.js fails fast when a required Urban95CitySidebar member is missing", (
   runBrowserScript("docs/js/ui/infoModal.js", browser);
   runBrowserScript("docs/js/ui/sidebarChromeBindings.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareRender.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
   loadCitySidebarModules(browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
@@ -10226,8 +10329,12 @@ function loadModeControllerAppPrerequisites(browser) {
   runBrowserScript("docs/js/map/iconLoader.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
   runBrowserScript("docs/js/ui/infoModal.js", browser);
+  runBrowserScript("docs/js/map/neighborhoodSelectionHighlight.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodSelection.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareRender.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodSidebar.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareApply.js", browser);
   loadCitySidebarModules(browser);
   runBrowserScript("docs/js/ui/dashboards.js", browser);
   runBrowserScript("docs/js/map/mapEvents.js", browser);

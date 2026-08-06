@@ -6,7 +6,7 @@ These GeoJSON and JSON files are the browser-facing payloads loaded by `docs/app
 | --- | --- |
 | `export_web` | `buildings_accessibility.geojson` + `.gz`; `buildings_lookup.json` + `.gz`; `amenities_new.geojson`; `street_lights.geojson` + `.gz`; `amenities_all.geojson` + `.gz`; `trees.geojson` + `.gz`; `parks.geojson`; `isochrones.geojson` + `.gz` |
 | `shade` | `shade_si.geojson` + `.gz` |
-| `neighborhoods` | `neighborhoods.geojson`, `neighborhood_surface.geojson`, `neighborhood_charts.json`, `citywide_stats.json` |
+| `neighborhoods` | `neighborhoods.geojson`, `neighborhood_surface.geojson`, `neighborhood_charts.json` (includes `distributions_weighted` / `distributions_expanded` shared-edge per-hood histograms), `citywide_stats.json` |
 | `survey` | `survey_results.geojson` |
 
 `run all` carries prepared amenity, scoring, and isochrone frames through the stages before publication. Standalone stages retain disk-backed fallbacks. Neighborhoods intentionally reads the rounded published building geometry from this directory (plain or gzip) so its aggregates match the data served to the map.

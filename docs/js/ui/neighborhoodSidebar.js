@@ -97,7 +97,7 @@
       bodyEl: deps.bodyEl,
       bodyOpenClass: "neighborhood-sidebar-open",
       onClose: function () {
-        hide();
+        hide({ clearSelection: true });
       },
       setSidebarPadding: deps.setSidebarPadding,
       getSidebarWidth: getSidebarWidth,
@@ -106,12 +106,92 @@
     sidebarChrome.bindGlobalHandlers();
   }
 
+  function clearProgressiveCompareCue() {
+    if (!deps || !deps.eyebrowEl) return;
+    deps.eyebrowEl.hidden = true;
+    deps.eyebrowEl.textContent = "";
+  }
+
   function show(feature) {
     if (!deps) {
       throw new Error("Urban95NeighborhoodSidebar.configure must be called before show");
     }
     deps.setSelectedNeighborhood(feature);
+    clearProgressiveCompareCue();
     sync(feature);
+  }
+
+  function buildCompareHost(token) {
+    var renderCtx = Object.assign(
+      { heroEl: deps.heroEl, metaEl: deps.metaEl, eyebrowEl: deps.eyebrowEl },
+      deps.renderDeps || {}
+    );
+    return {
+      token: token,
+      isStale: function () {
+        return token !== renderGeneration;
+      },
+      chartInstances: chartInstances,
+      openChrome: function () {
+        if (deps.emptyEl) {
+          deps.emptyEl.hidden = true;
+          deps.emptyEl.textContent = "";
+        }
+        sidebarChrome.open();
+      },
+      hide: hide,
+      removeSlot: typeof deps.removeCompareSlot === "function" ? deps.removeCompareSlot : null,
+      getScoreMode: deps.getScoreMode,
+      getScoreMinutes: deps.getScoreMinutes,
+      loadCitywideStats: deps.loadCitywideStats,
+      loadNeighborhoodChartsPayload: deps.loadNeighborhoodChartsPayload,
+      getCitywideStats: deps.getCitywideStats,
+      ensureChartJsLoaded: deps.ensureChartJsLoaded,
+      requestAnimationFrame: deps.requestAnimationFrame,
+      getWeightedNeighborhoodMetricValue: getRenderStateHelper("getWeightedNeighborhoodMetricValue"),
+      hasWeightedNeighborhoodMetricData: function () {
+        if (typeof deps.hasWeightedNeighborhoodMetricData !== "function") return true;
+        return deps.hasWeightedNeighborhoodMetricData.apply(null, arguments);
+      },
+      getActiveMetric: renderCtx.getActiveMetric,
+      getNeighborhoodPercentileKey: renderCtx.getNeighborhoodPercentileKey,
+      getAmenityConfig: renderCtx.getAmenityConfig,
+      escapeHtml: renderCtx.escapeHtml,
+      formatMetricNumber: renderCtx.formatMetricNumber,
+      formatScoreInteger: renderCtx.formatScoreInteger,
+      heroPercentileMeterFillStyle: renderCtx.heroPercentileMeterFillStyle,
+      getOrdinalSuffix: renderCtx.getOrdinalSuffix,
+      heroEl: deps.heroEl,
+      metaEl: deps.metaEl,
+      eyebrowEl: deps.eyebrowEl,
+      bodyEl: deps.bodyEl,
+      emptyEl: deps.emptyEl,
+    };
+  }
+
+  // Compare dispatch — body owned by deps.renderCompare (neighborhoodCompareRender).
+  function showCompare(state) {
+    if (!deps) {
+      throw new Error("Urban95NeighborhoodSidebar.configure must be called before showCompare");
+    }
+    var slot0 = state && state.slots ? state.slots[0] : null;
+    var slot1 = state && state.slots ? state.slots[1] : null;
+    if (!slot0 || !slot1) {
+      hide({ clearSelection: true });
+      return;
+    }
+    deps.setSelectedNeighborhood(slot0);
+    clearProgressiveCompareCue();
+    if (typeof deps.renderCompare === "function") {
+      var token = ++renderGeneration;
+      deps.renderCompare(state, buildCompareHost(token));
+      return;
+    }
+    if (deps.eyebrowEl) {
+      deps.eyebrowEl.hidden = true;
+      deps.eyebrowEl.textContent = "";
+    }
+    sync(slot0);
   }
 
   function sync(feature) {
@@ -135,9 +215,6 @@
     var scoreMinutes = deps.getScoreMinutes();
     var sfx = "_" + scoreMinutes + "min";
     var isWeighted = deps.getScoreMode() === "weighted";
-    if (deps.eyebrowEl) {
-      deps.eyebrowEl.hidden = true;
-    }
     var renderCtx = Object.assign(
       { heroEl: deps.heroEl, metaEl: deps.metaEl, eyebrowEl: deps.eyebrowEl },
       deps.renderDeps
@@ -247,8 +324,22 @@
   }
 
   function hide(options) {
+    options = options || {};
+    if (options.clearSelection) {
+      if (!deps) {
+        throw new Error(
+          "Urban95NeighborhoodSidebar.configure must be called before hide({ clearSelection: true })"
+        );
+      }
+      if (typeof deps.clearCompareSelection === "function") {
+        deps.clearCompareSelection();
+        return;
+      }
+      deps.setSelectedNeighborhood(null);
+    }
     renderGeneration++;
     Urban95NeighborhoodPanelRender.destroyCharts(chartInstances);
+    clearProgressiveCompareCue();
     if (sidebarChrome) {
       sidebarChrome.close(options);
     }
@@ -262,6 +353,7 @@
   window.Urban95NeighborhoodSidebar = {
     configure: configure,
     show: show,
+    showCompare: showCompare,
     sync: sync,
     hide: hide,
     isOpen: isOpen,

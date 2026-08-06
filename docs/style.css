@@ -3,8 +3,15 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Inter", "Noto Sans Hebrew", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #f5f5f5;
+}
+
+/* One Hebrew face everywhere — avoid system fallbacks flipping by weight/context. */
+[lang="he"],
+.hood-he {
+  font-family: "Noto Sans Hebrew", "Inter", system-ui, sans-serif;
+  font-synthesis: none;
 }
 
 :root {
@@ -201,7 +208,7 @@ body.desktop-only-blocked {
 .maplibregl-popup-content {
   border-radius: 8px;
   padding: 10px 14px;
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Inter", "Noto Sans Hebrew", system-ui, sans-serif;
   font-size: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
@@ -892,6 +899,328 @@ body.desktop-only-blocked {
 .neighborhood-sidebar-body .sidebar-section-hint,
 .city-sidebar-body .sidebar-section-hint { font-size: 12px; color: #64748b; margin: 0 0 10px 0; }
 
+/* Neighborhood compare (A↔B) — accents only; chrome matches score-explain / single hood */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hood-compare-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.hood-compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(100%, 11rem);
+  padding: 5px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.hood-compare-chip:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.hood-compare-chip:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 2px;
+}
+
+.hood-compare-chip-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hood-compare-chip-a .hood-compare-chip-swatch {
+  background: var(--palette-sky);
+}
+
+.hood-compare-chip-b .hood-compare-chip-swatch {
+  background: var(--palette-lavender);
+}
+
+.hood-compare-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hood-compare-chip-x {
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.hood-compare-chip:hover .hood-compare-chip-x {
+  color: #64748b;
+}
+
+.hood-compare-vs {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.hood-compare-hero-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.hood-compare-hero-row {
+  min-width: 0;
+}
+
+.hood-compare-hero-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.hood-compare-hero-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: end;
+}
+
+.hood-compare-hero-score {
+  flex: 0 0 auto;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hood-compare-hero-score em {
+  margin-inline-start: 2px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.62;
+}
+
+.hood-compare-hero-bar-track {
+  position: relative;
+  height: 10px;
+  background: #e8edf5;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.hood-compare-hero-bar {
+  height: 100%;
+  border-radius: 999px;
+  max-width: 100%;
+}
+
+.hood-compare-hero-city {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 0;
+  border-left: 2px dashed #f97316;
+  transform: translateX(-1px);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.hood-compare-summary {
+  grid-template-columns: 1fr 1fr;
+}
+
+.hood-compare-summary-wide {
+  grid-column: 1 / -1;
+}
+
+.hood-compare-gaps .cw-ranking-item {
+  align-items: flex-start;
+}
+
+.hood-compare-gaps .cw-rank-name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.hood-compare-gaps .cw-rank-score {
+  min-width: 4.75rem;
+  max-width: 38%;
+}
+
+.hood-compare-legend-name {
+  display: inline-block;
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.cw-rank-lead-by {
+  font-weight: 600;
+  color: #64748b;
+}
+
+.hood-compare-slot-a { color: var(--palette-sky); }
+.hood-compare-slot-b { color: var(--palette-lavender); }
+.hood-compare-slot-city { color: #64748b; }
+
+.percentile-value.hood-compare-slot-a,
+.cw-stat-value.hood-compare-slot-a {
+  color: var(--palette-sky);
+}
+
+.percentile-value.hood-compare-slot-b,
+.cw-stat-value.hood-compare-slot-b {
+  color: var(--palette-lavender);
+}
+
+.cw-stat-value.hood-compare-slot-city {
+  color: #64748b;
+}
+
+.hood-compare-gap-strip {
+  overflow: visible;
+}
+
+.hood-compare-gap-band {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--palette-sky) 28%, transparent),
+    color-mix(in srgb, var(--palette-lavender) 28%, transparent)
+  );
+  pointer-events: none;
+}
+
+.hood-compare-gap-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.hood-compare-gap-tick-a { background: var(--palette-sky); }
+.hood-compare-gap-tick-b { background: var(--palette-lavender); }
+
+.hood-compare-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  height: auto;
+  min-height: 22px;
+  padding: 2px 0;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.hood-compare-bar-track {
+  height: 8px;
+  background: #f3f4f6;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.hood-compare-bar-wrap .u95-compare-bar {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.hood-compare-bar-wrap .u95-compare-city-marker {
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+}
+
+.hood-compare-bar-a,
+.hood-compare-hero-bar.hood-compare-bar-a {
+  background: var(--palette-sky);
+  opacity: 0.9;
+}
+
+.hood-compare-bar-b,
+.hood-compare-hero-bar.hood-compare-bar-b {
+  background: var(--palette-lavender);
+  opacity: 0.85;
+}
+
+/* Legend labels stay neutral; only the swatch (::before) carries slot color. */
+.hood-compare-legend-a,
+.hood-compare-legend-b {
+  color: inherit;
+}
+
+.u95-compare-legend-bar.hood-compare-legend-a::before {
+  background: var(--palette-sky);
+}
+
+.u95-compare-legend-bar.hood-compare-legend-b::before {
+  background: var(--palette-lavender);
+}
+
+.hood-compare-disclosure > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-accent-deep, #1d4ed8);
+  margin-bottom: 10px;
+}
+
+.hood-compare-disclosure[open] > summary {
+  margin-bottom: 12px;
+}
+
 /* City sidebar: gap mode segment + selection craft */
 .city-gap-modes {
   display: flex;
@@ -1057,6 +1386,10 @@ button.city-ranking-row {
 #neighborhood-sidebar-meta .building-ctx-id,
 #city-sidebar-meta .building-ctx-id {
   unicode-bidi: plaintext;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 #neighborhood-sidebar-meta .building-ctx-coords,
@@ -1928,6 +2261,14 @@ button.city-ranking-row {
   margin-top: 4px;
 }
 
+.cw-stat-sublabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  margin-top: 2px;
+  line-height: 1.25;
+}
+
 .cw-stat-footnote-card {
   background: #f8fafc;
   border-color: #e2e8f0;
@@ -2099,6 +2440,18 @@ button.city-ranking-row {
 .u95-compare-score span {
   font-size: 10px;
   color: #6b7280;
+}
+
+.u95-compare-score span.hood-compare-slot-a {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--palette-sky);
+}
+
+.u95-compare-score span.hood-compare-slot-b {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--palette-lavender);
 }
 
 .cw-ranking-list {

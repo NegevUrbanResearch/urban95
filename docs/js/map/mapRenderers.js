@@ -11,12 +11,6 @@
   var pendingDeckIdleGeneration = 0;
   var deckIdleFallbackTimer = null;
   var deckIdleListenerCleanup = null;
-  var citySelectedNeighborhoodName = null;
-
-  var NEIGHBORHOODS_LINE_COLOR = "#1e3a5f";
-  var NEIGHBORHOODS_LINE_WIDTH = 2.5;
-  var NEIGHBORHOODS_LINE_COLOR_SELECTED = palette.ink;
-  var NEIGHBORHOODS_LINE_WIDTH_SELECTED = 4.5;
 
   function clearPendingDeckUpdateTimer(currentDeps) {
     if (
@@ -46,7 +40,6 @@
       : null;
     lastDeckRenderStateKey = null;
     visibleAmenityFeaturesStamp = 0;
-    citySelectedNeighborhoodName = null;
   }
 
   function requireDeps() {
@@ -1595,54 +1588,23 @@
     });
   }
 
-  function resetNeighborhoodsLinePaint(map) {
-    if (!map || !map.getLayer("neighborhoods-line")) return;
-    map.setPaintProperty("neighborhoods-line", "line-color", NEIGHBORHOODS_LINE_COLOR);
-    map.setPaintProperty("neighborhoods-line", "line-width", NEIGHBORHOODS_LINE_WIDTH);
+  function selectionHighlight() {
+    var d = deps;
+    if (d && d.selectionHighlight) return d.selectionHighlight;
+    return window.Urban95NeighborhoodSelectionHighlight || null;
   }
 
-  function applyCityNeighborhoodsLinePaint(map) {
-    if (!map || !map.getLayer("neighborhoods-line")) return;
-    map.setPaintProperty("neighborhoods-line", "line-color", [
-      "case",
-      ["boolean", ["feature-state", "citySelected"], false],
-      NEIGHBORHOODS_LINE_COLOR_SELECTED,
-      NEIGHBORHOODS_LINE_COLOR,
-    ]);
-    map.setPaintProperty("neighborhoods-line", "line-width", [
-      "case",
-      ["boolean", ["feature-state", "citySelected"], false],
-      NEIGHBORHOODS_LINE_WIDTH_SELECTED,
-      NEIGHBORHOODS_LINE_WIDTH,
-    ]);
-  }
-
-  function setCityNeighborhoodSelectionHighlight(feature) {
-    var d = requireDeps();
-    var map = d.map;
-    if (!map || typeof map.setFeatureState !== "function") return;
-
-    if (citySelectedNeighborhoodName != null) {
-      try {
-        map.setFeatureState(
-          { source: "neighborhoods", id: citySelectedNeighborhoodName },
-          { citySelected: false }
-        );
-      } catch (err) {
-        // Source may be empty or id missing during mode transitions.
-      }
-      citySelectedNeighborhoodName = null;
+  function syncNeighborhoodLinePaint() {
+    var highlight = selectionHighlight();
+    if (highlight && typeof highlight.syncLinePaint === "function") {
+      highlight.syncLinePaint();
     }
+  }
 
-    if (!feature) return;
-    var name = (feature.properties || {}).Name;
-    if (name == null || name === "") return;
-
-    citySelectedNeighborhoodName = name;
-    try {
-      map.setFeatureState({ source: "neighborhoods", id: name }, { citySelected: true });
-    } catch (err) {
-      // Feature may not be in the source yet; re-apply after next setData.
+  function restoreSelectionHighlightAfterData() {
+    var highlight = selectionHighlight();
+    if (highlight && typeof highlight.restoreAfterNeighborhoodData === "function") {
+      highlight.restoreAfterNeighborhoodData();
     }
   }
 
@@ -1670,7 +1632,7 @@
       ) {
         // Unavailable weighted metric: hide fill; reset line emphasize.
         d.map.setLayoutProperty("neighborhoods-fill", "visibility", "none");
-        resetNeighborhoodsLinePaint(d.map);
+        syncNeighborhoodLinePaint();
         return;
       }
       d.map.setLayoutProperty("neighborhoods-fill", "visibility", "visible");
@@ -1765,8 +1727,8 @@
         }, function () {
           nhSrc.setData(neighborhoodsData);
         });
-        // setData can clear feature-state; restore City selection highlight.
-        setCityNeighborhoodSelectionHighlight(d.getCitySelection());
+        // setData can clear feature-state; restore city/compare selection highlight.
+        restoreSelectionHighlightAfterData();
       }
 
       // House/Building neighborhood-fill ramp (unchanged): pastel mid yellow-greens.
@@ -1812,7 +1774,7 @@
       if (d.getCurrentMode() === "neighborhood") {
         d.map.setPaintProperty("neighborhoods-fill", "fill-color", palette.ink);
         d.map.setPaintProperty("neighborhoods-fill", "fill-opacity", 0.01);
-        resetNeighborhoodsLinePaint(d.map);
+        syncNeighborhoodLinePaint();
         updateNeighborhoodSurfaceData();
       } else if (d.getCurrentMode() === "citywide") {
         d.map.setPaintProperty("neighborhoods-fill", "fill-color", citywideColorExpr);
@@ -1850,11 +1812,11 @@
             0.6,
           ]);
         }
-        applyCityNeighborhoodsLinePaint(d.map);
+        syncNeighborhoodLinePaint();
       } else {
         d.map.setPaintProperty("neighborhoods-fill", "fill-color", houseColorExpr);
         d.map.setPaintProperty("neighborhoods-fill", "fill-opacity", 0.6);
-        resetNeighborhoodsLinePaint(d.map);
+        syncNeighborhoodLinePaint();
       }
     });
   }
@@ -1884,6 +1846,6 @@
     updateBuildingColors: updateBuildingColors,
     updateNeighborhoodSurfaceData: updateNeighborhoodSurfaceData,
     updateNeighborhoodColors: updateNeighborhoodColors,
-    setCityNeighborhoodSelectionHighlight: setCityNeighborhoodSelectionHighlight,
   };
 })();
+

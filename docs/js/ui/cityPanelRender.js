@@ -554,7 +554,7 @@
     var counts = opts.counts;
     if (!edges || !counts || !edges.length || edges.length < 2) return;
 
-    Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+    Chart.defaults.font.family = 'Inter, "Noto Sans Hebrew", system-ui, sans-serif';
 
     var breakpoints = opts.breakpoints;
     if (!breakpoints || !breakpoints.length) {

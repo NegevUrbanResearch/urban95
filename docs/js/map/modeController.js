@@ -83,6 +83,11 @@
     );
     var citySidebar = requireObject(integrations.citySidebar, "deps.integrations.citySidebar");
     var scoreSidebar = requireObject(integrations.scoreSidebar, "deps.integrations.scoreSidebar");
+    var selectionHighlight = requireObject(
+      integrations.selectionHighlight,
+      "deps.integrations.selectionHighlight"
+    );
+    var compareApply = requireObject(integrations.compareApply, "deps.integrations.compareApply");
     [
       "getNeighborhoodHexSurfaceOpacityExpression",
       "loadNeighborhoodSurfaceData",
@@ -103,10 +108,11 @@
       "updateNeighborhoodSurfaceData",
       "setTreesAndLightsVisibility",
       "updateNeighborhoodColors",
-      "setCityNeighborhoodSelectionHighlight",
     ].forEach(function (methodName) {
       requireMethod(mapRenderers, "deps.integrations.mapRenderers", methodName);
     });
+    requireMethod(selectionHighlight, "deps.integrations.selectionHighlight", "applyCitySelection");
+    requireMethod(compareApply, "deps.integrations.compareApply", "clearAll");
     requireMethod(selection, "deps.integrations.selection", "clearRadiusSelection");
 
     var modeHint = ui.modeHint || null;
@@ -402,7 +408,9 @@
         if (modeHint) modeHint.textContent = "Click map to analyze nearest building";
       } else if (mode === "neighborhood") {
         setPointsVisibilityForMode(mode);
-        if (modeHint) modeHint.textContent = "Click a neighborhood for details";
+        if (modeHint) {
+          modeHint.textContent = "Click a neighborhood";
+        }
       } else {
         setPointsVisibilityForMode(mode);
         if (modeHint) modeHint.textContent = "";
@@ -538,7 +546,7 @@
     }
 
     function clearCityNeighborhoodSelectionHighlight() {
-      mapRenderers.setCityNeighborhoodSelectionHighlight(null);
+      selectionHighlight.applyCitySelection(null);
     }
 
     function resetCityGapStateQuietly() {
@@ -624,8 +632,7 @@
         }
         if (prevMode === "neighborhood") {
           exitNeighborhoodMode();
-          neighborhoodSidebar.hide({ restoreFocus: false });
-          setSelectedNeighborhood(null);
+          compareApply.clearAll({ restoreFocus: false });
         }
 
         setCurrentMode(mode);
@@ -643,8 +650,10 @@
           clearCityNeighborhoodSelectionHighlight();
         } else if (mode === "citywide") {
           scoreSidebar.hide({ restoreFocus: false });
-          neighborhoodSidebar.hide({ restoreFocus: false });
-          setSelectedNeighborhood(null);
+          // Leaving neighborhood already cleared via compareApply; still clear if entered citywide from house.
+          if (prevMode !== "neighborhood") {
+            compareApply.clearAll({ restoreFocus: false });
+          }
           setCitySelection(null);
           clearCityNeighborhoodSelectionHighlight();
         }

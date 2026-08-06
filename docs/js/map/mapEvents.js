@@ -39,8 +39,8 @@
     var map = requireObject(deps.map, "deps.map");
     var selection = requireObject(deps.selection, "deps.selection");
     var dashboards = requireObject(deps.dashboards, "deps.dashboards");
-    var neighborhoodSidebar = requireObject(deps.neighborhoodSidebar, "deps.neighborhoodSidebar");
     var citySidebar = requireObject(deps.citySidebar, "deps.citySidebar");
+    var compareApply = requireObject(deps.compareApply, "deps.compareApply");
     var mapRenderers = requireObject(deps.mapRenderers, "deps.mapRenderers");
     var pointDataLoader = requireObject(deps.pointDataLoader, "deps.pointDataLoader");
     var perf = deps.perf || window.urban95Perf || {};
@@ -60,7 +60,7 @@
     });
     requireMethod(selection, "deps.selection", "findClosestBuilding");
     requireMethod(selection, "deps.selection", "selectBuilding");
-    requireMethod(neighborhoodSidebar, "deps.neighborhoodSidebar", "show");
+    requireMethod(compareApply, "deps.compareApply", "applyClick");
     requireMethod(citySidebar, "deps.citySidebar", "setSelection");
     [
       "getNeighborhoodFeatureAtPoint",
@@ -303,12 +303,25 @@
       }
     });
 
+    // Fill + surface can both hit the same pointer event in neighborhood mode.
+    // applyClick is toggle-sensitive (unlike the old sidebar.show), so only the
+    // first layer handler for this DOM event may call it.
+    function applyNeighborhoodClickOnce(e, feature) {
+      if (!feature) return;
+      var originalEvent = e && e.originalEvent;
+      if (originalEvent) {
+        if (originalEvent.__urban95NeighborhoodClickHandled) return;
+        originalEvent.__urban95NeighborhoodClickHandled = true;
+      }
+      compareApply.applyClick(feature);
+    }
+
     map.on("click", "neighborhoods-fill", function (e) {
       var mode = getCurrentMode();
       var feature = e.features && e.features[0];
       if (!feature) return;
       if (mode === "neighborhood") {
-        neighborhoodSidebar.show(feature);
+        applyNeighborhoodClickOnce(e, feature);
         return;
       }
       if (mode === "citywide") {
@@ -321,7 +334,7 @@
       if (getCurrentMode() !== "neighborhood") return;
       var neighborhoodFeature = dashboards.getNeighborhoodFeatureAtPoint(e.point);
       if (!neighborhoodFeature) return;
-      neighborhoodSidebar.show(neighborhoodFeature);
+      applyNeighborhoodClickOnce(e, neighborhoodFeature);
     });
 
     map.on("mouseenter", "neighborhoods-fill", function () {

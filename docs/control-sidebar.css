@@ -18,6 +18,8 @@
   background: #fbfbf8;
   border-right: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow: 2px 0 12px rgba(15, 23, 42, 0.04);
+  /* Match docs/style.css body stack so labels like Scale don't fall back to a different UI font. */
+  font-family: "Inter", "Noto Sans Hebrew", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: var(--control-sidebar-font-body);
   line-height: 1.4;
   color: #1f2937;
@@ -98,10 +100,11 @@
 
 .control-section .section-title,
 .control-section .subsection-title {
+  font-family: inherit;
   font-size: var(--control-sidebar-font-label);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.04em;
   color: #6b7280;
   margin-bottom: 8px;
 }

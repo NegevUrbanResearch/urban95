@@ -799,6 +799,8 @@
     }
 
     function isShowEnabled(metricId) {
+      // Unavailable survey must never render as pressed/active (a11y).
+      if (unavailable) return false;
       if (metricId === "survey") return visibility.allCategoriesEnabled;
       var row = getSurveyRowByMetricId(metricId);
       if (!row) return false;
@@ -810,7 +812,7 @@
       subRows: subRows,
       expanded: !!expanded,
       showDisabled: unavailable,
-      showActive: visibility.allCategoriesEnabled,
+      showActive: unavailable ? false : visibility.allCategoriesEnabled,
       showTitle: unavailable
         ? "Community observations unavailable"
         : "Show companion map layers",

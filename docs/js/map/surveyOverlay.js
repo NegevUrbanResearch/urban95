@@ -101,6 +101,11 @@
 
     function categoryVisible(categoryId) {
       var visibility = typeof getLayerVisibility === "function" ? getLayerVisibility() || {} : {};
+      // Master survey toggle gates all category layers (hover/click + layout).
+      var master = Object.prototype.hasOwnProperty.call(visibility, "survey")
+        ? visibility.survey === true
+        : false;
+      if (!master) return false;
       var categoryKey = "survey:" + categoryId;
       return Object.prototype.hasOwnProperty.call(visibility, categoryKey)
         ? visibility[categoryKey] === true

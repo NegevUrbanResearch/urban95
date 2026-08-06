@@ -255,12 +255,50 @@ requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "sync", "func
 requireNamespaceMember(Urban95ScoreSidebar, "Urban95ScoreSidebar", "isOpen", "function");
 var Urban95SidebarChromeBindings = requireNamespace(window, "Urban95SidebarChromeBindings");
 var Urban95NeighborhoodPanelRender = requireNamespace(window, "Urban95NeighborhoodPanelRender");
+var Urban95NeighborhoodCompareRender = requireNamespace(window, "Urban95NeighborhoodCompareRender");
+requireNamespaceMember(Urban95NeighborhoodCompareRender, "Urban95NeighborhoodCompareRender", "render", "function");
+var Urban95NeighborhoodSelection = requireNamespace(window, "Urban95NeighborhoodSelection");
+requireNamespaceMember(Urban95NeighborhoodSelection, "Urban95NeighborhoodSelection", "create", "function");
+var Urban95NeighborhoodSelectionHighlight = requireNamespace(
+  window,
+  "Urban95NeighborhoodSelectionHighlight"
+);
+[
+  "configure",
+  "applyCompareSlots",
+  "applyCitySelection",
+  "clearCompare",
+  "restoreAfterNeighborhoodData",
+].forEach(function (memberName) {
+  requireNamespaceMember(
+    Urban95NeighborhoodSelectionHighlight,
+    "Urban95NeighborhoodSelectionHighlight",
+    memberName,
+    "function"
+  );
+});
 var Urban95NeighborhoodSidebar = requireNamespace(window, "Urban95NeighborhoodSidebar");
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "configure", "function");
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "show", "function");
+requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "showCompare", "function");
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "sync", "function");
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "hide", "function");
 requireNamespaceMember(Urban95NeighborhoodSidebar, "Urban95NeighborhoodSidebar", "isOpen", "function");
+var Urban95NeighborhoodCompareApply = requireNamespace(window, "Urban95NeighborhoodCompareApply");
+[
+  "configure",
+  "applyClick",
+  "removeSlot",
+  "clearAll",
+  "resync",
+].forEach(function (memberName) {
+  requireNamespaceMember(
+    Urban95NeighborhoodCompareApply,
+    "Urban95NeighborhoodCompareApply",
+    memberName,
+    "function"
+  );
+});
 var Urban95CityGapModes = requireNamespace(window, "Urban95CityGapModes");
 requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "MODES", "object");
 requireNamespaceMember(Urban95CityGapModes, "Urban95CityGapModes", "DEFAULT_MODE", "string");
@@ -489,6 +527,10 @@ window.Urban95AppDependencies = {
   Urban95AuxiliaryOverlays: Urban95AuxiliaryOverlays,
   Urban95OverlayVisibility: Urban95OverlayVisibility,
   Urban95MapRenderers: Urban95MapRenderers,
+  Urban95NeighborhoodSelection: Urban95NeighborhoodSelection,
+  Urban95NeighborhoodSelectionHighlight: Urban95NeighborhoodSelectionHighlight,
+  Urban95NeighborhoodCompareRender: Urban95NeighborhoodCompareRender,
+  Urban95NeighborhoodCompareApply: Urban95NeighborhoodCompareApply,
   Urban95Selection: Urban95Selection,
   Urban95Controls: Urban95Controls,
   Urban95AppState: Urban95AppState,

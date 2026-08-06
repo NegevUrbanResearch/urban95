@@ -607,12 +607,10 @@
     });
   }
 
+  // Avg-user scores/counts: whole numbers only (decimals add noise, not insight).
   function formatMetricNumber(value) {
     if (!Number.isFinite(value)) return "0";
-    if (Math.abs(value - Math.round(value)) < 0.01) {
-      return Math.round(value).toLocaleString();
-    }
-    return value.toFixed(1);
+    return Math.round(value).toLocaleString();
   }
 
   function formatScoreInteger(value) {
@@ -775,6 +773,26 @@
     return keys;
   }
 
+  /**
+   * Whether a neighborhood can enter an A↔B compare pair for the active score mode.
+   * Weighted uses fixed 10-min Urban95 average; expanded uses pct_overall_{minutes}min.
+   * A finite 0 is comparable.
+   */
+  function neighborhoodIsComparable(props, options) {
+    props = props || {};
+    options = options || {};
+    var scoreMode = options.scoreMode;
+    if (scoreMode === "weighted") {
+      return Number.isFinite(Number(props.avg_score_weighted_10min));
+    }
+    if (scoreMode === "expanded") {
+      var minutes = options.minutes;
+      var key = "pct_overall_" + minutes + "min";
+      return Number.isFinite(Number(props[key]));
+    }
+    return false;
+  }
+
   window.Urban95ScoreModel = {
     AMENITY_TYPE_CONFIG: AMENITY_TYPE_CONFIG,
     DEFAULT_CONFIG: DEFAULT_CONFIG,
@@ -811,6 +829,7 @@
     getPercentileSeriesCacheKey: getPercentileSeriesCacheKey,
     percentileForSeries: percentileForSeries,
     getBuildingAmenityStatKeysForMinutes: getBuildingAmenityStatKeysForMinutes,
+    neighborhoodIsComparable: neighborhoodIsComparable,
     normalizeSurfaceFilterKey: normalizeSurfaceFilterKey,
     buildWeightedMetricRegistry: buildWeightedMetricRegistry,
     getWeightedMetric: getWeightedMetric,

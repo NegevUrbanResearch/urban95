@@ -171,7 +171,7 @@
   function bindCharts(renderCtx, bodyEl, context, chartInstances) {
     if (!bodyEl || typeof Chart === "undefined") return;
 
-    Chart.defaults.font.family = "Inter, system-ui, sans-serif";
+    Chart.defaults.font.family = 'Inter, "Noto Sans Hebrew", system-ui, sans-serif';
     var citywideStats = renderCtx.getCitywideStats();
 
     if (context && context.weighted) {

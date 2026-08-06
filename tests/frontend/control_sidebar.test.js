@@ -611,6 +611,10 @@ test("control sidebar point visibility refreshes amenities only in weighted mode
         hide: () => {},
         isOpen: () => false,
       },
+    compareApply: {
+      resync: () => {},
+      clearAll: () => {},
+    },
       modeController: {
         switchMode: () => {},
       },

@@ -28,6 +28,7 @@ import pandas as pd
 from shapely.geometry import Polygon, mapping as shapely_mapping
 
 from core.paths import DOCS_DATA_DIR, layer
+from lib.neighborhood_distributions import build_per_neighborhood_distributions
 from lib.neighborhood_idw import IDWPlan, apply_idw_plan, build_idw_plan
 
 # Publish-read exception: neighborhood aggregates read scored buildings from docs/data.
@@ -803,7 +804,11 @@ def main():
         len(neighborhood_surface_geojson.get("features") or []),
     )
 
-    charts_payload = {"inventory_clean": inv_clean, "inventory_legacy": inv_legacy}
+    charts_payload = {
+        "inventory_clean": inv_clean,
+        "inventory_legacy": inv_legacy,
+        **build_per_neighborhood_distributions(buildings),
+    }
     with open(DOCS_DATA_DIR / "neighborhood_charts.json", "w", encoding="utf-8") as f:
         json.dump(charts_payload, f, separators=(",", ":"), ensure_ascii=False)
     logging.info("  Wrote neighborhood_charts.json")

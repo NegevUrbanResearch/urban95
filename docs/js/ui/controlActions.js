@@ -26,6 +26,7 @@
     var selection = deps.selection || {};
     var scoreSidebar = deps.scoreSidebar || {};
     var neighborhoodSidebar = deps.neighborhoodSidebar || {};
+    var compareApply = deps.compareApply || {};
     var citySidebar = deps.citySidebar || {};
     var modeController = deps.modeController || {};
     var map = deps.map || {};
@@ -79,6 +80,8 @@
       ["neighborhoodSidebar.sync", neighborhoodSidebar.sync],
       ["neighborhoodSidebar.hide", neighborhoodSidebar.hide],
       ["neighborhoodSidebar.isOpen", neighborhoodSidebar.isOpen],
+      ["compareApply.resync", compareApply.resync],
+      ["compareApply.clearAll", compareApply.clearAll],
       ["citySidebar.isOpen", citySidebar.isOpen],
       ["citySidebar.sync", citySidebar.sync],
       ["citySidebar.hide", citySidebar.hide],
@@ -142,9 +145,7 @@
 
       if (currentMode === "neighborhood") {
         renderers.updateNeighborhoodColors();
-        if (neighborhoodSidebar.isOpen() && state.getSelectedNeighborhood()) {
-          neighborhoodSidebar.sync(state.getSelectedNeighborhood());
-        }
+        compareApply.resync();
       } else if (currentMode === "citywide") {
         renderers.updateNeighborhoodColors();
         if (citySidebar.isOpen()) {
@@ -325,7 +326,8 @@
       }
 
       if (neighborhoodSidebar.isOpen()) {
-        neighborhoodSidebar.hide();
+        // Clear-aware hide via compareApply (selection + outlines + panel).
+        compareApply.clearAll();
         if (event && typeof event.stopPropagation === "function") {
           event.stopPropagation();
         }
