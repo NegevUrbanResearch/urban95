@@ -121,7 +121,14 @@ def append_weighted_urban95_scores(
         layers.get("shade_open_spaces"),
         chunk_size=SI_ATTACH_CHUNK_SIZE,
     )
-    centroids = buildings.geometry.centroid
+    if buildings.crs is None:
+        metric_buildings = buildings.set_crs(epsg=2039)
+    elif str(buildings.crs) != "EPSG:2039":
+        metric_buildings = buildings.to_crs(epsg=2039)
+    else:
+        metric_buildings = buildings
+    building_geometries = list(metric_buildings.geometry)
+    centroids = metric_buildings.geometry.centroid
 
     total = len(buildings)
 
@@ -140,13 +147,14 @@ def append_weighted_urban95_scores(
         for _, cat_stem, _, sub_stem in subcategory_defs
     }
 
-    def _score_one(idx: int, x: float, y: float, summer_si: float):
+    def _score_one(idx: int, x: float, y: float, summer_si: float, building_geometry):
         try:
             result = calculate_master_index(
                 x,
                 y,
                 layers,
                 precomputed={"summer_si": summer_si},
+                building_geometry=building_geometry,
             )
             weighted = float(result.get("final_index", 0.0))
             cat = result.get("category_scores", {}) or {}
@@ -180,6 +188,7 @@ def append_weighted_urban95_scores(
                     float(pt.x),
                     float(pt.y),
                     float(summer_si_values[idx]),
+                    building_geometries[idx],
                 )
                 for idx, pt in enumerate(centroids)
             ]

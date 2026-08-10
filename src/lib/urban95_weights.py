@@ -116,15 +116,19 @@ def _features_intersecting(layer: gpd.GeoDataFrame, geom):
 # ==========================================
 
 def calc_environmental_quality(
-    point: Point,
+    building,
     layers: dict,
     include_details: bool = False,
     precomputed_summer_si=None,
 ):
     """
     חישוב איכות סביבה: צל, עצים, וכבישים מהירים.
+
+    Distances and buffers are measured from the building footprint edge
+    (near-edge). A Point geometry keeps the historical centroid-equivalent
+    behavior used by click scoring and point fixtures.
     """
-    buffer_20m = point.buffer(20)
+    buffer_20m = building.buffer(20)
 
     # 1. צל (Shade) - משקל 0.4
     summer_si = round_building_summer_si(precomputed_summer_si)
@@ -157,9 +161,9 @@ def calc_environmental_quality(
         else:
             fast_roads = roads_df.iloc[0:0]
         
-        # מרחק לכביש המהיר הקרוב ביותר
+        # מרחק לכביש המהיר הקרוב ביותר (לקצה המבנה)
         if not fast_roads.empty:
-            distances = fast_roads.geometry.distance(point)
+            distances = fast_roads.geometry.distance(building)
             min_dist = distances.min()
             
             if min_dist <= 100:
@@ -293,11 +297,11 @@ def build_layers(
     return layers
 
 
-def calc_nature(point: Point, layers: dict, include_details: bool = False):
+def calc_nature(building, layers: dict, include_details: bool = False):
     """
-    חישוב טבע: גודל פארקים ואזורי טבע עירוני בטווח 300 מ'.
+    חישוב טבע: גודל פארקים ואזורי טבע עירוני בטווח 300 מ' מקצה המבנה.
     """
-    buffer_300m = point.buffer(300)
+    buffer_300m = building.buffer(300)
     parks_score = 0.0
     urban_nature_score = 0.0
     nature_weights = CATEGORY_SUBCATEGORY_WEIGHTS["Nature"]
@@ -330,11 +334,11 @@ def calc_nature(point: Point, layers: dict, include_details: bool = False):
     }
 
 
-def calc_play(point: Point, layers: dict, include_details: bool = False):
+def calc_play(building, layers: dict, include_details: bool = False):
     """
-    חישוב משחק: הימצאות גן שעשועים בטווח 300 מ'.
+    חישוב משחק: הימצאות גן שעשועים בטווח 300 מ' מקצה המבנה.
     """
-    buffer_300m = point.buffer(300)
+    buffer_300m = building.buffer(300)
     playgrounds_score = 0.0
     
     if "playgrounds" in layers and not layers["playgrounds"].empty:
@@ -348,12 +352,12 @@ def calc_play(point: Point, layers: dict, include_details: bool = False):
     return final_score, {"playgrounds": playgrounds_score * 100}
 
 
-def calc_streetlight_subscore(point: Point, street_lights: gpd.GeoDataFrame | None) -> float:
+def calc_streetlight_subscore(building, street_lights: gpd.GeoDataFrame | None) -> float:
     """Return the scalar street-light overlay tier without other safety work."""
-    buffer_300m = point.buffer(300)
+    buffer_300m = building.buffer(300)
     lights_score = 0.0
     if street_lights is not None and not street_lights.empty:
-        lights_near = _features_intersecting(street_lights, point.buffer(315))
+        lights_near = _features_intersecting(street_lights, building.buffer(315))
         if not lights_near.empty:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
@@ -376,15 +380,16 @@ def calc_streetlight_subscore(point: Point, street_lights: gpd.GeoDataFrame | No
     return lights_score * 100
 
 
-def calc_safety_and_mobility(point: Point, layers: dict, include_details: bool = False):
+def calc_safety_and_mobility(building, layers: dict, include_details: bool = False):
     """
     חישוב בטיחות ותנועה: תאורה, אופניים, תחנות אוטובוס ומקלטים.
+    טווחים נמדדים מקצה המבנה (near-edge).
     """
-    buffer_300m = point.buffer(300)
-    buffer_50m = point.buffer(50)
+    buffer_300m = building.buffer(300)
+    buffer_50m = building.buffer(50)
 
     # 1. תאורת רחוב - משקל 0.15
-    lights_score = calc_streetlight_subscore(point, layers.get("street_lights")) / 100.0
+    lights_score = calc_streetlight_subscore(building, layers.get("street_lights")) / 100.0
 
     # 2. אופניים - משקל 0.15
     bike_score = 0.0
@@ -418,11 +423,12 @@ def calc_safety_and_mobility(point: Point, layers: dict, include_details: bool =
     }
 
 
-def calc_family_services(point: Point, layers: dict, include_details: bool = False):
+def calc_family_services(building, layers: dict, include_details: bool = False):
     """
     חישוב שירותים למשפחה: מרחקים למוסדות חינוך, קהילה, מסחר ובריאות.
+    מרחקים נמדדים מקצה המבנה (near-edge).
     """
-    buffer_300m = point.buffer(300)
+    buffer_300m = building.buffer(300)
     
     # פונקציית עזר למציאת המרחק המינימלי לשכבה מסוימת
     def get_min_distance(layer_name):
@@ -431,7 +437,7 @@ def calc_family_services(point: Point, layers: dict, include_details: bool = Fal
             if not features_in_300m.empty:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", RuntimeWarning)
-                    return features_in_300m.geometry.distance(point).min()
+                    return features_in_300m.geometry.distance(building).min()
         return None
 
     # 1. חינוך - משקל 0.3
@@ -471,26 +477,29 @@ def calculate_master_index(
     y_coord: float,
     layers: dict,
     precomputed: dict | None = None,
+    building_geometry=None,
 ):
     """
-    הפונקציה הראשית. מופעלת בלחיצה על המפה.
+    הפונקציה הראשית. מופעלת בלחיצה על המפה או לניקוד מבנה.
     הקואורדינטות צריכות להיות ברשת ישראל החדשה (EPSG:2039) או להמיר אותן.
+    When ``building_geometry`` is provided, all fixed-distance Urban95 rules use
+    near-edge distance from that footprint; otherwise a click Point is used.
     """
-    clicked_point = Point(x_coord, y_coord)
+    building = building_geometry if building_geometry is not None else Point(x_coord, y_coord)
     precomputed = precomputed or {}
     summer_si = precomputed.get("summer_si")
 
-    # 1. שליחת הנקודה והשכבות לכל קטגוריה וקבלת ציונים
+    # 1. שליחת הגיאומטריה והשכבות לכל קטגוריה וקבלת ציונים
     env_score, env_sub = calc_environmental_quality(
-        clicked_point,
+        building,
         layers,
         include_details=True,
         precomputed_summer_si=summer_si,
     )
-    nature_score, nature_sub = calc_nature(clicked_point, layers, include_details=True)
-    play_score, play_sub = calc_play(clicked_point, layers, include_details=True)
-    safety_score, safety_sub = calc_safety_and_mobility(clicked_point, layers, include_details=True)
-    family_score, family_sub = calc_family_services(clicked_point, layers, include_details=True)
+    nature_score, nature_sub = calc_nature(building, layers, include_details=True)
+    play_score, play_sub = calc_play(building, layers, include_details=True)
+    safety_score, safety_sub = calc_safety_and_mobility(building, layers, include_details=True)
+    family_score, family_sub = calc_family_services(building, layers, include_details=True)
 
     category_scores = {
         "Environmental Quality": env_score,

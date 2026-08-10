@@ -36,12 +36,12 @@ def _gdf(geometries, **columns):
 
 def _scalar_discrete(buildings, layers):
     out = []
-    for point in buildings.geometry.centroid:
-        _, env = calc_environmental_quality(point, layers, include_details=True, precomputed_summer_si=0.0)
-        _, nature = calc_nature(point, layers, include_details=True)
-        _, play = calc_play(point, layers, include_details=True)
-        _, safety = calc_safety_and_mobility(point, layers, include_details=True)
-        _, family = calc_family_services(point, layers, include_details=True)
+    for building in buildings.geometry:
+        _, env = calc_environmental_quality(building, layers, include_details=True, precomputed_summer_si=0.0)
+        _, nature = calc_nature(building, layers, include_details=True)
+        _, play = calc_play(building, layers, include_details=True)
+        _, safety = calc_safety_and_mobility(building, layers, include_details=True)
+        _, family = calc_family_services(building, layers, include_details=True)
         out.append(
             {
                 "trees": env["trees"],
@@ -91,6 +91,31 @@ def test_layerwise_discrete_components_match_scalar(chunk_size, scoring_fixture)
     prepared = prepare_urban95_layers(**layers)
     actual = score_discrete_components(buildings, prepared, chunk_size=chunk_size)
     pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+
+
+def test_near_edge_tree_buffer_counts_trees_outside_centroid_radius():
+    """A tree near the facade but >20 m from the centroid must still score."""
+    # 60 x 60 m footprint centered at origin; edge is 30 m from centroid.
+    building = box(-30, -30, 30, 30)
+    buildings = _gdf([building])
+    # 15 m outside the east edge => 45 m from centroid, 15 m from footprint.
+    trees = _gdf([Point(45, 0), Point(46, 0), Point(47, 0)])
+    layers = {"trees": trees}
+    prepared = prepare_urban95_layers(**layers)
+
+    expected = _scalar_discrete(buildings, layers)
+    actual = score_discrete_components(buildings, prepared, chunk_size=1)
+
+    assert float(expected.loc[0, "trees"]) == 100.0
+    pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+    # Centroid-only semantics would have missed these trees.
+    _, centroid_details = calc_environmental_quality(
+        building.centroid,
+        layers,
+        include_details=True,
+        precomputed_summer_si=0.0,
+    )
+    assert centroid_details["trees"] == 0.0
 
 
 def test_prepare_sanitizes_normalizes_resets_indexes_and_does_not_mutate_inputs():

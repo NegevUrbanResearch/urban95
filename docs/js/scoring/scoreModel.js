@@ -98,7 +98,7 @@
 
   var DEFAULT_SCORE_LEGEND_LABELS = ["0", "25", "50", "75", "100"];
   var SHADE_EXPLAIN_NOTE =
-    "Official SI interpretation bands: <0.10 severe lack; 0.10-<0.20 significant lack; 0.20-<0.40 needs improvement; 0.40-<0.60 good shade; >=0.60 excellent shade. Building summer_SI is the 300 m area-weighted summer_SI mean around the building centroid, rounded to 1 decimal with standard half-up ties before storage, display, and scoring (0.15 -> 0.2, 0.35 -> 0.4). Urban95 keeps a ternary building shade sub-score on that rounded summer_SI: <0.20 = 0, 0.20-<0.40 = 50, >=0.40 = 100.";
+    "Official SI interpretation bands: <0.10 severe lack; 0.10-<0.20 significant lack; 0.20-<0.40 needs improvement; 0.40-<0.60 good shade; >=0.60 excellent shade. Building summer_SI is the 300 m area-weighted summer_SI mean around the building footprint (near-edge buffer), rounded to 1 decimal with standard half-up ties before storage, display, and scoring (0.15 -> 0.2, 0.35 -> 0.4). Urban95 keeps a ternary building shade sub-score on that rounded summer_SI: <0.20 = 0, 0.20-<0.40 = 50, >=0.40 = 100.";
   var WEIGHTED_METRIC_METADATA = {
     "u95.sub.environmental_quality.shade": {
       explainNote: SHADE_EXPLAIN_NOTE,

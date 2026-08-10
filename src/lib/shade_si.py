@@ -320,29 +320,32 @@ def attach_summer_si_to_buildings(
     *,
     chunk_size: int | None = None,
 ) -> gpd.GeoDataFrame:
-    """Attach rounded 300 m SI. If chunk_size is an int, process buildings in chunks of that size
-    (reuse street/open sindex). chunk_size=None keeps one-shot path (must match chunked results)."""
+    """Attach rounded 300 m near-edge SI.
+
+    Buffers each building footprint by ``BUILDING_SHADE_RADIUS_M`` (Point
+    footprints remain centroid-equivalent). If chunk_size is an int, process
+    buildings in chunks of that size (reuse street/open sindex).
+    chunk_size=None keeps one-shot path (must match chunked results).
+    """
     out = buildings.copy()
     if len(out) == 0:
         out[BUILDING_SI_FIELD] = pd.Series(dtype=float)
         return out
 
     metric_buildings = out.to_crs(METRIC_CRS)
-    centroids = metric_buildings.copy()
-    centroids.geometry = metric_buildings.geometry.centroid
 
     if chunk_size is None:
-        combined = _raw_area_weighted_si_values_within_buffer(centroids, streets, open_spaces)
+        combined = _raw_area_weighted_si_values_within_buffer(metric_buildings, streets, open_spaces)
     else:
         if int(chunk_size) <= 0:
             raise ValueError(f"chunk_size must be a positive int, got {chunk_size!r}")
         step = int(chunk_size)
         prepared = _prepare_combined_si_layers(streets, open_spaces)
         parts: list[pd.Series] = []
-        for start in range(0, len(centroids), step):
-            chunk = centroids.iloc[start : start + step]
+        for start in range(0, len(metric_buildings), step):
+            chunk = metric_buildings.iloc[start : start + step]
             parts.append(_area_weighted_si_against_prepared(chunk, prepared))
-        combined = pd.concat(parts) if parts else pd.Series(0.0, index=centroids.index, dtype=float)
+        combined = pd.concat(parts) if parts else pd.Series(0.0, index=metric_buildings.index, dtype=float)
 
     rounded = combined.reindex(out.index, fill_value=0.0).map(round_building_summer_si)
     out[BUILDING_SI_FIELD] = rounded.astype(float).values
@@ -354,6 +357,6 @@ def lookup_summer_si_at_point(
     streets: gpd.GeoDataFrame,
     open_spaces: gpd.GeoDataFrame,
 ) -> float:
-    """Return the raw 300 m point-buffer area-weighted street/open-space SI."""
+    """Return the raw 300 m buffer area-weighted street/open-space SI at a point."""
     gdf = gpd.GeoDataFrame(geometry=[point], crs=METRIC_CRS)
     return float(_raw_area_weighted_si_values_within_buffer(gdf, streets, open_spaces).iloc[0])

@@ -222,7 +222,7 @@ def test_preprocess_shade_sanitizes_prepared_layers_before_writing(tmp_path: Pat
     assert web_output_path.is_file()
 
 
-def test_attach_summer_si_ignores_polygons_outside_300m_centroid_buffer():
+def test_attach_summer_si_ignores_polygons_outside_300m_near_edge_buffer():
     buildings = _building(0.0, 0.0)
     streets = _si_layer(
         [
@@ -374,7 +374,13 @@ def test_attach_summer_si_beyond_300m_radius_is_zero():
 def test_attach_summer_si_radius_contract_uses_300m_buffer():
     assert BUILDING_SHADE_RADIUS_M == 300.0
 
-    buildings = _building(0.0, 0.0)
+    # Point footprint keeps the radius contract centroid-equivalent; polygonal
+    # footprints extend the near-edge buffer by the building half-width.
+    buildings = gpd.GeoDataFrame(
+        {"building_id": [1]},
+        geometry=[Point(0.0, 0.0)],
+        crs=METRIC_CRS,
+    )
     streets = _si_layer(
         [
             (_box(299.0, 0.0, 0.5), 0.20),

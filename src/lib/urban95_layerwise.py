@@ -198,15 +198,18 @@ def _presence(query_positions: np.ndarray, source_positions: np.ndarray, source_
 
 
 def _nearest(
-    points: gpd.GeoSeries,
+    buildings: gpd.GeoSeries,
     query_positions: np.ndarray,
     source_positions: np.ndarray,
     source: gpd.GeoDataFrame,
 ) -> np.ndarray:
-    minimum = np.full(len(points), np.inf, dtype=np.float64)
+    minimum = np.full(len(buildings), np.inf, dtype=np.float64)
     if len(query_positions):
         exact_distances = np.asarray(
-            shapely_distance(source.geometry.array[source_positions], points.array[query_positions]),
+            shapely_distance(
+                source.geometry.array[source_positions],
+                buildings.array[query_positions],
+            ),
             dtype=np.float64,
         )
         np.minimum.at(minimum, query_positions, exact_distances)
@@ -214,19 +217,27 @@ def _nearest(
     return minimum
 
 
-def _buffer(points: gpd.GeoSeries, distance: float) -> gpd.GeoSeries:
+def _buffer(geometries: gpd.GeoSeries, distance: float) -> gpd.GeoSeries:
     # GeoPandas 1.1 forwards its legacy ``resolution`` argument internally;
     # call Shapely directly so ``quad_segs=16`` is unambiguous across versions.
-    return gpd.GeoSeries(shapely_buffer(points.array, distance, quad_segs=16), index=points.index, crs=points.crs)
-
-
-def _square_envelope(points: gpd.GeoSeries, radius: float) -> gpd.GeoSeries:
-    x = points.x.to_numpy(dtype=np.float64)
-    y = points.y.to_numpy(dtype=np.float64)
     return gpd.GeoSeries(
-        shapely_box(x - radius, y - radius, x + radius, y + radius),
-        index=points.index,
-        crs=points.crs,
+        shapely_buffer(geometries.array, distance, quad_segs=16),
+        index=geometries.index,
+        crs=geometries.crs,
+    )
+
+
+def _square_envelope(geometries: gpd.GeoSeries, radius: float) -> gpd.GeoSeries:
+    bounds = geometries.bounds
+    return gpd.GeoSeries(
+        shapely_box(
+            bounds.minx.to_numpy(dtype=np.float64) - radius,
+            bounds.miny.to_numpy(dtype=np.float64) - radius,
+            bounds.maxx.to_numpy(dtype=np.float64) + radius,
+            bounds.maxy.to_numpy(dtype=np.float64) + radius,
+        ),
+        index=geometries.index,
+        crs=geometries.crs,
     )
 
 
@@ -235,30 +246,34 @@ def score_discrete_components(
     prepared: PreparedUrban95Layers,
     chunk_size: int,
 ) -> pd.DataFrame:
-    """Return scalar-compatible 0/50/100 discrete component values by building."""
+    """Return scalar-compatible 0/50/100 discrete component values by building.
+
+    Fixed-distance Urban95 rules use near-edge buffers/distances from each
+    building footprint (Point buildings remain centroid-equivalent).
+    """
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer")
     if not isinstance(prepared, PreparedUrban95Layers):
         raise TypeError("prepared must be PreparedUrban95Layers")
 
-    points = buildings_metric.geometry.centroid.reset_index(drop=True)
-    values = {name: np.zeros(len(points), dtype=np.float64) for name in _COMPONENT_COLUMNS}
+    buildings = buildings_metric.geometry.reset_index(drop=True)
+    values = {name: np.zeros(len(buildings), dtype=np.float64) for name in _COMPONENT_COLUMNS}
     values["roads"][:] = 100.0
-    for start in range(0, len(points), int(chunk_size)):
-        stop = min(start + int(chunk_size), len(points))
-        chunk_points = points.iloc[start:stop].reset_index(drop=True)
-        buffer_20 = _buffer(chunk_points, 20)
-        buffer_50 = _buffer(chunk_points, 50)
-        buffer_300 = _buffer(chunk_points, 300)
-        road_candidates = _square_envelope(chunk_points, 300)
-        count = len(chunk_points)
+    for start in range(0, len(buildings), int(chunk_size)):
+        stop = min(start + int(chunk_size), len(buildings))
+        chunk_buildings = buildings.iloc[start:stop].reset_index(drop=True)
+        buffer_20 = _buffer(chunk_buildings, 20)
+        buffer_50 = _buffer(chunk_buildings, 50)
+        buffer_300 = _buffer(chunk_buildings, 300)
+        road_candidates = _square_envelope(chunk_buildings, 300)
+        count = len(chunk_buildings)
 
         q, s = _pairs(buffer_20, prepared.trees, chunk_size)
         tree_counts = _counts(q, s, len(prepared.trees), count)
         values["trees"][start:stop] = np.where(tree_counts >= 3, 100.0, np.where(tree_counts >= 1, 50.0, 0.0))
 
         q, s = _pairs(road_candidates, prepared.fast_roads, chunk_size)
-        roads_minimum = _nearest(chunk_points, q, s, prepared.fast_roads)
+        roads_minimum = _nearest(chunk_buildings, q, s, prepared.fast_roads)
         values["roads"][start:stop] = np.where(
             np.isfinite(roads_minimum) & (roads_minimum <= 100),
             0.0,
@@ -288,7 +303,7 @@ def score_discrete_components(
         values["shelters"][start:stop] = _presence(q, s, len(prepared.shelters), count) * 100.0
 
         q, s = _pairs(buffer_300, prepared.education, chunk_size)
-        education_minimum = _nearest(chunk_points, q, s, prepared.education)
+        education_minimum = _nearest(chunk_buildings, q, s, prepared.education)
         values["education"][start:stop] = np.where(
             np.isfinite(education_minimum) & (education_minimum <= 150),
             100.0,
@@ -306,25 +321,25 @@ def score_discrete_components(
     return pd.DataFrame(values, index=buildings_metric.index)
 
 
-def _metric_centroids(buildings_metric: gpd.GeoDataFrame) -> gpd.GeoSeries:
-    """Return building centroids in the metric CRS without mutating the frame."""
+def _metric_building_geometries(buildings_metric: gpd.GeoDataFrame) -> gpd.GeoSeries:
+    """Return building footprints in the metric CRS without mutating the frame."""
     if not isinstance(buildings_metric, gpd.GeoDataFrame):
         raise TypeError("buildings_metric must be a GeoDataFrame")
     frame = buildings_metric
     if frame.crs is not None and str(frame.crs) != _EMPTY_CRS:
         frame = frame.to_crs(_EMPTY_CRS)
-    return frame.geometry.centroid.reset_index(drop=True)
+    return frame.geometry.reset_index(drop=True)
 
 
-def _overlay_buffers(points: gpd.GeoSeries, distance: float) -> gpd.GeoSeries:
-    """Build the scalar-compatible circular buffers while retaining position order."""
-    geometries = []
-    for point in points:
-        if point is None or point.is_empty:
-            geometries.append(None)
+def _overlay_buffers(geometries: gpd.GeoSeries, distance: float) -> gpd.GeoSeries:
+    """Build scalar-compatible near-edge buffers while retaining position order."""
+    buffered = []
+    for geometry in geometries:
+        if geometry is None or geometry.is_empty:
+            buffered.append(None)
         else:
-            geometries.append(point.buffer(distance))
-    return gpd.GeoSeries(geometries, index=points.index, crs=points.crs)
+            buffered.append(geometry.buffer(distance))
+    return gpd.GeoSeries(buffered, index=geometries.index, crs=geometries.crs)
 
 
 def _candidate_lists(
@@ -396,25 +411,25 @@ def score_shade_overlay(
     prepared_shade: gpd.GeoDataFrame | None,
     chunk_size: int,
 ) -> pd.Series:
-    """Return rounded building SI from exact chunked 300 m shade weighting."""
+    """Return rounded building SI from exact chunked 300 m near-edge shade weighting."""
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer")
     from lib.shade_si import BUILDING_SHADE_RADIUS_M, SCORE_FIELD, round_building_summer_si
 
-    points = _metric_centroids(buildings_metric)
+    buildings = _metric_building_geometries(buildings_metric)
     source = _prepared_shade_input(prepared_shade)
-    values = np.zeros(len(points), dtype=np.float64)
-    if len(source) == 0 or len(points) == 0:
+    values = np.zeros(len(buildings), dtype=np.float64)
+    if len(source) == 0 or len(buildings) == 0:
         return pd.Series(values, index=buildings_metric.index, dtype=float)
 
     progress = tqdm(
-        total=len(points),
+        total=len(buildings),
         desc="Urban95 shade",
         unit="building",
         disable=None,
     )
     try:
-        buffers = _overlay_buffers(points, BUILDING_SHADE_RADIUS_M)
+        buffers = _overlay_buffers(buildings, BUILDING_SHADE_RADIUS_M)
         with logged_phase("score.shade.candidates"):
             ordered_candidates = _candidate_lists(
                 buffers,
@@ -495,22 +510,22 @@ def score_streetlight_overlay(
     chunk_size: int,
     workers: int = 1,
 ) -> pd.Series:
-    """Return exact 0/50/100 light coverage tiers for each building centroid."""
+    """Return exact 0/50/100 light coverage tiers for each building footprint."""
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer")
     if isinstance(workers, bool) or not isinstance(workers, (int, np.integer)) or workers <= 0:
         raise ValueError("workers must be a positive integer")
-    points = _metric_centroids(buildings_metric)
+    buildings = _metric_building_geometries(buildings_metric)
     with logged_phase("score.lights.prepare"):
-        source = _prepared_lights_input(prepared_lights, points.crs or _EMPTY_CRS)
-    values = np.zeros(len(points), dtype=np.float64)
-    if len(source) == 0 or len(points) == 0:
+        source = _prepared_lights_input(prepared_lights, buildings.crs or _EMPTY_CRS)
+    values = np.zeros(len(buildings), dtype=np.float64)
+    if len(source) == 0 or len(buildings) == 0:
         return pd.Series(values, index=buildings_metric.index, dtype=float)
 
-    buffer_315 = _overlay_buffers(points, 315)
-    buffer_300 = _overlay_buffers(points, 300)
+    buffer_315 = _overlay_buffers(buildings, 315)
+    buffer_300 = _overlay_buffers(buildings, 300)
     progress = tqdm(
-        total=len(points),
+        total=len(buildings),
         desc="Urban95 streetlights",
         unit="building",
         disable=None,
@@ -538,7 +553,7 @@ def score_streetlight_overlay(
                 local_buffers = [source_buffers[int(source_position)] for source_position in source_positions.tolist()]
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    unified_lights = gpd.GeoSeries(local_buffers, crs=points.crs).union_all()
+                    unified_lights = gpd.GeoSeries(local_buffers, crs=buildings.crs).union_all()
                     if unified_lights is None or unified_lights.is_empty:
                         illuminated_area = 0.0
                     else:
@@ -552,13 +567,13 @@ def score_streetlight_overlay(
 
         with logged_phase("score.lights.unions"):
             if int(workers) == 1:
-                _, serial_values = score_range((0, len(points)), update_each=True)
+                _, serial_values = score_range((0, len(buildings)), update_each=True)
                 values[:] = serial_values
             else:
                 work_chunk_size = 64
                 work_ranges = [
-                    (start, min(start + work_chunk_size, len(points)))
-                    for start in range(0, len(points), work_chunk_size)
+                    (start, min(start + work_chunk_size, len(buildings)))
+                    for start in range(0, len(buildings), work_chunk_size)
                 ]
                 effective_workers = min(int(workers), len(work_ranges))
                 with ThreadPoolExecutor(max_workers=effective_workers) as executor:

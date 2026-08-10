@@ -545,7 +545,7 @@ def test_real_append_stage_writes_exact_full_inventory_and_zeroes_only_failing_r
         out["summer_si"] = [0.4, 0.2]
         return out
 
-    def fake_scalar(x, y, layers, precomputed):
+    def fake_scalar(x, y, layers, precomputed, building_geometry=None):
         calls.append((x, y, precomputed["summer_si"]))
         if x == 1.0:
             raise RuntimeError("literal scorer failure")

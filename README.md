@@ -61,9 +61,9 @@ Urban95 total score is a weighted sum of five category scores. It is a methodolo
 Each category is itself built from subcategory weights in `lib/urban95_weights.py`:
 
 - **Environmental Quality**
-  - Shade: 40% — Beer Sheva BDAR **Spatial Shade Index (`summer_SI`)** from the [Derech Tzel shading metrics guide](https://tzel.org.il/wp-content/uploads/2025/08/Shade-Indicators_eng-2.6.pdf). Values are used as-is (**SI, not SAI**; not recalculated). Each building gets a **300 m area-weighted mean `summer_SI` around the building centroid**, then stored/displayed `summer_si` is **rounded to 1 decimal place with standard half-up ties before output and scoring** (`0.15 → 0.2`, `0.35 → 0.4`). The map shows continuous 0–1 SI using the official interpretation buckets (`<0.10 severe lack`, `0.10–<0.20 significant lack`, `0.20–<0.40 needs improvement`, `0.40–<0.60 good shade`, `≥0.60 excellent shade`). The Urban95 shade sub-score keeps a project-specific ternary mapping on that **rounded** building SI: `<0.20 → 0`, `0.20–<0.40 → 50`, `≥0.40 → 100`.
-  - Trees: 20%
-  - Distance from fast roads: 40%
+  - Shade: 40% — Beer Sheva BDAR **Spatial Shade Index (`summer_SI`)** from the [Derech Tzel shading metrics guide](https://tzel.org.il/wp-content/uploads/2025/08/Shade-Indicators_eng-2.6.pdf). Values are used as-is (**SI, not SAI**; not recalculated). Each building gets a **300 m area-weighted mean `summer_SI` around the building footprint (near-edge buffer)**, then stored/displayed `summer_si` is **rounded to 1 decimal place with standard half-up ties before output and scoring** (`0.15 → 0.2`, `0.35 → 0.4`). The map shows continuous 0–1 SI using the official interpretation buckets (`<0.10 severe lack`, `0.10–<0.20 significant lack`, `0.20–<0.40 needs improvement`, `0.40–<0.60 good shade`, `≥0.60 excellent shade`). The Urban95 shade sub-score keeps a project-specific ternary mapping on that **rounded** building SI: `<0.20 → 0`, `0.20–<0.40 → 50`, `≥0.40 → 100`.
+  - Trees: 20% — count of trees within **20 m of the building footprint edge** (0 / 1–2 / ≥3 → 0 / 50 / 100)
+  - Distance from fast roads: 40% — nearest fast road distance measured to the **building footprint edge**
 - **Nature**
   - Parks: 50%
   - Urban nature areas: 50% (any site polygon within 300 m)
@@ -82,7 +82,7 @@ Each category is itself built from subcategory weights in `lib/urban95_weights.p
 
 `Explain score` in the app uses these saved top-level and subcategory score columns so each component shows both its weight and its score.
 
-Urban95 columns are stored per `_5min/_10min/_15min` for consistency with the rest of the data model, but Urban95 logic itself is mostly based on fixed-distance rules inside category functions in `lib/urban95_weights.py` rather than UI amenity filters.
+Urban95 columns are stored per `_5min/_10min/_15min` for consistency with the rest of the data model, but Urban95 logic itself is mostly based on fixed-distance **near-edge** rules (buffers/distances from the building footprint) inside category functions in `lib/urban95_weights.py` rather than UI amenity filters. Amenities Focus walking isochrones still originate from building centroids.
 
 ### Amenities Focus (internally `expanded`)
 

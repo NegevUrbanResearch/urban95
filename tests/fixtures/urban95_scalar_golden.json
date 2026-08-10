@@ -10,8 +10,8 @@
     "near_boundary_justification": "1e-7 m is more than six orders above observed double/GEOS edge noise (about 1e-14 m) while remaining negligible against the 15-315 m methodology distances."
   },
   "live_contract_mapping": {
-    "weighted_time_columns": "The scalar scorer calculates one centroid result and copies it unchanged to 5min, 10min, and 15min columns; it does not consume per-minute service-count columns.",
-    "street_light_tiers": "Raw local union area divided by the scalar 300 m buffer area: >50 percent gives 100; 30 through 50 inclusive gives 50; below 30 gives 0. There is no separate light rounding or capping step.",
+    "weighted_time_columns": "The scalar scorer calculates one building result (near-edge footprint buffers/distances) and copies it unchanged to 5min, 10min, and 15min columns; it does not consume per-minute service-count columns.",
+    "street_light_tiers": "Raw local union area divided by the scalar 300 m near-edge buffer area: >50 percent gives 100; 30 through 50 inclusive gives 50; below 30 gives 0. There is no separate light rounding or capping step.",
     "park_semantics": "Any intersecting source park gives 50; any one intersecting source geometry with full source area >=3000 m2 gives 100. Counts and overlapping areas are not aggregated.",
     "shade_semantics": "Each sanitized source-surface intersection contributes independently and in scalar spatial-index query order; overlaps are intentionally counted once per source row before one-decimal half-up storage."
   },
