@@ -30,6 +30,107 @@
     return Number.isFinite(n) ? n : 0;
   }
 
+  function statusToken(value) {
+    var scale = window.Urban95StatusScale;
+    var token = scale && typeof scale.normalize === "function" ? scale.normalize(value) : "unknown";
+    return /^(disappointing|functioning|thriving)$/.test(token) ? token : "unknown";
+  }
+
+  function statusLabel(token) {
+    var definitions = (window.Urban95StatusScale && window.Urban95StatusScale.definitions) || [];
+    var item = definitions.filter(function (definition) {
+      return definition.token === token;
+    })[0];
+    return item ? item.label : "Unknown";
+  }
+
+  function renderStatusOverlayMarkerHtml(escapeHtml, identity, token) {
+    return '<i class="u95-status-overlay-marker u95-status-overlay-marker--' + identity +
+      '" data-status="' + escapeHtml(token) + '" aria-hidden="true"></i>';
+  }
+
+  function renderStatusOverlayReadoutHtml(escapeHtml, identity, token) {
+    return '<span class="u95-status-overlay-readout u95-status-overlay-readout--' + identity +
+      '" data-status="' + escapeHtml(token) + '"><i aria-hidden="true"></i><span>' +
+      escapeHtml(statusLabel(token)) + "</span></span>";
+  }
+
+  function renderCombinedStatusOverlayReadoutHtml(escapeHtml, token) {
+    return '<span class="u95-status-overlay-readout u95-status-overlay-readout--combined" data-status="' +
+      escapeHtml(token) + '"><i aria-hidden="true"></i><span>' +
+      escapeHtml(statusLabel(token)) + "</span></span>";
+  }
+
+  function renderSharedStatusOverlayHtml(escapeHtml, nameA, statusA, nameB, statusB, size) {
+    var tokenA = statusToken(statusA);
+    var tokenB = statusToken(statusB);
+    var knownTokens = { disappointing: true, functioning: true, thriving: true };
+    var signalClass = size === "hero" ? "status-signal--hero" : "status-signal--row";
+    var tokens = ["disappointing", "functioning", "thriving"];
+    var ariaLabel = nameA + ": " + statusLabel(tokenA) + "; " + nameB + ": " + statusLabel(tokenB);
+    var html = '<span class="u95-status-overlay u95-status-overlay--' + (size === "hero" ? "hero" : "row") +
+      '" aria-label="' + escapeHtml(ariaLabel) + '" data-status-first="' + escapeHtml(tokenA) +
+      '" data-status-second="' + escapeHtml(tokenB) + '"><span class="status-signal ' + signalClass +
+      '" aria-hidden="true">';
+    tokens.forEach(function (token) {
+      html += '<i class="status-signal-lamp status-signal-lamp--' + token +
+        (tokenA === token || tokenB === token ? " is-active" : "") + '"></i>';
+    });
+    html += "</span>";
+    if (knownTokens[tokenA]) html += renderStatusOverlayMarkerHtml(escapeHtml, "first", tokenA);
+    else html += '<i class="u95-status-overlay-anchor u95-status-overlay-anchor--first" data-status="unknown" aria-hidden="true"></i>';
+    if (knownTokens[tokenB]) html += renderStatusOverlayMarkerHtml(escapeHtml, "second", tokenB);
+    else html += '<i class="u95-status-overlay-anchor u95-status-overlay-anchor--second" data-status="unknown" aria-hidden="true"></i>';
+    html += '<span class="u95-status-overlay-status" aria-hidden="true">' +
+      (tokenA === tokenB
+        ? renderCombinedStatusOverlayReadoutHtml(escapeHtml, tokenA)
+        : renderStatusOverlayReadoutHtml(escapeHtml, "first", tokenA) +
+          renderStatusOverlayReadoutHtml(escapeHtml, "second", tokenB)) + "</span></span>";
+    return html;
+  }
+
+  function renderStatusOverlayLegendHtml(escapeHtml, nameA, nameB) {
+    return '<div class="u95-status-overlay-legend" role="group" aria-label="Compared neighborhoods">' +
+      '<span class="u95-status-overlay-legend-item u95-status-overlay-legend-item--first">' +
+      '<i class="u95-status-overlay-legend-marker" aria-hidden="true"></i><span dir="rtl" lang="he">' + escapeHtml(nameA) +
+      "</span></span>" +
+      '<span class="u95-status-overlay-legend-item u95-status-overlay-legend-item--second">' +
+      '<i class="u95-status-overlay-legend-marker" aria-hidden="true"></i><span dir="rtl" lang="he">' + escapeHtml(nameB) +
+      "</span></span></div>";
+  }
+
+  function renderStatusMetricLabelHtml(host, escapeHtml, metric, kind) {
+    if (kind === "diagnostic") {
+      return '<span class="u95-neighborhood-compare-spine-label">' +
+        escapeHtml(metric.label) + "</span>";
+    }
+    var iconFn = kind === "category" ? host.getWeightedCategoryIcon : host.getWeightedSubcategoryIcon;
+    var stem = kind === "category" ? metric.selectedWeightedStem : metric.selectedWeightedSubStem;
+    var icon = typeof iconFn === "function" ? iconFn(stem) : "";
+    if (typeof host.renderHorizonLabelCell === "function" && icon) {
+      if (kind === "category") {
+        return host.renderHorizonLabelCell(metric.label, icon, "", metric.color || null);
+      }
+      return host.renderHorizonLabelCell(metric.label, icon, "", null, {
+        iconColor: host.scoreExplainIconNeutral || "#64748b",
+        colorLabelText: false,
+      });
+    }
+    return '<span class="u95-neighborhood-compare-spine-label">' + escapeHtml(metric.label) + "</span>";
+  }
+
+  function buildStatusOverlayRowHtml(host, escapeHtml, metric, propsA, propsB, nameA, nameB, kind, rowClass, tagName) {
+    var statusA = metric && metric.areaStatusKey ? propsA[metric.areaStatusKey] : "unknown";
+    var statusB = metric && metric.areaStatusKey ? propsB[metric.areaStatusKey] : "unknown";
+    var tag = tagName === "summary" ? "summary" : "div";
+    return "<" + tag + ' class="u95-neighborhood-compare-overlay-row ' + rowClass +
+      '" dir="ltr" data-status-metric="' + escapeHtml(metric.id || "") +
+      '"><span class="u95-neighborhood-compare-spine">' +
+      renderStatusMetricLabelHtml(host, escapeHtml, metric, kind) + "</span>" +
+      renderSharedStatusOverlayHtml(escapeHtml, nameA, statusA, nameB, statusB, "row") +
+      "</" + tag + ">";
+  }
+
   function avgNeighborhoodBuildingCount(citywideStats) {
     var ranking =
       (citywideStats && citywideStats.neighborhood_ranking_weighted) ||
@@ -555,42 +656,64 @@
     var nameA = nameOf(featureA);
     var nameB = nameOf(featureB);
     var escapeHtml = host.escapeHtml;
-    var renderComposition = host.renderStatusComposition;
     var chipsHtml = buildPairChipsHtml(escapeHtml, nameA, nameB);
-    var kicker = (activeMetric && activeMetric.label) || "All indicators overview";
-    var statusSummaryLabel = typeof host.statusSummaryLabel === "function"
-      ? host.statusSummaryLabel
-      : function () { return null; };
-    var labelA = statusSummaryLabel(propsA, activeMetric) || "Summary unavailable";
-    var labelB = statusSummaryLabel(propsB, activeMetric) || "Summary unavailable";
-    var spineHtml =
-      '<div class="percentile-summary score-explain-sidebar-hero-compact hood-compare-hero"><p class="score-explain-hero-kicker">' +
-      escapeHtml(kicker) + "</p><div class=\"hood-compare-statuses\"><span class=\"hood-compare-slot-a\">" +
-      escapeHtml(labelA) + "</span><span class=\"hood-compare-slot-b\">" +
-      escapeHtml(labelB) + "</span></div></div>";
+    var activeStatusA = activeMetric && activeMetric.areaStatusKey ? propsA[activeMetric.areaStatusKey] : "unknown";
+    var activeStatusB = activeMetric && activeMetric.areaStatusKey ? propsB[activeMetric.areaStatusKey] : "unknown";
+    var spineHtml = '<div class="u95-neighborhood-compare-hero" dir="ltr">' +
+      '<p class="score-explain-hero-kicker">' + escapeHtml(activeMetric.label || "All indicators overview") + "</p>" +
+      renderStatusOverlayLegendHtml(escapeHtml, nameA, nameB) +
+      '<div class="u95-status-overlay-hero-fixture">' +
+      renderSharedStatusOverlayHtml(escapeHtml, nameA, activeStatusA, nameB, activeStatusB, "hero") +
+      "</div></div>";
     populateShell(host, chipsHtml, spineHtml);
 
-    var bodyHtml = '<div class="hood-compare-status-category">';
-    bodyHtml += '<div class="cw-section"><div class="cw-section-title">' +
-      escapeHtml(nameA) + "</div>" + renderComposition({ escapeHtml: escapeHtml }, propsA, activeMetric) + "</div>";
-    bodyHtml += '<div class="cw-section"><div class="cw-section-title">' +
-      escapeHtml(nameB) + "</div>" + renderComposition({ escapeHtml: escapeHtml }, propsB, activeMetric) + "</div>";
-    bodyHtml += "</div>";
-    if (activeMetric.kind === "weighted-overall") {
-      var registry = window.Urban95ScoreModel && window.Urban95ScoreModel.buildWeightedMetricRegistry
-        ? window.Urban95ScoreModel.buildWeightedMetricRegistry()
-        : {};
-      var categories = Object.keys(registry).map(function (id) { return registry[id]; }).filter(function (metric) {
-        return metric && metric.kind === "weighted-category";
+    var registry = window.Urban95ScoreModel && window.Urban95ScoreModel.buildWeightedMetricRegistry
+      ? window.Urban95ScoreModel.buildWeightedMetricRegistry()
+      : {};
+    var metrics = Object.keys(registry).map(function (id) { return registry[id]; });
+    var categories = metrics.filter(function (metric) { return metric && metric.kind === "weighted-category"; });
+    var subcategories = metrics.filter(function (metric) { return metric && metric.kind === "weighted-subcategory"; });
+    var diagnostics = metrics.filter(function (metric) { return metric && metric.kind === "diagnostic-access"; });
+    var bodyHtml = '<section class="u95-neighborhood-compare-indicators"><div class="cw-section-title">Categories &amp; indicators</div>';
+    categories.forEach(function (metric) {
+      var categoryStem = metric.selectedWeightedStem || "";
+      var categorySubcategories = subcategories.filter(function (subcategory) {
+        return subcategory.selectedWeightedStem === categoryStem;
       });
-      bodyHtml += '<div class="cw-section"><div class="cw-section-title">Category status compositions</div>';
-      categories.forEach(function (metric) {
-        bodyHtml += '<div class="u95-status-category"><strong>' + escapeHtml(metric.label) + "</strong>" +
-          '<div class="hood-compare-status-category"><div>' + renderComposition({ escapeHtml: escapeHtml }, propsA, metric) +
-          "</div><div>" + renderComposition({ escapeHtml: escapeHtml }, propsB, metric) + "</div></div></div>";
+      var isActiveCategory = activeMetric &&
+        (activeMetric.selectedWeightedStem === categoryStem || activeMetric.parentStem === categoryStem) &&
+        activeMetric.kind !== "weighted-overall";
+      bodyHtml += '<details class="u95-neighborhood-compare-category-group" data-category-stem="' +
+        escapeHtml(categoryStem) + '" style="--category-color:' +
+        escapeHtml(metric.color || "#64748b") + '"' + (isActiveCategory ? " open" : "") + ">";
+      bodyHtml += buildStatusOverlayRowHtml(host, escapeHtml, metric, propsA, propsB, nameA, nameB,
+        "category", "u95-neighborhood-compare-category-row", "summary");
+      bodyHtml += '<div class="u95-neighborhood-compare-indicator-list">';
+      categorySubcategories.forEach(function (subcategory) {
+        var subcategoryDiagnostics = diagnostics.filter(function (diagnostic) {
+          return diagnostic.parentMetricId === subcategory.id;
+        });
+        if (subcategoryDiagnostics.length === 0) {
+          bodyHtml += buildStatusOverlayRowHtml(host, escapeHtml, subcategory, propsA, propsB,
+            nameA, nameB, "subcategory", "u95-neighborhood-compare-indicator-row");
+          return;
+        }
+        var isActiveSubcategory = activeMetric && (activeMetric.id === subcategory.id ||
+          subcategoryDiagnostics.some(function (diagnostic) { return diagnostic.id === activeMetric.id; }));
+        bodyHtml += '<details class="u95-neighborhood-compare-subcategory-group"' +
+          (isActiveSubcategory ? " open" : "") + ">";
+        bodyHtml += buildStatusOverlayRowHtml(host, escapeHtml, subcategory, propsA, propsB,
+          nameA, nameB, "subcategory", "u95-neighborhood-compare-indicator-row", "summary");
+        bodyHtml += '<div class="u95-neighborhood-compare-diagnostic-list">';
+        subcategoryDiagnostics.forEach(function (diagnostic) {
+          bodyHtml += buildStatusOverlayRowHtml(host, escapeHtml, diagnostic, propsA, propsB,
+            nameA, nameB, "diagnostic", "u95-neighborhood-compare-diagnostic-row");
+        });
+        bodyHtml += "</div></details>";
       });
-      bodyHtml += "</div>";
-    }
+      bodyHtml += "</div></details>";
+    });
+    bodyHtml += "</section>";
     finishRender(host, bodyHtml);
   }
 

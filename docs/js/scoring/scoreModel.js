@@ -255,6 +255,7 @@
         id: categoryId,
         kind: "weighted-category",
         label: category.label,
+        color: category.color,
         scale: "status",
         selectedWeightedStem: category.stem,
         selectedWeightedSubStem: null,

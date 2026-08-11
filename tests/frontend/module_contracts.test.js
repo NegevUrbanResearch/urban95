@@ -11023,6 +11023,10 @@ test("Urban95 status registry exposes flat aggregate contract fields", () => {
     assert.ok(metric.areaSupportCountKey.endsWith("_support_count"), metric.id + " area support field");
     assert.ok(metric.areaSummaryReasonKey.endsWith("_summary_reason"), metric.id + " area reason field");
   });
+
+  const environmentalCategory = registry["u95.cat.environmental_quality"];
+  const environmentalComponent = browser.window.Urban95ScoreModel.WEIGHTED_CATEGORY_COMPONENTS[0];
+  assert.equal(environmentalCategory.color, environmentalComponent.color);
 });
 
 test("Urban95 area composition resolves the active prefix and preserves unavailable summaries", () => {
@@ -11339,38 +11343,34 @@ test("Urban95 status composition rejects coerced empty and boolean numeric field
   });
 });
 
-test("Urban95 comparison places status composition bars in side-by-side columns", () => {
+test("Urban95 comparison uses shared overlays with complete category disclosures", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
   runBrowserScript("docs/js/ui/neighborhoodCompareRender.js", browser);
-  const metric = {
-    scale: "status", kind: "weighted-category", label: "Environment",
-    areaStatusKey: "u95_status_environment", statusCompositionPrefix: "u95_environment",
-  };
-  const props = (name, thrivingPct) => ({
-    Name: name, u95_status_environment: "thriving",
-    u95_environment_count_disappointing: 0, u95_environment_pct_disappointing: 0,
-    u95_environment_count_functioning: 1, u95_environment_pct_functioning: 20,
-    u95_environment_count_thriving: 3, u95_environment_pct_thriving: thrivingPct,
-    u95_environment_count_unknown: 1, u95_environment_pct_unknown: 80 - thrivingPct,
-  });
+  const registry = browser.window.Urban95ScoreModel.buildWeightedMetricRegistry();
+  const metric = registry["u95.overall"];
+  const props = (name, status) => ({ Name: name, u95_status: status });
   const bodyEl = { innerHTML: "" };
+  const heroEl = { innerHTML: "" };
   browser.window.Urban95NeighborhoodCompareRender.render(
-    { slots: [{ properties: props("A", 60) }, { properties: props("B", 40) }] },
+    { slots: [{ properties: props("First neighborhood", "functioning") }, { properties: props("Second neighborhood", "thriving") }] },
     {
-      chartInstances: [], bodyEl, heroEl: { innerHTML: "" }, metaEl: { innerHTML: "" }, emptyEl: {},
+      chartInstances: [], bodyEl, heroEl, metaEl: { innerHTML: "" }, emptyEl: {},
       openChrome() {}, getScoreMode() { return "weighted"; }, getActiveMetric() { return metric; },
       escapeHtml: String, formatMetricNumber: String, formatScoreInteger: String,
-      renderStatusComposition: browser.window.Urban95NeighborhoodPanelRender.renderStatusComposition,
-      statusSummaryLabel: browser.window.Urban95NeighborhoodPanelRender.statusSummaryLabel,
     }
   );
 
-  assert.match(bodyEl.innerHTML, /hood-compare-status-category/);
-  assert.equal((bodyEl.innerHTML.match(/u95-status-composition-bar/g) || []).length, 2);
-  assert.match(bodyEl.innerHTML, /width:60%/);
-  assert.match(bodyEl.innerHTML, /width:40%/);
+  assert.match(bodyEl.innerHTML, /u95-neighborhood-compare-indicators/);
+  assert.equal((bodyEl.innerHTML.match(/u95-neighborhood-compare-category-group/g) || []).length, 5);
+  assert.match(heroEl.innerHTML, /u95-status-overlay u95-status-overlay--hero/);
+  assert.match(heroEl.innerHTML, /u95-status-overlay-marker--first/);
+  assert.match(heroEl.innerHTML, /u95-status-overlay-marker--second/);
+  assert.doesNotMatch(heroEl.innerHTML + bodyEl.innerHTML, /u95-neighborhood-compare-lane/);
+  assert.doesNotMatch(heroEl.innerHTML + bodyEl.innerHTML, /hood-compare-bar-track/);
+  assert.doesNotMatch(bodyEl.innerHTML, /u95-status-composition-bar|View comparison evidence|Where they differ/);
 });
 
 test("Urban95 comparison module has no legacy weighted-total consumers", () => {

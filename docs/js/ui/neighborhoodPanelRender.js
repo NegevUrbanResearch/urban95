@@ -78,6 +78,131 @@
     return definition ? definition.label : "Unknown";
   }
 
+  function statusToken(value) {
+    var scale = window.Urban95StatusScale;
+    var token = scale && typeof scale.normalize === "function" ? scale.normalize(value) : "unknown";
+    return /^(disappointing|functioning|thriving)$/.test(token) ? token : "unknown";
+  }
+
+  function renderStatusSignalHtml(escapeHtml, value, compact) {
+    var token = statusToken(value);
+    var label = statusLabel(token);
+    var signalClass = compact ? "status-signal--row" : "status-signal--hero";
+    var html = '<span class="urban95-status-readout urban95-status-readout--' + escapeHtml(token) +
+      '" aria-label="Status: ' + escapeHtml(label) + '"><span class="status-signal ' + signalClass +
+      '" aria-hidden="true">';
+    ["disappointing", "functioning", "thriving"].forEach(function (lamp) {
+      html += '<i class="status-signal-lamp status-signal-lamp--' + lamp +
+        (token === lamp ? " is-active" : "") + '"></i>';
+    });
+    return html + '</span><span class="urban95-status-readout-label">' + escapeHtml(label) + "</span></span>";
+  }
+
+  function weightedRegistryMetrics() {
+    var registry = window.Urban95ScoreModel && window.Urban95ScoreModel.buildWeightedMetricRegistry
+      ? window.Urban95ScoreModel.buildWeightedMetricRegistry()
+      : {};
+    return Object.keys(registry).map(function (id) { return registry[id]; }).filter(Boolean);
+  }
+
+  function weightedCategoryColor(metric) {
+    var components = (window.Urban95ScoreModel && window.Urban95ScoreModel.WEIGHTED_CATEGORY_COMPONENTS) || [];
+    var stem = metric && metric.selectedWeightedStem;
+    var component = components.filter(function (item) { return item.stem === stem; })[0];
+    return (component && component.color) || (metric && metric.color) || "#64748b";
+  }
+
+  function renderStatusTagHtml(escapeHtml, value) {
+    var token = statusToken(value);
+    var label = statusLabel(token);
+    return '<span class="urban95-status-tag urban95-status-tag--' + escapeHtml(token) +
+      '"><span class="status-signal status-signal--row" aria-hidden="true">' +
+      ["disappointing", "functioning", "thriving"].map(function (lamp) {
+        return '<i class="status-signal-lamp status-signal-lamp--' + lamp +
+          (token === lamp ? " is-active" : "") + '"></i>';
+      }).join("") + '</span><span class="urban95-status-tag-label">' +
+      escapeHtml(label) + "</span></span>";
+  }
+
+  function renderMetricLabelHtml(renderCtx, metric, isCategory) {
+    var escapeHtml = renderCtx.escapeHtml;
+    var stem = isCategory ? metric.selectedWeightedStem : metric.selectedWeightedSubStem;
+    var icon = isCategory
+      ? (typeof renderCtx.getWeightedCategoryIcon === "function" ? renderCtx.getWeightedCategoryIcon(stem) : "marker")
+      : (typeof renderCtx.getWeightedSubcategoryIcon === "function" ? renderCtx.getWeightedSubcategoryIcon(stem) : "marker");
+    var color = isCategory ? weightedCategoryColor(metric) : null;
+    if (typeof renderCtx.renderHorizonLabelCell === "function") {
+      if (isCategory) {
+        return renderCtx.renderHorizonLabelCell(metric.label, icon, "", color);
+      }
+      return renderCtx.renderHorizonLabelCell(metric.label, icon, "", null, {
+        iconColor: renderCtx.scoreExplainIconNeutral,
+        colorLabelText: false,
+      });
+    }
+    return '<span class="horizon-label"><span class="horizon-label-top"><span class="horizon-label-text">' +
+      escapeHtml(metric.label) + "</span></span></span>";
+  }
+
+  function renderStatusRowHtml(renderCtx, props, metric, isCategory) {
+    var escapeHtml = renderCtx.escapeHtml;
+    var value = props && metric && metric.areaStatusKey ? props[metric.areaStatusKey] : "unknown";
+    var rowClass = isCategory ? "urban95-status-row" : "urban95-status-row urban95-status-indicator";
+    return '<div class="' + rowClass + '"><span class="urban95-status-row-name">' +
+      renderMetricLabelHtml(renderCtx, metric, isCategory) + '</span>' +
+      renderStatusTagHtml(escapeHtml, value) + "</div>";
+  }
+
+  function renderDiagnosticRowsHtml(renderCtx, props, subcategory, diagnostics, activeMetric) {
+    var escapeHtml = renderCtx.escapeHtml;
+    var html = "";
+    diagnostics.forEach(function (diagnostic) {
+      var active = activeMetric && activeMetric.id === diagnostic.id;
+      var value = props && diagnostic.areaStatusKey ? props[diagnostic.areaStatusKey] : "unknown";
+      html += '<div class="urban95-status-row urban95-status-diagnostic' + (active ? " is-active-status-row" : "") +
+        '" data-status-detail="' + escapeHtml(diagnostic.selectedWeightedDetailStem || "") + '">' +
+        '<span class="urban95-status-diagnostic-name"><i aria-hidden="true"></i><span>' +
+        escapeHtml(diagnostic.label) + '</span></span>' + renderStatusTagHtml(escapeHtml, value) + "</div>";
+    });
+    return html;
+  }
+
+  function renderSubcategoryHtml(renderCtx, props, subcategory, diagnostics, activeMetric) {
+    var escapeHtml = renderCtx.escapeHtml;
+    var active = activeMetric && (activeMetric.id === subcategory.id ||
+      diagnostics.some(function (diagnostic) { return activeMetric.id === diagnostic.id; }));
+    var rowHtml = renderStatusRowHtml(renderCtx, props, subcategory, false);
+    if (!diagnostics.length) return rowHtml;
+    return '<details class="urban95-status-subcategory-disclosure"' + (active ? " open" : "") +
+      '><summary aria-label="' + escapeHtml(subcategory.label + " inner indicators") + '">' + rowHtml +
+      '</summary><div class="urban95-status-diagnostic-list">' +
+      renderDiagnosticRowsHtml(renderCtx, props, subcategory, diagnostics, activeMetric) + "</div></details>";
+  }
+
+  function renderCategoryHtml(renderCtx, props, category, allMetrics, activeMetric) {
+    var escapeHtml = renderCtx.escapeHtml;
+    var categoryStem = category.selectedWeightedStem;
+    var categoryActive = activeMetric && (activeMetric.selectedWeightedStem === categoryStem ||
+      activeMetric.parentStem === categoryStem);
+    var subcategories = allMetrics.filter(function (item) {
+      return item.kind === "weighted-subcategory" && item.selectedWeightedStem === categoryStem;
+    });
+    var html = '<details class="urban95-status-category-disclosure' + (categoryActive ? " is-filter-highlight" : "") +
+      '"' + (categoryActive ? " open" : "") + ' data-status-category="' + escapeHtml(categoryStem || "") +
+      '" style="--category-color:' + escapeHtml(weightedCategoryColor(category)) + '">';
+    html += '<summary aria-label="' + escapeHtml(category.label + " indicator details") + '"><span class="urban95-category-heading">' +
+      renderMetricLabelHtml(renderCtx, category, true) + '</span>' +
+      renderStatusTagHtml(escapeHtml, props && category.areaStatusKey ? props[category.areaStatusKey] : "unknown") + "</summary>";
+    html += '<div class="urban95-status-category-disclosure-body urban95-status-rows">';
+    subcategories.forEach(function (subcategory) {
+      var diagnostics = allMetrics.filter(function (item) {
+        return item.kind === "diagnostic-access" && item.parentMetricId === subcategory.id;
+      });
+      html += renderSubcategoryHtml(renderCtx, props, subcategory, diagnostics, activeMetric);
+    });
+    return html + "</div></details>";
+  }
+
   function statusSummaryLabel(props, metric) {
     if (!metric || !metric.areaStatusKey || !props ||
         !Object.prototype.hasOwnProperty.call(props, metric.areaStatusKey) ||
@@ -92,11 +217,14 @@
     var meta = renderCtx && renderCtx.metaEl;
     if (!hero || !meta) return;
     var label = (metric && metric.label) || "All indicators overview";
-    var status = statusSummaryLabel(props, metric) || "Unavailable";
-    hero.innerHTML =
-      '<div class="percentile-summary score-explain-sidebar-hero-compact"><p class="score-explain-hero-kicker">' +
-      renderCtx.escapeHtml(label) + '</p><div class="percentile-value">' +
-      renderCtx.escapeHtml(status) + "</div></div>";
+    var status = statusSummaryLabel(props, metric);
+    var activeStatus = props && metric && metric.areaStatusKey ? props[metric.areaStatusKey] : "unknown";
+    hero.innerHTML = status == null
+      ? '<div class="percentile-summary score-explain-sidebar-hero-compact"><p class="score-explain-hero-kicker">' +
+        renderCtx.escapeHtml(label) + '</p><div class="percentile-value">Unavailable</div></div>'
+      : '<div class="percentile-summary score-explain-sidebar-hero-compact urban95-status-hero"><p class="score-explain-hero-kicker">' +
+        renderCtx.escapeHtml(label) + "</p>" +
+        renderStatusSignalHtml(renderCtx.escapeHtml, activeStatus, false) + "</div>";
     meta.innerHTML =
       '<div class="score-explain-building-ctx"><div class="building-ctx-text"><span class="building-ctx-id" dir="rtl" lang="he">' +
       renderCtx.escapeHtml((props && props.Name) || "Unknown") +
@@ -104,20 +232,24 @@
   }
 
   function buildBodyHTMLStatus(renderCtx, props, metric, categoryMetrics) {
+    var escapeHtml = renderCtx.escapeHtml;
+    var allMetrics = weightedRegistryMetrics();
+    var activeMetric = renderCtx && typeof renderCtx.getActiveMetric === "function"
+      ? (renderCtx.getActiveMetric() || metric)
+      : metric;
     var html = '<div class="cw-summary"><div class="cw-stat-card"><div class="cw-stat-value">' +
-      renderCtx.escapeHtml(String((props && props.building_count) || 0)) +
+      escapeHtml(String((props && props.building_count) || 0)) +
       '</div><div class="cw-stat-label">Buildings</div></div></div>';
-    html += '<div class="cw-section"><div class="cw-section-title">Status composition</div>' +
-      renderStatusComposition(renderCtx, props, metric) + "</div>";
-    if (metric && metric.kind === "weighted-overall") {
-      html += '<div class="cw-section"><div class="cw-section-title">Category status compositions</div>';
-      (categoryMetrics || []).forEach(function (category) {
-        html += '<div class="u95-status-category"><strong>' + renderCtx.escapeHtml(category.label) + "</strong>" +
-          renderStatusComposition(renderCtx, props, category) + "</div>";
-      });
-      html += "</div>";
+    if (activeMetric && activeMetric.kind === "diagnostic-access" &&
+        statusSummaryLabel(props, activeMetric) == null) {
+      return html + '<div class="cw-section">' +
+        renderStatusComposition(renderCtx, props, activeMetric) + "</div>";
     }
-    return html;
+    html += '<div class="urban95-status-detail u95-neighborhood-status-detail">';
+    (categoryMetrics || []).forEach(function (category) {
+      html += renderCategoryHtml(renderCtx, props, category, allMetrics, activeMetric);
+    });
+    return html + "</div>";
   }
 
   function populateHeaderExpanded(renderCtx, props, pct, scoreMinutes) {

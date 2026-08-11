@@ -843,6 +843,10 @@ Urban95NeighborhoodSidebar.configure({
     formatScoreInteger: formatScoreInteger,
     escapeHtml: scoreExplain.escapeHtml,
     heroPercentileMeterFillStyle: scoreExplain.heroPercentileMeterFillStyle,
+    renderHorizonLabelCell: scoreExplain.renderHorizonLabelCell,
+    getWeightedCategoryIcon: scoreExplain.getWeightedCategoryIcon,
+    getWeightedSubcategoryIcon: scoreExplain.getWeightedSubcategoryIcon,
+    scoreExplainIconNeutral: scoreExplain.scoreExplainIconNeutral,
     getCitywideStats: function () { return citywideStats; },
   },
 });

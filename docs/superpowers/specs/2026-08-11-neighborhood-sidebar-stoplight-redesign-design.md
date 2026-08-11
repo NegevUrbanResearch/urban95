@@ -2,139 +2,74 @@
 
 ## Problem
 
-The Urban95 scoring change replaced continuous neighborhood scores with categorical
-status summaries: Disappointing, Functioning, Thriving, and Unknown. The current
-neighborhood sidebar still uses the old score-era visual grammar in places and the
-new composition view repeats full red/amber/green bars without a clear first signal.
-The comparison view duplicates those compositions in two columns, which makes the
-relationship between neighborhoods hard to scan.
+Urban95 neighborhood summaries now use categorical statuses, but the neighborhood sidebar does not yet explain them with the same visual grammar as the building explainer. The attempted redesign made status-composition percentages and duplicated A/B layouts primary, producing dense rows that were difficult to interpret or compare.
 
 ## Goals
 
-- Make a single neighborhood readable in a few seconds.
-- Keep the existing Urban95 stoplight language used by the building explainer.
-- Make comparison visual and row-by-row without paired score bars.
-- Preserve all published status composition evidence and Hebrew labels.
-- Keep the scoring/data contracts unchanged.
+- Make the single-neighborhood view feel like the existing Urban95 building explainer.
+- Compare two neighborhoods on one shared categorical stoplight scale so equality and difference are visible immediately.
+- Keep red, amber, and green exclusively tied to Disappointing, Functioning, and Thriving.
+- Preserve full Hebrew neighborhood names and accessible status text.
+- Keep scoring and published data contracts unchanged.
 
 ## Non-goals
 
-- Do not reintroduce numeric Urban95 scores, percentiles, averages, ranks, or
-  score-like comparison deltas.
-- Do not change the Python scoring pipeline, status thresholds, or published fields.
-- Do not redesign the building explainer itself.
-- Do not change Amenities Focus behavior.
+- Do not reintroduce numeric Urban95 scores, percentiles, averages, ranks, or deltas.
+- Do not change the Python pipeline, status thresholds, or Amenities Focus.
+- Do not redesign the building explainer.
+- Do not perform automated or agent-driven live visual checks; the user owns visual verification.
 
-## Visual language
+## Single neighborhood: building-explainer parity
 
-Use the existing `status-signal` / `status-signal-lamp` components from the building
-explainer as the canonical status encoding:
+The neighborhood view reuses the building explainer's information hierarchy and visual primitives rather than maintaining a separate neighborhood-specific dashboard.
 
-- red active lamp = Disappointing
-- amber active lamp = Functioning
-- green active lamp = Thriving
-- gray text/neutral treatment = Unknown
+1. The header contains the neighborhood name and the same large `status-signal--hero` stoplight/status readout used by building mode.
+2. The body starts with one compact neighborhood context line showing total buildings once. It does not show a support percentage, matching-status count, or composition rail.
+3. The five Urban95 categories use the same building-mode disclosure structure:
+   - category icon from the weighted indicator icon registry;
+   - category taxonomy color from the score-model registry;
+   - category label;
+   - fixed-width `urban95-status-tag` with the canonical compact stoplight and status word.
+4. Expanding a category reveals its subcategories using the same neutral-icon, indented status-row treatment as building mode.
+5. The surface contains no per-indicator percentages, building counts, or secondary status-composition disclosure.
+6. The attempted `At a glance`, `Focus areas`, and `Strong foundations` sections are removed; the building-style category tree is the single navigation and explanation structure.
 
-Neighborhood A/B colors (sky and lavender) are reserved for identity labels and
-values. They must not replace the shared red/amber/green status semantics.
+## Comparison: shared-stoplight overlay
 
-## Single-neighborhood hierarchy
+Comparison uses one categorical fixture per metric, not two independent columns.
 
-1. **Hero**
-   - Neighborhood name.
-   - Existing large three-lamp stoplight readout and status label.
-   - Building support line: matching status count out of total buildings.
-   - One compact overall composition rail for context.
+1. The pair header keeps the existing removable full-name neighborhood chips. A full-name identity legend maps the first neighborhood to sky and the second to lavender; A/B shorthand is not shown to users.
+2. The overall comparison hero is one large three-lamp stoplight. Each neighborhood is represented by a high-contrast identity-colored rail anchored above or below its published status position; the legend repeats that same spatial treatment.
+3. If statuses differ, markers occupy different lamps and both selected lamps are active. If statuses match, both markers meet around the same active lamp with small opposing offsets so neither identity disappears.
+4. Each category row contains:
+   - the building-mode category icon and taxonomy color;
+   - the category label;
+   - one shared, deliberately prominent stoplight overlay carrying both neighborhood markers;
+   - two stacked status readouts, each paired with the same sky/lavender identity rail used by its neighborhood in the legend.
+5. The five category rows are disclosures. They remain collapsed in the overall view for a compact at-a-glance comparison, and each opens to the complete ordered indicator set for that category. A category opens automatically when it contains the active metric.
+   - Subcategory rows use the same softer, indented hierarchy as the building/single explainer.
+   - Education and Health are nested disclosures exposing their diagnostic indicators.
+   - Equal statuses use one text readout with a half-sky/half-lavender rail; different statuses retain one identity-colored readout per neighborhood.
+6. There is no selectively filtered `Where they differ` list and no secondary comparison-evidence disclosure.
+7. Unknown is neutral: no red/amber/green lamp is activated for that neighborhood. Its identity marker moves to a small neutral `Unknown` anchor beside the fixture.
 
-2. **At a glance**
-   - Five fixed-order Urban95 category rows.
-   - Each row uses the compact existing three-lamp signal, category label, and the
-     matching published status share/count.
-   - Rows are visually light and scannable; no full four-status legend is repeated.
+## Overlay semantics
 
-3. **Focus areas**
-   - Up to four subcategories with the clearest need for attention.
-   - Disappointing indicators first; then Functioning indicators with the largest
-     disappointing share.
-   - Each row uses the same stoplight tag and a building share/count.
-   - Unknown is reported as unavailable evidence, never treated as a weakness.
-
-4. **Strong foundations**
-   - Up to two Thriving subcategories using the same compact stoplight tag.
-
-5. **Full status composition**
-   - A collapsed details section containing the existing four-status composition
-     rails and count/percentage rows for the overall view and category views.
-   - The expanded section remains the audit surface for all four statuses.
-
-## Comparison hierarchy
-
-1. **Pair header**
-   - Existing removable neighborhood chips remain.
-   - Two side-by-side overall stoplight readouts, one for each neighborhood.
-   - Each readout includes status and matching building share/count.
-
-2. **Category comparison**
-   - One compact two-lane card per category in fixed methodology order.
-   - Lane A and lane B each use the compact existing three-lamp signal, status label,
-     and matching status share/count.
-   - Sky/lavender identify the lanes; red/amber/green remain status semantics.
-   - No paired horizontal score bars and no winner/stronger language.
-
-3. **Where they differ**
-   - Show only subcategories whose published headline status differs between A and B.
-   - Render each difference as the same two-lane stoplight card, with the category
-     context visible and no derived score or comparison badge.
-   - If no subcategory statuses differ, show a concise neutral empty state.
-
-4. **Full status composition**
-   - A collapsed details section exposes complete A/B four-status compositions for
-     overall, category, and relevant subcategory views.
-
-## Data rules
-
-- Use the existing `statusCompositionPrefix` metadata and published `*_count_*` /
-  `*_pct_*` fields.
-- Headline status is the published `areaStatusKey` value (predominant status for the
-  neighborhood summary).
-- The visible share/count is the composition entry matching that headline status.
-- Use the fixed category and subcategory definitions already supplied by the score
-  model; do not infer labels from property-key strings.
-- Preserve diagnostic-access behavior: if neighborhood averages are unavailable,
-  show the existing unavailable explanation rather than fabricated zeroes.
-- Keep `Unknown` neutral and visible in the full composition details.
+- Lamp colors encode status only: red = Disappointing, amber = Functioning, green = Thriving.
+- Sky/lavender encode neighborhood identity only and appear as outlines/notches, never as status fills.
+- Full neighborhood names appear in the pair header/legend. Body fixtures repeat the identity rail beside each neighborhood's status text and use accessible full names without A/B letters.
+- Decorative lamps and markers are `aria-hidden`; each shared fixture has an accessible label containing both full neighborhood names and their text statuses.
 
 ## Implementation boundaries
 
-- `docs/js/ui/neighborhoodPanelRender.js`: single-neighborhood status markup, focus /
-  foundation selection, and full-composition disclosure markup.
-- `docs/js/ui/neighborhoodCompareRender.js`: comparison hero, two-lane category rows,
-  status-difference filtering, and full-composition disclosure markup.
-- `docs/style.css`: scoped neighborhood single/compare cards, stoplight layout,
-  spacing, RTL-safe labels, and responsive behavior. Reuse existing status-signal
-  classes rather than duplicating lamp semantics.
-- `docs/js/ui/neighborhoodSidebar.js`: only adjust orchestration if the renderers need
-  additional context; keep loading and stale-render handling unchanged.
-- Existing frontend contract tests remain the baseline. Add focused renderer tests
-  for status-focused output and update only assertions that encode the old score-era
-  neighborhood composition markup.
-
-## Accessibility and responsive behavior
-
-- Every stoplight readout has a text status label and an accessible name; lamps are
-  decorative.
-- Count/share values use tabular numerals and remain readable at the narrow sidebar
-  width.
-- Comparison lane order is explicitly labeled A/B and remains stable in RTL content.
-- Details sections use native `details`/`summary` disclosure semantics.
-- Reduced-motion behavior continues to suppress transitions.
+- `docs/js/ui/neighborhoodPanelRender.js`: building-style single-neighborhood category tree.
+- `docs/js/ui/neighborhoodCompareRender.js`: shared overlay helper and complete category/indicator disclosures.
+- `docs/style.css`: neighborhood-scoped building-parity adjustments and overlay fixture geometry.
+- `docs/app.js`: inject existing building-explainer label/icon helpers into the neighborhood renderer context.
+- Focused renderer and module-contract tests: assert structure, full names, overlay/same-status behavior, and absence of score-era copy.
 
 ## Verification
 
-- Run focused frontend tests for neighborhood renderers, module contracts, and status
-  composition behavior.
-- Run the full `npm test` suite and distinguish unrelated pre-existing failures.
-- Render the single and comparison sidebars at the existing desktop sidebar width and
-  inspect the visual hierarchy against the four supplied references.
-- Confirm no active neighborhood UI copy contains Urban95 score, percentile, average,
-  rank, or winner language.
+- Run focused renderer/module tests and the existing `npm test` suite.
+- Run `git diff --check` and inspect the final file list.
+- Do not run Playwright, screenshots, browser automation, or live visual checks. Hand the result to the user for visual verification.
