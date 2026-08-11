@@ -8,6 +8,7 @@
   var ROAD_LAYER_IDS = [
     "roads-casing",
     "roads-fill",
+    "roads-fast",
     "roads-labels-major",
     "roads-labels-local",
   ];

@@ -150,23 +150,28 @@
 
   function createParkDotPatternImage(documentRef) {
     var doc = documentRef || document;
-    var size = 3;
+    var size = 12;
     var canvas = doc.createElement("canvas");
     canvas.width = size;
     canvas.height = size;
     var ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, size, size);
 
+    // Keep parks visibly filled while the teal dots distinguish them from
+    // the solid lime urban-nature overlay.
+    ctx.fillStyle = "rgba(20, 184, 166, 0.14)";
+    ctx.fillRect(0, 0, size, size);
+
     [
-      [1.5, 1.4, 0.48, "rgba(15, 118, 110, 0.58)"],
-      [4.5, 1.8, 0.38, "rgba(13, 148, 136, 0.5)"],
-      [7.8, 1.2, 0.42, "rgba(15, 118, 110, 0.53)"],
-      [2.8, 4.2, 0.4, "rgba(13, 148, 136, 0.51)"],
-      [6.2, 4.8, 0.48, "rgba(15, 118, 110, 0.56)"],
-      [9.2, 5.4, 0.34, "rgba(13, 148, 136, 0.48)"],
-      [1.2, 7.4, 0.36, "rgba(15, 118, 110, 0.5)"],
-      [4.8, 8.1, 0.46, "rgba(13, 148, 136, 0.55)"],
-      [8.3, 8.4, 0.4, "rgba(15, 118, 110, 0.52)"],
+      [1.6, 1.6, 0.72, "rgba(13, 148, 136, 0.72)"],
+      [5.3, 2.4, 0.56, "rgba(15, 118, 110, 0.64)"],
+      [9.5, 1.5, 0.64, "rgba(13, 148, 136, 0.68)"],
+      [2.8, 5.2, 0.58, "rgba(15, 118, 110, 0.64)"],
+      [7.0, 5.0, 0.72, "rgba(13, 148, 136, 0.72)"],
+      [10.5, 6.2, 0.52, "rgba(15, 118, 110, 0.62)"],
+      [1.5, 9.2, 0.56, "rgba(13, 148, 136, 0.66)"],
+      [5.2, 9.6, 0.68, "rgba(15, 118, 110, 0.7)"],
+      [9.2, 10.2, 0.58, "rgba(13, 148, 136, 0.66)"],
     ].forEach(function (dot) {
       ctx.fillStyle = dot[3];
       ctx.beginPath();
@@ -208,8 +213,8 @@
     }
     if (map.getLayer("parks-fill")) {
       map.setPaintProperty("parks-fill", "fill-pattern", PARK_DOT_PATTERN_ID);
-      map.setPaintProperty("parks-fill", "fill-opacity", 0.5);
-      map.setPaintProperty("parks-fill", "fill-outline-color", "rgba(15, 118, 110, 0.16)");
+      map.setPaintProperty("parks-fill", "fill-opacity", 0.82);
+      map.setPaintProperty("parks-fill", "fill-outline-color", "rgba(13, 148, 136, 0.5)");
     }
   }
 

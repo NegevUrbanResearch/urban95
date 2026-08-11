@@ -9,11 +9,11 @@
   }
 
   function roadCategoryColorExpression() {
-    return "#111111";
+    return "#475569";
   }
 
   function roadCategoryCasingColorExpression() {
-    return "#111111";
+    return "#94a3b8";
   }
 
   function roadCategoryWidthExpression(baseWidths) {
@@ -39,6 +39,44 @@
       ["service"],
       baseWidths.service,
       baseWidths.other,
+    ];
+  }
+
+  function mainRoadFilter() {
+    return [
+      "any",
+      [
+        ">",
+        [
+          "to-number",
+          [
+            "coalesce",
+            ["get", "maxspeed_numeric"],
+            ["get", "maxspeed"],
+            ["get", "max_speed"],
+            ["get", "speed_limit"],
+            0,
+          ],
+          0,
+        ],
+        50,
+      ],
+      [
+        "match",
+        ["get", "highway"],
+        [
+          "motorway",
+          "motorway_link",
+          "trunk",
+          "trunk_link",
+          "primary",
+          "primary_link",
+          "secondary",
+          "secondary_link",
+        ],
+        true,
+        false,
+      ],
     ];
   }
 
@@ -103,11 +141,11 @@
             ["linear"],
             ["zoom"],
             8,
-            0.3,
+            0.12,
             12,
-            0.36,
+            0.18,
             16,
-            0.44,
+            0.24,
           ],
         },
       },
@@ -170,12 +208,37 @@
             ["linear"],
             ["zoom"],
             8,
-            0.38,
+            0.18,
             12,
-            0.46,
+            0.24,
             16,
-            0.56,
+            0.32,
           ],
+        },
+      },
+      {
+        id: "roads-fast",
+        type: "line",
+        source: "roads",
+        filter: mainRoadFilter(),
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#111111",
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            1.8,
+            12,
+            3.6,
+            16,
+            6.2,
+          ],
+          "line-opacity": 0.5,
         },
       },
     ];
@@ -228,7 +291,7 @@
           "text-keep-upright": true,
         },
         paint: {
-          "text-color": "#111111",
+          "text-color": "#64748b",
           "text-halo-color": "#ffffff",
           "text-halo-width": 1.2,
           "text-halo-blur": 0.5,
@@ -237,11 +300,11 @@
             ["linear"],
             ["zoom"],
             11,
-            0.58,
+            0.38,
             14,
-            0.66,
+            0.46,
             16,
-            0.74,
+            0.54,
           ],
         },
       },
@@ -278,7 +341,7 @@
           "text-keep-upright": true,
         },
         paint: {
-          "text-color": "#111111",
+          "text-color": "#94a3b8",
           "text-halo-color": "#ffffff",
           "text-halo-width": 1,
           "text-halo-blur": 0.4,
@@ -287,9 +350,9 @@
             ["linear"],
             ["zoom"],
             14,
-            0.45,
+            0.22,
             16,
-            0.62,
+            0.32,
           ],
         },
       },
