@@ -62,7 +62,7 @@
   }
 
   function isWeightedSubcategoryMetric(metric) {
-    return !!(metric && metric.kind === "weighted-subcategory" && metric.selectedWeightedSubStem);
+    return !!(metric && metric.id && metric.id.indexOf("u95.sub.") === 0 && metric.selectedWeightedSubStem);
   }
 
   function meanFromRankingRows(rankingRows, key) {
@@ -82,22 +82,22 @@
 
   function getWeightedNeighborhoodMetricValue(source, suffix, metric, rankingRows) {
     void suffix;
-    if (!metric || !metric.neighborhoodAverageKey) return null;
-    var key = metric.neighborhoodAverageKey;
-    var direct = Number(source && source[key]);
-    if (Number.isFinite(direct)) return direct;
+    if (!metric || !metric.areaStatusKey) return null;
+    var key = metric.areaStatusKey;
+    if (hasOwnMetricValue(source, key)) return source[key];
     if (rankingRows !== undefined) {
-      return meanFromRankingRows(rankingRows, key);
+      var values = (rankingRows || []).map(function (row) { return row && row[key]; }).filter(Boolean);
+      return values.length > 0 ? values[0] : null;
     }
     return null;
   }
 
   function hasWeightedNeighborhoodMetricData(metric, source, rankingRows) {
-    if (!metric || metric.scale !== "weighted") {
+    if (!metric || !metric.id || metric.id.indexOf("u95.") !== 0) {
       return true;
     }
-    if (!metric.neighborhoodAverageKey) return false;
-    var key = metric.neighborhoodAverageKey;
+    if (!metric.areaStatusKey) return false;
+    var key = metric.areaStatusKey;
     if (hasOwnMetricValue(source, key)) {
       if (rankingRows === undefined) return true;
       if (!Array.isArray(rankingRows) || rankingRows.length === 0) return false;
@@ -107,18 +107,6 @@
       return hasOwnMetricValue(rankingRows[0], key);
     }
     return false;
-  }
-
-  function getWeightedHistogramDistribution(stats, suffix, metric, fallbackDistribution) {
-    if (
-      metric &&
-      metric.kind === "weighted-overall" &&
-      stats &&
-      stats["distribution_weighted" + suffix]
-    ) {
-      return stats["distribution_weighted" + suffix];
-    }
-    return typeof fallbackDistribution === "function" ? fallbackDistribution() : null;
   }
 
   function getWeightedShowActions(options, metricId) {
@@ -131,7 +119,7 @@
 
   function resolveWeightedCompanionTypes(options) {
     var metric = options.metric;
-    if (!metric || metric.scale !== "weighted") {
+    if (!metric || !metric.id || metric.id.indexOf("u95.") !== 0) {
       return {
         amenityTypes: [],
         includeTrees: false,
@@ -170,7 +158,7 @@
   function resolveWeightedShownAmenityTypes(options) {
     options = options || {};
     var metric = options.metric;
-    if (!metric || metric.scale !== "weighted") {
+    if (!metric || !metric.id || metric.id.indexOf("u95.") !== 0) {
       return [];
     }
     var shownAmenityTypes = options.shownAmenityTypes;
@@ -347,7 +335,6 @@
     getSurfaceSample: getSurfaceSample,
     getWeightedNeighborhoodMetricValue: getWeightedNeighborhoodMetricValue,
     hasWeightedNeighborhoodMetricData: hasWeightedNeighborhoodMetricData,
-    getWeightedHistogramDistribution: getWeightedHistogramDistribution,
     supportsMetricNeighborhoodAverageData: function (metric, source) {
       return hasWeightedNeighborhoodMetricData(metric, source);
     },

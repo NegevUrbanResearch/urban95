@@ -38,6 +38,8 @@
     var vectorLayerId = sourceLayerFor(artifacts, "buildings", mapContracts.buildingSourceLayerFallback);
     var symPctStateKey =
       (config.stateKeys && config.stateKeys.buildingScorePercent) || "sym_pct";
+    var statusStateKey =
+      (config.stateKeys && config.stateKeys.buildingStatus) || "u95Status";
     var selectedStateKey =
       (config.stateKeys && config.stateKeys.buildingSelected) || "selected";
     var fillColorExpression = createBuildingFillColorExpression(symPctStateKey);
@@ -48,13 +50,25 @@
       selectedLayerId: selectedLayerId,
       vectorLayerId: vectorLayerId,
       symPctStateKey: symPctStateKey,
+      statusStateKey: statusStateKey,
       selectedStateKey: selectedStateKey,
       fillColorExpression: fillColorExpression,
     };
   }
 
-  function createBuildingFillColorExpression(symPctStateKey) {
-    var stateKey = symPctStateKey || "sym_pct";
+  function createBuildingFillColorExpression(metricOrStateKey, stateKeyOverride) {
+    var metric = metricOrStateKey && typeof metricOrStateKey === "object" ? metricOrStateKey : null;
+    if (metric && metric.scale === "status") {
+      var statusScale = window.Urban95StatusScale;
+      if (!statusScale) {
+        throw new Error("Urban95MapLayers requires Urban95StatusScale for status expressions");
+      }
+      var statusExpression = stateKeyOverride
+        ? ["feature-state", stateKeyOverride]
+        : ["get", metric.buildingPropertyKey];
+      return statusScale.matchExpression(statusExpression);
+    }
+    var stateKey = metricOrStateKey || "sym_pct";
     return [
       "interpolate",
       ["linear"],
@@ -231,6 +245,7 @@
     PARK_DOT_PATTERN_ID: PARK_DOT_PATTERN_ID,
     URBAN_NATURE_DOT_PATTERN_ID: URBAN_NATURE_DOT_PATTERN_ID,
     resolveBuildingContracts: resolveBuildingContracts,
+    createBuildingFillColorExpression: createBuildingFillColorExpression,
     createPmtilesProtocol: createPmtilesProtocol,
     createBuildingsSource: createBuildingsSource,
     createBuildingsFillLayer: createBuildingsFillLayer,

@@ -155,7 +155,9 @@
       },
       getActiveMetric: renderCtx.getActiveMetric,
       getNeighborhoodPercentileKey: renderCtx.getNeighborhoodPercentileKey,
-      getAmenityConfig: renderCtx.getAmenityConfig,
+       getAmenityConfig: renderCtx.getAmenityConfig,
+       renderStatusComposition: Urban95NeighborhoodPanelRender.renderStatusComposition,
+       statusSummaryLabel: Urban95NeighborhoodPanelRender.statusSummaryLabel,
       escapeHtml: renderCtx.escapeHtml,
       formatMetricNumber: renderCtx.formatMetricNumber,
       formatScoreInteger: renderCtx.formatScoreInteger,
@@ -225,91 +227,18 @@
         if (token !== renderGeneration) return;
         var citywideStats = deps.getCitywideStats();
         var activeMetric = renderCtx.getActiveMetric ? renderCtx.getActiveMetric() : null;
-        var neighborhoodRanking =
-          citywideStats && citywideStats.neighborhood_ranking_weighted;
-        var missingWeightedSubcategoryData =
-          !!(
-            activeMetric &&
-            (
-              !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(activeMetric, props) ||
-              !getRenderStateHelper("hasWeightedNeighborhoodMetricData")(
-                activeMetric,
-                citywideStats,
-                neighborhoodRanking
-              )
-            )
-          );
-        var selectedCategoryLabel =
-          !activeMetric || activeMetric.kind === "weighted-overall"
-            ? "Urban95"
-            : activeMetric.label || "Urban95";
-        if (missingWeightedSubcategoryData) {
-          var isDiagnosticAccess = activeMetric && activeMetric.kind === "diagnostic-access";
-          var unavailableMessage = isDiagnosticAccess
-            ? "Neighborhood averages are not published for this access view."
-            : "Neighborhood-level Urban95 subcategory summaries are unavailable for this metric in the current data export.";
-          if (renderCtx.heroEl) {
-            var unavailableKicker =
-              activeMetric && activeMetric.kind !== "weighted-overall" && activeMetric.label
-                ? activeMetric.label + (isDiagnosticAccess ? " access" : " score")
-                : "Score";
-            renderCtx.heroEl.innerHTML =
-              '<div class="percentile-summary score-explain-sidebar-hero-compact">' +
-              '<p class="score-explain-hero-kicker">' +
-              renderCtx.escapeHtml(unavailableKicker) +
-              '</p><div class="percentile-value">Unavailable</div></div>';
-          }
-          if (renderCtx.metaEl) {
-            renderCtx.metaEl.innerHTML =
-              '<div class="score-explain-building-ctx"><div class="building-ctx-text">' +
-              '<span class="building-ctx-id" dir="rtl" lang="he">' +
-              renderCtx.escapeHtml((props && props.Name) || "Unknown") +
-              '</span><span class="building-ctx-coords">' +
-              renderCtx.escapeHtml(unavailableMessage) +
-              "</span></div></div>";
-          }
-          deps.bodyEl.innerHTML =
-            '<div class="cw-section"><p class="sidebar-section-hint">' +
-            renderCtx.escapeHtml(unavailableMessage) +
-            "</p></div>";
-          finalizeSidebarAndBindCharts(token, renderCtx, {
-            weighted: true,
-            sfx: sfx,
-            neighborhoodProps: props,
-          });
-          return;
-        }
-        var avgScore = getRenderStateHelper("getWeightedNeighborhoodMetricValue")(
-          props,
-          sfx,
-          activeMetric
-        );
-        var cityAvgScore = getRenderStateHelper("getWeightedNeighborhoodMetricValue")(
-          citywideStats,
-          sfx,
-          activeMetric,
-          neighborhoodRanking
-        );
-        Urban95NeighborhoodPanelRender.populateHeaderWeighted(
-          renderCtx,
-          props,
-          avgScore,
-          cityAvgScore,
-          selectedCategoryLabel
-        );
-        deps.bodyEl.innerHTML = Urban95NeighborhoodPanelRender.buildBodyHTMLWeighted(
-          renderCtx,
-          props,
-          sfx,
-          avgScore,
-          cityAvgScore,
-          selectedCategoryLabel
-        );
-        finalizeSidebarAndBindCharts(token, renderCtx, {
-          weighted: true,
-          sfx: sfx,
-          neighborhoodProps: props,
+        var registry = window.Urban95ScoreModel && window.Urban95ScoreModel.buildWeightedMetricRegistry
+          ? window.Urban95ScoreModel.buildWeightedMetricRegistry()
+          : {};
+        activeMetric = activeMetric || registry["u95.overall"];
+        var categoryMetrics = Object.keys(registry).map(function (id) { return registry[id]; }).filter(function (metric) {
+          return metric && metric.kind === "weighted-category";
         });
+        Urban95NeighborhoodPanelRender.populateHeaderStatus(renderCtx, props, activeMetric);
+        deps.bodyEl.innerHTML = Urban95NeighborhoodPanelRender.buildBodyHTMLStatus(
+          renderCtx, props, activeMetric, categoryMetrics
+        );
+        finalizeSidebarAndBindCharts(token, renderCtx, { weighted: false, invObj: {} });
       });
       return;
     }

@@ -63,9 +63,9 @@ def _run_neighborhoods() -> None:
 
 
 def _run_rescore() -> None:
-    from stages.rescore import rescore_urban95_weighted
+    from stages.rescore import rescore_urban95_statuses
 
-    rescore_urban95_weighted()
+    rescore_urban95_statuses()
 
 
 def _run_survey() -> None:

@@ -1,5 +1,5 @@
 """
-Recompute Urban95 weighted score columns (including shade SI) on existing web buildings.
+Recompute Urban95 status columns (including shade SI) on existing web buildings.
 
 Does not call Mapbox or rebuild isochrones. Run from repo root:
 
@@ -14,8 +14,6 @@ neighborhood and citywide aggregates afterward with:
 
 from __future__ import annotations
 
-import gzip
-import json
 import logging
 import os
 from collections import Counter
@@ -27,9 +25,7 @@ os.environ["PYPROJ_GLOBAL_CONTEXT"] = "ON"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 import geopandas as gpd
-import pandas as pd
-
-from core.geo_io import WALK_MINUTES, load_layer, write_scored_buildings
+from core.geo_io import load_layer, write_scored_buildings
 from core.paths import OUTPUT_DIR, SCORED_BUILDINGS, layer
 from lib.shade_si import BUILDING_SI_FIELD
 from stages.export_web import export_web
@@ -38,17 +34,13 @@ from stages.shade import (
     STREET_PREPARED_FILENAME,
     preprocess_shade,
 )
-from stages.urban95_scoring import append_weighted_urban95_scores
+from stages.urban95_scoring import append_urban95_statuses
 
 SHADE_SI_DIR = OUTPUT_DIR / "shade_si"
 BUILDINGS_GZ = layer("publish_buildings_gz").path
 BUILDINGS_GEOJSON = layer("publish_buildings").path
 
-SHADE_SUBSCORE_COL = "score_weighted_sub_environmental_quality_shade_5min"
-SHADE_SUBSCORE_COL_10MIN = "score_weighted_sub_environmental_quality_shade_10min"
-BUILDINGS_LOOKUP_JSON = layer("publish_buildings_lookup").path
-
-STALE_PREFIXES = ("score_weighted", "access_")
+STALE_PREFIXES = ("score_weighted", "u95_status", "access_")
 STALE_EXACT = (BUILDING_SI_FIELD,)
 
 
@@ -88,80 +80,17 @@ def _drop_stale_score_columns(buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return buildings.drop(columns=stale_cols)
 
 
-def _log_shade_distribution(buildings: gpd.GeoDataFrame) -> None:
-    if BUILDING_SI_FIELD in buildings.columns:
-        si = pd.to_numeric(buildings[BUILDING_SI_FIELD], errors="coerce").dropna()
-        if len(si):
-            logging.info(
-                "summer_si: count=%d mean=%.4f min=%.4f max=%.4f",
-                len(si),
-                float(si.mean()),
-                float(si.min()),
-                float(si.max()),
-            )
-        else:
-            logging.warning("summer_si column present but has no numeric values")
-
-    if SHADE_SUBSCORE_COL not in buildings.columns:
-        logging.warning("Missing %s after rescoring", SHADE_SUBSCORE_COL)
+def _log_status_distribution(buildings: gpd.GeoDataFrame) -> None:
+    status_column = "u95_status_10min"
+    if status_column not in buildings.columns:
+        logging.warning("Missing %s after rescoring", status_column)
         return
-
-    tiers = pd.to_numeric(buildings[SHADE_SUBSCORE_COL], errors="coerce").fillna(0).astype(int)
-    counts = Counter(tiers.tolist())
-    total = len(tiers)
-    logging.info(
-        "Shade sub-score tier distribution (%s, n=%d): tier 0=%d (%.1f%%), tier 50=%d (%.1f%%), tier 100=%d (%.1f%%)",
-        SHADE_SUBSCORE_COL,
-        total,
-        counts.get(0, 0),
-        100.0 * counts.get(0, 0) / total if total else 0.0,
-        counts.get(50, 0),
-        100.0 * counts.get(50, 0) / total if total else 0.0,
-        counts.get(100, 0),
-        100.0 * counts.get(100, 0) / total if total else 0.0,
-    )
-    other = {k: v for k, v in counts.items() if k not in (0, 50, 100)}
-    if other:
-        logging.warning("Unexpected shade sub-score values: %s", other)
+    counts = Counter(buildings[status_column].fillna("unknown").astype(str))
+    logging.info("Urban95 status distribution (%s): %s", status_column, dict(counts))
 
 
-def _log_lookup_shade_tiers(lookup_path: Path, label: str) -> None:
-    source_path = lookup_path
-    if not source_path.is_file():
-        gzip_path = lookup_path.with_name(f"{lookup_path.name}.gz")
-        if gzip_path.is_file():
-            source_path = gzip_path
-        else:
-            logging.warning("%s: lookup not found at %s", label, lookup_path)
-            return
-
-    if source_path.name.endswith(".gz"):
-        with gzip.open(source_path, "rt", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    else:
-        with source_path.open("rt", encoding="utf-8") as handle:
-            payload = json.load(handle)
-
-    tiers = Counter(
-        int(record.get(SHADE_SUBSCORE_COL_10MIN, 0))
-        for record in payload.get("features", [])
-        if isinstance(record, dict)
-    )
-    logging.info(
-        "%s shade tier distribution (%s, n=%d): tier 0=%d, tier 50=%d, tier 100=%d",
-        label,
-        SHADE_SUBSCORE_COL_10MIN,
-        sum(tiers.values()),
-        tiers.get(0, 0),
-        tiers.get(50, 0),
-        tiers.get(100, 0),
-    )
-
-
-def rescore_urban95_weighted() -> None:
+def rescore_urban95_statuses() -> None:
     _ensure_shade_si_prepared()
-
-    _log_lookup_shade_tiers(BUILDINGS_LOOKUP_JSON, "Lookup before rescore")
 
     buildings_path = _resolve_buildings_path()
     logging.info("Loading existing buildings from %s...", buildings_path)
@@ -171,37 +100,32 @@ def rescore_urban95_weighted() -> None:
 
     buildings = _drop_stale_score_columns(buildings)
 
-    logging.info("Recomputing Urban95 weighted scores (shade SI from %s)...", SHADE_SI_DIR)
-    buildings = append_weighted_urban95_scores(
+    logging.info("Recomputing Urban95 status columns (shade SI from %s)...", SHADE_SI_DIR)
+    buildings = append_urban95_statuses(
         buildings,
         shade_si_dir=SHADE_SI_DIR,
     )
 
-    _log_shade_distribution(buildings)
+    _log_status_distribution(buildings)
 
     logging.info("Writing rescored buildings to %s...", SCORED_BUILDINGS)
     write_scored_buildings(buildings, SCORED_BUILDINGS)
 
     export_web(buildings)
 
-    has_si = BUILDING_SI_FIELD in buildings.columns
-    has_shade = SHADE_SUBSCORE_COL in buildings.columns
     logging.info(
-        "Verification: summer_si=%s, %s=%s, walk horizons=%s",
-        has_si,
-        SHADE_SUBSCORE_COL,
-        has_shade,
-        [f"score_weighted_{m}min" for m in WALK_MINUTES],
+        "Verification: u95_status_10min=%s, score_expanded_10min=%s",
+        "u95_status_10min" in buildings.columns,
+        "score_expanded_10min" in buildings.columns,
     )
-    _log_lookup_shade_tiers(BUILDINGS_LOOKUP_JSON, "Lookup after rescore")
     logging.warning(
         "Rescore refreshed buildings, lookup, and companion publish layers via export_web "
         "(amenities_new, street_lights, amenities_all, trees, parks, isochrones when "
         "available). Run python -m pipeline run neighborhoods next to refresh "
         "neighborhoods.geojson, neighborhood_charts.json, and citywide_stats.json."
     )
-    logging.info("Urban95 weighted rescore complete.")
+    logging.info("Urban95 status rescore complete.")
 
 
 if __name__ == "__main__":
-    rescore_urban95_weighted()
+    rescore_urban95_statuses()

@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from core.atomic_files import commit_staged_files, staged_output_paths
+from core.geojson_utils import write_gzip_copy
 
 logger = logging.getLogger(__name__)
 
 BUILDING_LOOKUP_MINUTES = (5, 10, 15)
-BUILDING_LOOKUP_URBAN95_MINUTES = 10
 BUILDING_LOOKUP_CLEAN_POINT_KEYS = (
     "trees",
     "parks",
@@ -41,29 +41,6 @@ BUILDING_LOOKUP_EXPANDED_AMENITY_KEYS = (
     "shelters",
     "tourism",
     "transportation",
-)
-BUILDING_LOOKUP_WEIGHTED_CATEGORY_STEMS = (
-    "environmental_quality",
-    "nature",
-    "play",
-    "safety_mobility",
-    "family_services",
-)
-BUILDING_LOOKUP_WEIGHTED_SUBCATEGORY_STEMS = (
-    ("environmental_quality", "shade"),
-    ("environmental_quality", "trees"),
-    ("environmental_quality", "roads"),
-    ("nature", "parks"),
-    ("nature", "urban_nature_areas"),
-    ("play", "playgrounds"),
-    ("safety_mobility", "street_lights"),
-    ("safety_mobility", "bicycle_access"),
-    ("safety_mobility", "bus_stops"),
-    ("safety_mobility", "shelters"),
-    ("family_services", "education"),
-    ("family_services", "community"),
-    ("family_services", "business"),
-    ("family_services", "health"),
 )
 BUILDING_LOOKUP_EXACT_FIELDS = {
     "building_id",
@@ -102,16 +79,16 @@ def build_lookup_allowed_fields() -> set[str]:
         for key in BUILDING_LOOKUP_EXPANDED_AMENITY_KEYS:
             fields.add(f"amen_{key}{sfx}")
 
-    sfx = f"_{BUILDING_LOOKUP_URBAN95_MINUTES}min"
-    fields.add(f"score_weighted{sfx}")
-    for stem in BUILDING_LOOKUP_WEIGHTED_CATEGORY_STEMS:
-        fields.add(f"score_weighted_{stem}{sfx}")
-    for category_stem, subcategory_stem in BUILDING_LOOKUP_WEIGHTED_SUBCATEGORY_STEMS:
-        fields.add(f"score_weighted_sub_{category_stem}_{subcategory_stem}{sfx}")
     return fields
 
 
 BUILDING_LOOKUP_ALLOWED_FIELDS = build_lookup_allowed_fields()
+
+
+def is_u95_lookup_status(column: str) -> bool:
+    return column == "u95_status_10min" or (
+        column.startswith("u95_status_") and column.endswith("_10min")
+    )
 
 
 def manifest_entry(
@@ -214,7 +191,7 @@ def extract_centroid(feature: dict[str, Any]) -> tuple[float | None, float | Non
 def slim_building_properties(props: dict[str, Any]) -> dict[str, Any]:
     slimmed: dict[str, Any] = {}
     for key, value in props.items():
-        if key in BUILDING_LOOKUP_ALLOWED_FIELDS:
+        if key in BUILDING_LOOKUP_ALLOWED_FIELDS or is_u95_lookup_status(key):
             slimmed[key] = value
     return slimmed
 

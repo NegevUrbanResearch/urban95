@@ -38,7 +38,11 @@
     );
   }
 
-  function getNeighborhoodSurfaceColorExpression(scoreProperty) {
+  function getNeighborhoodSurfaceColorExpression(scoreProperty, metric) {
+    var statusScale = window.Urban95StatusScale;
+    if (statusScale && metric && metric.scale === "status") {
+      return statusScale.matchExpression(["get", scoreProperty || "u95_status"]);
+    }
     var scoreKey = scoreProperty || "score";
     return [
       "case",
@@ -82,13 +86,16 @@
     function getNeighborhoodAverageKey(sfx) {
       if (getScoreMode() === "weighted") {
         var metric = getActiveMetric();
-        return metric ? metric.neighborhoodAverageKey || null : null;
+        return metric ? metric.areaStatusKey || null : null;
       }
       return "avg_overall" + sfx;
     }
 
     function getNeighborhoodPercentileKey(sfx) {
-      if (getScoreMode() === "weighted") return "pct_weighted_overall_" + fixedMinutes + "min";
+      if (getScoreMode() === "weighted") {
+        var metric = getActiveMetric();
+        return metric ? metric.areaStatusKey || null : null;
+      }
       return "pct_overall" + sfx;
     }
 
@@ -100,7 +107,7 @@
     function getNeighborhoodSurfaceScorePropertyKey() {
       var metric = getActiveMetric();
       if (getScoreMode() === "weighted") {
-        return metric ? metric.surfacePropertyKey || null : null;
+        return metric ? metric.areaStatusKey || null : null;
       }
       if (getScoreMode() === "expanded") {
         return metric ? metric.surfacePropertyKey : null;

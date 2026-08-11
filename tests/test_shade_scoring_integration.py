@@ -20,7 +20,8 @@ from lib.shade_si import (
     summer_si_to_subscore,
 )
 from lib.urban95_weights import calc_environmental_quality
-from stages.urban95_scoring import append_weighted_urban95_scores
+from lib.urban95_status import attainment_from_score, status_from_attainment
+from stages.urban95_scoring import append_urban95_statuses
 
 def _box(center_x: float, center_y: float, half_size: float = 5.0) -> Polygon:
     return Polygon(
@@ -88,14 +89,14 @@ def test_calc_environmental_quality_maps_precomputed_si_to_shade_tiers(
 
     assert details["shade"] == pytest.approx(expected_shade)
     assert details["summer_si"] == pytest.approx(expected_rounded_si)
-    assert score - baseline_score == pytest.approx((expected_shade / 100.0) * 0.4 * 100)
+    assert score - baseline_score == pytest.approx(expected_shade / 3.0)
 
 
-def test_append_weighted_urban95_scores_preserves_and_exports_summer_si(tmp_path: Path):
+def test_append_urban95_statuses_preserves_and_exports_summer_si(tmp_path: Path):
     shade_dir = _write_si_layers(tmp_path, street_score=0.12, open_space_score=0.25)
     buildings = _building_at(100.0, 100.0)
 
-    result = append_weighted_urban95_scores(
+    result = append_urban95_statuses(
         buildings,
         shade_si_dir=shade_dir,
         workers=1,
@@ -104,10 +105,10 @@ def test_append_weighted_urban95_scores_preserves_and_exports_summer_si(tmp_path
     assert BUILDING_SI_FIELD in result.columns
     assert result[BUILDING_SI_FIELD].iloc[0] == pytest.approx(round_building_summer_si((0.12 + 0.25) / 2.0))
     for minutes in (5, 10, 15):
-        col = f"score_weighted_sub_environmental_quality_shade_{minutes}min"
+        col = f"u95_status_sub_environmental_quality_shade_{minutes}min"
         assert col in result.columns
-        assert result[col].iloc[0] == pytest.approx(
-            float(summer_si_to_subscore((0.12 + 0.25) / 2.0))
+        assert result[col].iloc[0] == status_from_attainment(
+            attainment_from_score(summer_si_to_subscore((0.12 + 0.25) / 2.0))
         )
 
 
@@ -115,7 +116,7 @@ def test_shade_subscore_columns_match_summer_si_to_subscore(tmp_path: Path):
     shade_dir = _write_si_layers(tmp_path, street_score=0.08, open_space_score=0.21)
     buildings = _building_at(100.0, 100.0)
 
-    result = append_weighted_urban95_scores(
+    result = append_urban95_statuses(
         buildings,
         shade_si_dir=shade_dir,
         workers=1,
@@ -123,8 +124,8 @@ def test_shade_subscore_columns_match_summer_si_to_subscore(tmp_path: Path):
 
     expected = float(summer_si_to_subscore(result[BUILDING_SI_FIELD].iloc[0]))
     for minutes in (5, 10, 15):
-        col = f"score_weighted_sub_environmental_quality_shade_{minutes}min"
-        assert result[col].iloc[0] == pytest.approx(expected)
+        col = f"u95_status_sub_environmental_quality_shade_{minutes}min"
+        assert result[col].iloc[0] == status_from_attainment(attainment_from_score(expected))
 
 
 def test_production_scoring_does_not_call_per_point_lookup(tmp_path: Path, monkeypatch):
@@ -139,14 +140,14 @@ def test_production_scoring_does_not_call_per_point_lookup(tmp_path: Path, monke
         _forbidden_lookup,
     )
 
-    result = append_weighted_urban95_scores(
+    result = append_urban95_statuses(
         buildings,
         shade_si_dir=shade_dir,
         workers=1,
     )
 
     assert result[BUILDING_SI_FIELD].iloc[0] == pytest.approx(round_building_summer_si((0.18 + 0.09) / 2.0))
-    assert result["score_weighted_sub_environmental_quality_shade_5min"].iloc[0] == pytest.approx(0.0)
+    assert result["u95_status_sub_environmental_quality_shade_5min"].iloc[0] == "disappointing"
 
 
 def test_lookup_helper_still_available_for_interactive_use():

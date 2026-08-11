@@ -109,25 +109,33 @@
     var hasExpanded = keys.some(function (key) {
       return key.indexOf("score_expanded_") === 0;
     });
-    var hasWeighted = keys.some(function (key) {
-      return key.indexOf("score_weighted_") === 0;
+    var hasUrban95Overview = keys.some(function (key) {
+      return key === "u95_status_10min";
     });
-    var hasWeightedSubscores = keys.some(function (key) {
-      return key.indexOf("score_weighted_sub_") === 0;
+    var hasUrban95Categories = keys.some(function (key) {
+      return (
+        key.indexOf("u95_status_") === 0 &&
+        key.indexOf("u95_status_sub_") !== 0 &&
+        key.indexOf("u95_status_detail_") !== 0 &&
+        key !== "u95_status_10min"
+      );
+    });
+    var hasUrban95Indicators = keys.some(function (key) {
+      return key.indexOf("u95_status_sub_") === 0;
     });
     if (!hasStreet || !hasExpanded) {
       console.warn(
         "[urban95] buildings_accessibility.geojson is missing num_street_lights_* or score_expanded_*. Legacy expanded scores and street-light percentiles need a fresh preprocess run."
       );
     }
-    if (!hasWeighted) {
+    if (!hasUrban95Overview) {
       console.warn(
-        "[urban95] buildings_accessibility.geojson has no score_weighted_* properties. Urban95 mode needs a fresh preprocess run."
+        "[urban95] buildings_accessibility.geojson has no u95_status_10min property. Urban95 mode needs a fresh preprocess run."
       );
     }
-    if (!hasWeightedSubscores) {
+    if (!hasUrban95Categories || !hasUrban95Indicators) {
       console.warn(
-        "[urban95] buildings_accessibility.geojson has no score_weighted_sub_* properties. Urban95 explain details will be partial until you run python -m pipeline run score (or rescore) and export_web."
+        "[urban95] buildings_accessibility.geojson has no complete u95_status category/direct-indicator properties. Urban95 details will be partial until you run python -m pipeline run score (or rescore) and export_web."
       );
     }
   }

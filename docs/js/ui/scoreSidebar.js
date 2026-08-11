@@ -219,50 +219,175 @@
     );
   }
 
-  function renderScoreExplainSidebarWeighted(categories, demographicContext) {
+  function renderWeightedEvidenceRows(rawEvidence) {
     var d = requireDeps();
-    var partialFilter = d.getScoreExplainPartialFilterSet();
-    var html =
-      '<div class="horizon-chart' + (partialFilter ? " score-explain-chart-partial-filter" : "") + '">';
-    categories.forEach(function (cat, idx) {
-      var pct = Math.min(100, Math.max(0, Number(cat.value) || 0));
-      var color = cat.color || palette.accent;
-      var highlighted = d.isScoreExplainCategoryFilterHighlighted(cat);
-      html += '<div class="horizon-group' + (highlighted ? " is-filter-highlight" : "") + '" data-cat-idx="' + idx + '"';
-      if (highlighted) {
-        html += ' style="--filter-highlight-color:' + d.escapeHtml(color) + '"';
-      }
-      html += ">";
-      html += '<div class="horizon-row" tabindex="0" role="button" aria-expanded="false">';
-      html +=
-        d.renderHorizonLabelCell(cat.label, d.getWeightedCategoryIcon(cat.stem), "", color);
-      html +=
-        '<div class="horizon-bar-container" aria-hidden="true"><div class="horizon-bar-fill" style="' +
-        d.horizonBarFillStyle(color, pct) +
-        '"></div></div>';
-      html +=
-        '<span class="horizon-score-cell"><span class="horizon-score">' +
-        d.escapeHtml(d.formatScoreInteger(Number(cat.value) || 0)) +
-        '</span><span class="horizon-score-weight">&times;' +
-        d.escapeHtml((cat.weight * 100).toFixed(0)) +
-        "%</span></span></div>";
-      html += '<div class="horizon-subs"><div class="horizon-subs-inner">';
-      var subrows = cat.subrows || [];
-      subrows.forEach(function (sub, subIdx) {
-        var sv = sub.value != null ? Math.min(100, Math.max(0, Number(sub.value) || 0)) : 0;
-        html += '<div class="horizon-sub-row">';
-        html += d.renderHorizonSubLabelCell(sub.label, d.getWeightedSubcategoryIcon(sub.stem), null);
-        html +=
-          '<div class="horizon-sub-bar-container" aria-hidden="true"><div class="horizon-sub-bar-fill" style="' +
-          d.horizonSubBarFillStyle(color, sv, subIdx, subrows.length) +
-          '"></div></div>';
-        html +=
-          '<span class="horizon-score">' +
-          d.escapeHtml(sub.value != null ? d.formatScoreInteger(sv) : "-") +
-          "</span></div>";
-      });
-      html += "</div></div></div>";
+    var html = "";
+    (rawEvidence || []).forEach(function (evidence) {
+      html += '<div class="urban95-status-evidence"><span>' + d.escapeHtml(evidence.label) +
+        '</span><strong>' + d.escapeHtml(String(evidence.value)) +
+        (evidence.unit ? " " + d.escapeHtml(evidence.unit) : "") + "</strong></div>";
     });
+    return html;
+  }
+
+  function statusToken(status) {
+    var token = status && status.token ? String(status.token) : "unknown";
+    return /^(disappointing|functioning|thriving)$/.test(token) ? token : "unknown";
+  }
+
+  function renderStatusSignal(status, compact) {
+    var d = requireDeps();
+    var token = statusToken(status);
+    var label = status && status.label ? status.label : "Unknown";
+    var classes = "status-signal " + (compact ? "status-signal--row" : "status-signal--hero");
+    var html = '<span class="urban95-status-readout urban95-status-readout--' + token +
+      '" aria-label="Status: ' + d.escapeHtml(label) + '">';
+    html += '<span class="' + classes + '" aria-hidden="true">';
+    ["disappointing", "functioning", "thriving"].forEach(function (lamp) {
+      html += '<i class="status-signal-lamp status-signal-lamp--' + lamp +
+        (token === lamp ? " is-active" : "") + '"></i>';
+    });
+    html += '</span><span class="urban95-status-readout-label' +
+      (token === "unknown" ? " is-unknown" : "") + '">' + d.escapeHtml(label) + "</span></span>";
+    return html;
+  }
+
+  function renderStatusTag(status) {
+    var d = requireDeps();
+    var token = statusToken(status);
+    var label = status && status.label ? status.label : "Unknown";
+    return '<span class="urban95-status-tag urban95-status-tag--' + d.escapeHtml(token) +
+      '"><span class="status-signal status-signal--row" aria-hidden="true">' +
+      ["disappointing", "functioning", "thriving"].map(function (lamp) {
+        return '<i class="status-signal-lamp status-signal-lamp--' + lamp +
+          (token === lamp ? " is-active" : "") + '"></i>';
+      }).join("") + '</span><span class="urban95-status-tag-label">' +
+      d.escapeHtml(label) + "</span></span>";
+  }
+
+  function shadeInterpretation(rawEvidence) {
+    var evidence = (rawEvidence || []).find(function (item) {
+      return item && /summer.*si/i.test(String(item.label || ""));
+    });
+    var value = evidence ? Number(evidence.value) : NaN;
+    if (!Number.isFinite(value)) return null;
+    if (value < 0.1) return "Severe lack of shade";
+    if (value < 0.2) return "Significant lack of shade";
+    if (value < 0.4) return "Needs improvement";
+    if (value < 0.6) return "Good shade";
+    return "Excellent shade";
+  }
+
+  function renderShadeScale(rawEvidence) {
+    var d = requireDeps();
+    var evidence = (rawEvidence || []).find(function (item) {
+      return item && /summer.*si/i.test(String(item.label || ""));
+    });
+    var value = evidence ? Number(evidence.value) : NaN;
+    if (!Number.isFinite(value)) return renderWeightedEvidenceRows(rawEvidence);
+    var clamped = Math.max(0, Math.min(1, value));
+    var bucket = shadeInterpretation(rawEvidence) || "Unknown";
+    var segments = [
+      [10, "#e81014", "0.0", "Severe lack"],
+      [10, "#fb9d3b", "0.1", "Significant lack"],
+      [20, "#fafa64", "0.2–0.3", "Needs improvement"],
+      [20, "#7da788", "0.4–0.5", "Good shade"],
+      [40, "#388393", "0.6–1.0", "Excellent shade"],
+    ];
+    var html = '<div class="urban95-shade-scale" aria-label="Rounded summer SI ' +
+      d.escapeHtml(String(value)) + ", " + d.escapeHtml(bucket) + '">';
+    html += '<div class="urban95-shade-scale-head"><span>Official SI interpretation</span><strong>' +
+      d.escapeHtml(bucket) + ' <small>SI ' + d.escapeHtml(String(value)) + "</small></strong></div>";
+    html += '<div class="urban95-shade-scale-track" aria-hidden="true">';
+    segments.forEach(function (segment) {
+      html += '<i style="width:' + segment[0] + '%;background:' + segment[1] + '"></i>';
+    });
+    html += '<b class="urban95-shade-scale-pointer" style="left:' + d.escapeHtml(String(clamped * 100)) + '%"></b></div>';
+    html += '<div class="urban95-shade-scale-labels" aria-hidden="true">';
+    segments.forEach(function (segment) {
+      html += '<span style="width:' + segment[0] + '%" title="' + d.escapeHtml(segment[3]) + '">' +
+        d.escapeHtml(segment[2]) + "</span>";
+    });
+    return html + "</div></div>";
+  }
+
+  function renderWeightedSubrowDetails(subrow, activeMetric) {
+    var d = requireDeps();
+    var subActive = activeMetric && activeMetric.selectedWeightedSubStem === subrow.stem;
+    var details = subrow.details || [];
+    function isDetailActive(detail) {
+      return activeMetric && activeMetric.kind === "diagnostic-access" &&
+        (activeMetric.selectedWeightedDetailStem
+          ? activeMetric.selectedWeightedDetailStem === detail.stem
+          : activeMetric.label === detail.label);
+    }
+    var rowHtml = '<div class="urban95-status-row urban95-status-indicator' +
+      (subActive ? " is-active-status-row" : "") + '" data-status-subrow="' +
+      d.escapeHtml(subrow.stem || "") + '"><span class="urban95-status-row-name">' +
+      d.renderHorizonLabelCell(subrow.label, d.getWeightedSubcategoryIcon(subrow.stem), "", null, {
+        iconColor: d.scoreExplainIconNeutral, colorLabelText: false,
+      }) + '</span>' + renderStatusTag(subrow.status) + "</div>";
+    var evidenceHtml = subrow.stem === "shade"
+      ? renderShadeScale(subrow.rawEvidence)
+      : renderWeightedEvidenceRows(subrow.rawEvidence);
+    if (!details.length) return rowHtml + evidenceHtml;
+
+    var nestedOpen = subActive || details.some(isDetailActive);
+    var html = '<details class="urban95-status-subcategory-disclosure"' +
+      (nestedOpen ? " open" : "") + '><summary aria-label="' +
+      d.escapeHtml(subrow.label + " inner indicators") + '">' + rowHtml +
+      '</summary><div class="urban95-status-diagnostic-list">' + evidenceHtml;
+    details.forEach(function (detail) {
+      var detailActive = isDetailActive(detail);
+      html += '<div class="urban95-status-row urban95-status-diagnostic' +
+        (detailActive ? " is-active-status-row" : "") + '" data-status-detail="' +
+        d.escapeHtml(detail.stem || "") + '"><span class="urban95-status-diagnostic-name"><i aria-hidden="true"></i><span>' +
+        d.escapeHtml(detail.label) + '</span></span>' + renderStatusTag(detail.status) + "</div>";
+      html += renderWeightedEvidenceRows(detail.rawEvidence);
+    });
+    return html + "</div></details>";
+  }
+
+  function renderScoreExplainSidebarWeighted(breakdown, demographicContext) {
+    var d = requireDeps();
+    var metric = typeof d.getActiveMetric === "function" ? d.getActiveMetric() : null;
+    var categories = breakdown.weightedCategories || [];
+    var isOverview = !metric || metric.kind === "weighted-overall";
+    var status = breakdown.overallStatus || { label: "Unknown", color: "#9ca3af" };
+    if (!isOverview) {
+      if (breakdown.activeStatus) status = breakdown.activeStatus;
+      var selected = categories.find(function (category) {
+        return category.stem === metric.selectedWeightedStem;
+      });
+      if (metric.kind === "weighted-category" && selected) status = selected.status;
+      if (metric.kind === "weighted-subcategory" && selected) {
+        var sub = (selected.subrows || []).find(function (row) {
+          return row.stem === metric.selectedWeightedSubStem;
+        });
+        if (sub) status = sub.status;
+      }
+    }
+    var html = '<div class="urban95-status-detail">';
+    categories.forEach(function (category) {
+        var categoryActive = !isOverview && metric &&
+          (category.stem === metric.selectedWeightedStem || category.stem === metric.parentStem);
+        var categoryHighlighted = categoryActive || d.isScoreExplainCategoryFilterHighlighted(category);
+        var disclosureLabel = category.label + " indicator details";
+        html += '<details class="urban95-status-category-disclosure' +
+          (categoryHighlighted ? " is-filter-highlight" : "") +
+          (!isOverview && !categoryActive ? " is-filter-muted" : "") + '"' +
+          (categoryActive ? " open" : "") + ' data-status-category="' +
+          d.escapeHtml(category.stem || "") + '" style="--category-color:' +
+          d.escapeHtml(category.color || palette.accent) + '">';
+        html += '<summary aria-label="' + d.escapeHtml(disclosureLabel) + '"><span class="urban95-category-heading">' +
+          d.renderHorizonLabelCell(category.label, d.getWeightedCategoryIcon(category.stem), "", category.color) +
+          '</span>' + renderStatusTag(category.status) + "</summary>";
+        html += '<div class="urban95-status-category-disclosure-body urban95-status-rows">';
+        (category.subrows || []).forEach(function (subrow) {
+          html += renderWeightedSubrowDetails(subrow, metric);
+        });
+        html += "</div></details>";
+      });
     html += "</div>";
     html += renderBuildingDemographicContextNote(demographicContext);
     html += renderUrban95ReferenceRadiusNote();
@@ -333,9 +458,8 @@
     var d = requireDeps();
     if (d.getScoreMode() === "weighted") {
       var metric = typeof d.getActiveMetric === "function" ? d.getActiveMetric() : null;
-      if (!metric || metric.kind === "weighted-overall") return "Score";
-      if (metric.kind === "diagnostic-access") return metric.label + " access";
-      return metric.label ? metric.label + " score" : "Score";
+      if (!metric || metric.kind === "weighted-overall") return "Urban95";
+      return metric.label ? metric.label + " status" : "Urban95";
     }
     return "Citywide percentile";
   }
@@ -391,24 +515,17 @@
     }
 
     if (weightedMode) {
-      var scoreVal = null;
-      if (metrics && metrics.overallScore != null) scoreVal = Number(metrics.overallScore);
-      if ((scoreVal == null || !Number.isFinite(scoreVal)) && breakdown && breakdown.overallScoreLabel != null) {
-        scoreVal = Number(String(breakdown.overallScoreLabel).replace(/,/g, ""));
-      }
-      if (!Number.isFinite(scoreVal)) scoreVal = 0;
-      scoreVal = Math.min(100, Math.max(0, scoreVal));
+      var activeMetric = typeof d.getActiveMetric === "function" ? d.getActiveMetric() : null;
+      var isOverview = !activeMetric || activeMetric.kind === "weighted-overall";
+      var status = breakdown && !isOverview && breakdown.activeStatus
+        ? breakdown.activeStatus
+        : breakdown && breakdown.overallStatus
+          ? breakdown.overallStatus
+        : { label: "Unknown", color: "#9ca3af" };
       var heroHtml = '<div class="percentile-summary score-explain-sidebar-hero-compact">';
       heroHtml +=
         '<p class="score-explain-hero-kicker">' + d.escapeHtml(getScoreExplainHeroLabel()) + "</p>";
-      heroHtml +=
-        '<div class="percentile-value">' +
-        d.escapeHtml(d.formatScoreInteger(scoreVal)) +
-        "<em>/100</em></div>";
-      heroHtml +=
-        '<div class="percentile-meter" aria-hidden="true"><div class="percentile-meter-fill" style="' +
-        d.heroPercentileMeterFillStyle(scoreVal) +
-        '"></div></div>';
+      heroHtml += '<div class="urban95-status-hero">' + renderStatusSignal(status, false) + "</div>";
       heroHtml += "</div>";
       heroEl.innerHTML = heroHtml;
       noteEl.innerHTML = "";
@@ -447,26 +564,6 @@
   function renderScoreExplainSidebarFormula(breakdown) {
     var d = requireDeps();
     if (breakdown && breakdown.formulaLine) {
-      if (d.getScoreMode() === "weighted") {
-      return (
-        '<details class="score-explain-formula-fold score-explain-formula-bottom"><summary>Score equation</summary>' +
-        '<div class="score-explain-formula-tiles" aria-label="' +
-        d.escapeHtml(breakdown.formulaLine) +
-        '">' +
-          '<span class="formula-chip formula-chip-env">20% <b>Environmental</b></span>' +
-          '<span class="formula-plus">+</span>' +
-          '<span class="formula-chip formula-chip-nature">15% <b>Nature</b></span>' +
-          '<span class="formula-plus">+</span>' +
-          '<span class="formula-chip formula-chip-play">15% <b>Play</b></span>' +
-          '<span class="formula-plus">+</span>' +
-          '<span class="formula-chip formula-chip-safety">25% <b>Safety</b></span>' +
-          '<span class="formula-plus">+</span>' +
-          '<span class="formula-chip formula-chip-family">25% <b>Family</b></span>' +
-          "</div>" +
-          renderMetricMethodologyNote() +
-          "</details>"
-        );
-      }
       return (
         '<div class="score-explain-hero-note score-explain-formula-bottom score-explain-formula-card"><p>' +
         d.escapeHtml(breakdown.formulaLine) +
@@ -498,15 +595,16 @@
     void metrics;
     var d = requireDeps();
     var demographicContext = ctx && ctx.demographicContext ? ctx.demographicContext : null;
-    var unavailable =
-      '<p class="score-explain-empty">Score breakdown is unavailable for the current selection.</p>';
+    var unavailable = d.getScoreMode() === "weighted"
+      ? '<p class="score-explain-empty">Status details are unavailable for the current selection.</p>'
+      : '<p class="score-explain-empty">Score breakdown is unavailable for the current selection.</p>';
 
     if (d.getScoreMode() === "weighted") {
       if (!breakdown || !Array.isArray(breakdown.weightedCategories) || breakdown.weightedCategories.length === 0) {
         return unavailable;
       }
       return (
-        renderScoreExplainSidebarWeighted(breakdown.weightedCategories, demographicContext) +
+        renderScoreExplainSidebarWeighted(breakdown, demographicContext) +
         renderScoreExplainSidebarFormula(breakdown)
       );
     }
@@ -741,7 +839,9 @@
     if (!breakdown && !metrics) {
       if (emptyEl) {
         emptyEl.hidden = !!demographicHtml;
-        emptyEl.textContent = "Score data unavailable";
+        emptyEl.textContent = d.getScoreMode() === "weighted"
+          ? "Status data unavailable"
+          : "Score data unavailable";
       }
       root.innerHTML = demographicHtml;
       populateScoreExplainSidebarHeader(null, null);
@@ -817,7 +917,7 @@
       }
       if (emptyEl) {
         emptyEl.hidden = preserveExistingDetail;
-        emptyEl.textContent = preserveExistingDetail ? "" : "Loading score details...";
+        emptyEl.textContent = preserveExistingDetail ? "" : "Loading status details...";
       }
       if (!preserveExistingDetail) {
         populateScoreExplainSidebarHeader(null, null);

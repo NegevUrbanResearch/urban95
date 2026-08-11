@@ -198,8 +198,9 @@ test("control sidebar markup renders official shade bucket legend from registry 
   assert.doesNotMatch(html, /legend-item-chip/);
 });
 
-test("control sidebar markup renders weighted shade legend with standard score scale", () => {
+test("control sidebar markup renders the categorical Urban95 shade status legend", () => {
   const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/ui/controlSidebarMarkup.js", browser);
   const scoreModel = browser.window.Urban95ScoreModel;
@@ -211,14 +212,20 @@ test("control sidebar markup renders weighted shade legend with standard score s
   assert.match(metric.explainNote, /0\.15 -> 0\.2/i);
   assert.match(metric.explainNote, /0\.35 -> 0\.4/i);
   assert.match(metric.explainNote, /300 m area-weighted summer_SI/i);
-  assert.match(metric.explainNote, /0\.20-<0\.40 = 50/i);
+  assert.match(metric.explainNote, /0\.20-<0\.40 = Functioning/i);
   assert.match(metric.explainNote, />=0\.60 excellent shade/i);
 
   const html = markup.renderLegendHtml(metric, null, "");
 
   assert.match(html, /Shade/);
-  assert.match(html, /Urban95 · weighted score \(0-100\)/);
-  assert.match(html, /<span>0<\/span><span>25<\/span><span>50<\/span><span>75<\/span><span>100<\/span>/);
+  assert.match(html, /Urban95/);
+  assert.doesNotMatch(html, /Urban95 status/);
+  ["Disappointing", "Functioning", "Thriving"].forEach(function (label) {
+    assert.match(html, new RegExp(label));
+  });
+  assert.doesNotMatch(html, /Unknown/);
+  assert.doesNotMatch(html, /weighted score|0-100/);
+  assert.doesNotMatch(html, /<span>0<\/span><span>25<\/span><span>50<\/span><span>75<\/span><span>100<\/span>/);
   assert.doesNotMatch(html, /Rounded 300 m building SI/);
 });
 
@@ -267,6 +274,7 @@ test("app.js wires isCanonicalLayerVisible for registry-driven companion legends
 
 test("score explain sidebar includes compact shade methodology note", () => {
   const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   const scoreSidebarSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "ui", "scoreSidebar.js"),
@@ -283,7 +291,9 @@ test("score explain sidebar includes compact shade methodology note", () => {
   assert.match(metric.explainNote, /0\.15 -> 0\.2/i);
   assert.match(metric.explainNote, /0\.35 -> 0\.4/i);
   assert.match(metric.explainNote, /official SI interpretation bands/i);
-  assert.match(metric.explainNote, /Urban95 keeps a ternary/i);
+  assert.match(metric.explainNote, /Urban95 classifies .* directly/i);
+  assert.match(metric.explainNote, /<0\.20 = Disappointing/i);
+  assert.match(metric.explainNote, />=0\.40 = Thriving/i);
   assert.doesNotMatch(scoreSidebarSource, /u95\.sub\.environmental_quality\.shade/);
   assert.doesNotMatch(controlSidebarMarkupSource, /u95\.sub\.environmental_quality\.shade/);
 });
@@ -302,6 +312,7 @@ test("mapShell consumes static polygon companion factory without shade-only bran
 
 test("weighted shade show action maps to canonical shade-si layer", () => {
   const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
   const scoreModel = browser.window.Urban95ScoreModel;
@@ -481,7 +492,7 @@ test("map events show rounded building shade tooltip when shade heatmap is activ
 
   assert.match(tooltip.textContent, /Shade Index:\s*0\.2/);
   assert.match(tooltip.textContent, /Class:\s*Needs improvement/);
-  assert.match(tooltip.textContent, /Layer:\s*Building weighted average/);
+  assert.match(tooltip.textContent, /Layer:\s*300 m area-weighted shade value/);
 });
 
 test("map events clear stale building shade tooltip when active heatmap is no longer shade", () => {

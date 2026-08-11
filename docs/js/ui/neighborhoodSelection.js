@@ -61,6 +61,13 @@
       return { kind: "none" };
     }
 
+    function revalidate() {
+      if ((slots[0] && !isComparable(slots[0])) || (slots[1] && !isComparable(slots[1]))) {
+        return clear();
+      }
+      return getKindResult();
+    }
+
     function select(feature) {
       var name = featureName(feature);
       if (name == null || name === "") {
@@ -103,6 +110,7 @@
       clear: clear,
       isComparing: isComparing,
       getPrimaryFeature: getPrimaryFeature,
+      revalidate: revalidate,
     };
   }
 

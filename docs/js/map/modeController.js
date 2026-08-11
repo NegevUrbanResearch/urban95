@@ -382,7 +382,7 @@
             map.moveLayer("neighborhoods-surface", buildingsFillLayerId);
           }
           map.setPaintProperty("neighborhoods-surface", "fill-opacity", houseModeHexOpacity);
-          map.setFilter("neighborhoods-surface", ["==", ["to-number", ["get", "has_buildings"], 0], 1]);
+          map.setFilter("neighborhoods-surface", null);
           var metric = getActiveMetric ? getActiveMetric() : null;
           var heatmapVisible = !!metric;
           map.setLayoutProperty(

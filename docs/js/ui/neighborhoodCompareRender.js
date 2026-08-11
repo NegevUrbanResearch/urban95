@@ -51,13 +51,6 @@
     return String(scoreMinutes) + "min";
   }
 
-  function isCategoryFilterActive(activeMetric) {
-    if (!activeMetric) return false;
-    if (activeMetric.kind === "weighted-overall") return false;
-    if (activeMetric.kind && activeMetric.kind.indexOf("weighted") === 0) return true;
-    return false;
-  }
-
   function heNameHtml(escapeHtml, name) {
     return (
       '<span class="hood-he" dir="rtl" lang="he">' + escapeHtml(name) + "</span>"
@@ -354,69 +347,6 @@
     return html;
   }
 
-  function buildWeightedCompareRows(propsA, propsB, cityStats, suffix) {
-    var scoreModel = window.Urban95ScoreModel;
-    var categories = (scoreModel && scoreModel.WEIGHTED_CATEGORY_COMPONENTS) || [];
-    var subMap = (scoreModel && scoreModel.WEIGHTED_SUBCATEGORY_COMPONENTS) || {};
-    var rows = [];
-    categories.forEach(function (category) {
-      var catKey = "avg_score_weighted_" + category.stem + suffix;
-      var catA = Number(propsA && propsA[catKey]);
-      var catB = Number(propsB && propsB[catKey]);
-      var catCity = Number(cityStats && cityStats[catKey]);
-      if (Number.isFinite(catA) || Number.isFinite(catB)) {
-        rows.push({
-          kind: "category",
-          categoryStem: category.stem,
-          subStem: null,
-          label: category.label,
-          valueA: Number.isFinite(catA) ? catA : 0,
-          valueB: Number.isFinite(catB) ? catB : 0,
-          city: Number.isFinite(catCity) ? catCity : null,
-          gap: Math.abs((Number.isFinite(catA) ? catA : 0) - (Number.isFinite(catB) ? catB : 0)),
-          hasData:
-            !!(propsA && Object.prototype.hasOwnProperty.call(propsA, catKey)) ||
-            !!(propsB && Object.prototype.hasOwnProperty.call(propsB, catKey)),
-        });
-      }
-      var subs = subMap[category.stem] || [];
-      subs.forEach(function (sub) {
-        var key = "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + suffix;
-        var a = Number(propsA && propsA[key]);
-        var b = Number(propsB && propsB[key]);
-        var city = Number(cityStats && cityStats[key]);
-        var hasData =
-          !!(propsA && Object.prototype.hasOwnProperty.call(propsA, key)) ||
-          !!(propsB && Object.prototype.hasOwnProperty.call(propsB, key));
-        if (!hasData) return;
-        rows.push({
-          kind: "subcategory",
-          categoryStem: category.stem,
-          subStem: sub.stem,
-          label: category.label + " \u00b7 " + sub.label,
-          valueA: Number.isFinite(a) ? a : 0,
-          valueB: Number.isFinite(b) ? b : 0,
-          city: Number.isFinite(city) ? city : null,
-          gap: Math.abs((Number.isFinite(a) ? a : 0) - (Number.isFinite(b) ? b : 0)),
-          hasData: hasData,
-        });
-      });
-    });
-    return rows;
-  }
-
-  function filterWeightedRows(rows, activeMetric) {
-    if (!isCategoryFilterActive(activeMetric)) return rows;
-    var stem = activeMetric.selectedWeightedStem;
-    var subStem = activeMetric.selectedWeightedSubStem;
-    if (!stem) return rows;
-    return rows.filter(function (row) {
-      if (row.categoryStem !== stem) return false;
-      if (subStem) return row.subStem === subStem || (row.kind === "category" && !row.subStem);
-      return true;
-    });
-  }
-
   function buildInventoryCompareRows(invA, invB, getAmenityConfig) {
     var keys = {};
     Object.keys(invA || {}).forEach(function (key) {
@@ -617,7 +547,7 @@
     }
   }
 
-  function renderWeighted(state, host) {
+  function renderStatusCompare(state, host, activeMetric) {
     var featureA = state.slots[0];
     var featureB = state.slots[1];
     var propsA = featureA.properties || {};
@@ -625,140 +555,65 @@
     var nameA = nameOf(featureA);
     var nameB = nameOf(featureB);
     var escapeHtml = host.escapeHtml;
-    var formatMetricNumber = host.formatMetricNumber;
-    var formatScoreInteger = host.formatScoreInteger;
-    var sfx = "_10min";
-    var activeMetric = host.getActiveMetric ? host.getActiveMetric() : null;
-    var filterActive = isCategoryFilterActive(activeMetric);
+    var renderComposition = host.renderStatusComposition;
+    var chipsHtml = buildPairChipsHtml(escapeHtml, nameA, nameB);
+    var kicker = (activeMetric && activeMetric.label) || "All indicators overview";
+    var statusSummaryLabel = typeof host.statusSummaryLabel === "function"
+      ? host.statusSummaryLabel
+      : function () { return null; };
+    var labelA = statusSummaryLabel(propsA, activeMetric) || "Summary unavailable";
+    var labelB = statusSummaryLabel(propsB, activeMetric) || "Summary unavailable";
+    var spineHtml =
+      '<div class="percentile-summary score-explain-sidebar-hero-compact hood-compare-hero"><p class="score-explain-hero-kicker">' +
+      escapeHtml(kicker) + "</p><div class=\"hood-compare-statuses\"><span class=\"hood-compare-slot-a\">" +
+      escapeHtml(labelA) + "</span><span class=\"hood-compare-slot-b\">" +
+      escapeHtml(labelB) + "</span></div></div>";
+    populateShell(host, chipsHtml, spineHtml);
 
-    host.loadCitywideStats().then(function () {
-      if (host.isStale && host.isStale()) return;
-      return host.loadNeighborhoodChartsPayload().then(function (chartsPayload) {
-        if (host.isStale && host.isStale()) return;
-        var citywideStats = host.getCitywideStats() || {};
-        var ranking = citywideStats.neighborhood_ranking_weighted;
-        var scoreA = host.getWeightedNeighborhoodMetricValue(propsA, sfx, activeMetric);
-        var scoreB = host.getWeightedNeighborhoodMetricValue(propsB, sfx, activeMetric);
-        var cityScore = host.getWeightedNeighborhoodMetricValue(
-          citywideStats,
-          sfx,
-          activeMetric,
-          ranking
-        );
-        var hasMetricData =
-          typeof host.hasWeightedNeighborhoodMetricData === "function"
-            ? host.hasWeightedNeighborhoodMetricData
-            : null;
-        var missingWeightedMetricData = !!(
-          activeMetric &&
-          hasMetricData &&
-          (
-            !hasMetricData(activeMetric, propsA) ||
-            !hasMetricData(activeMetric, propsB) ||
-            !hasMetricData(activeMetric, citywideStats, ranking)
-          )
-        );
-        var scoresAvailable =
-          Number.isFinite(Number(scoreA)) &&
-          Number.isFinite(Number(scoreB)) &&
-          Number.isFinite(Number(cityScore));
-
-        // Urban95 has no walk-time control — do not append a fake "(10-min)".
-        var kicker =
-          !activeMetric || activeMetric.kind === "weighted-overall"
-            ? "Urban95 score"
-            : (activeMetric.label || "Urban95") + " score";
-
-        var chipsHtml = buildPairChipsHtml(escapeHtml, nameA, nameB);
-        var spineHtml =
-          missingWeightedMetricData || !scoresAvailable
-            ? buildUnavailableHeroHtml(escapeHtml, kicker)
-            : buildHeroHtml(
-                escapeHtml,
-                formatScoreInteger,
-                scoreA,
-                scoreB,
-                cityScore,
-                kicker,
-                nameA,
-                nameB,
-                { unitLabel: "/100", cityLabel: "City avg" }
-              );
-
-        populateShell(host, chipsHtml, spineHtml);
-
-        var allRows = buildWeightedCompareRows(propsA, propsB, citywideStats, sfx);
-        var focusRows = filterWeightedRows(allRows, activeMetric);
-        var showingPartial = filterActive && focusRows.length < allRows.length;
-        var ledgerRows = showingPartial ? focusRows : allRows;
-        var distA = lookupDistribution(
-          chartsPayload,
-          "distributions_weighted",
-          nameA,
-          "10min"
-        );
-        var distB = lookupDistribution(
-          chartsPayload,
-          "distributions_weighted",
-          nameB,
-          "10min"
-        );
-        var hasDist = !!(distA && distB);
-
-        var bodyHtml = "";
-        if (!missingWeightedMetricData && scoresAvailable) {
-          var avgBuildings = avgNeighborhoodBuildingCount(citywideStats);
-          var summaryCards = [
-            {
-              value: String(buildingCountOf(featureA)),
-              label: "Buildings",
-              sublabel: nameA,
-              sublabelIsHebrew: true,
-              valueClass: "hood-compare-slot-a",
-            },
-            {
-              value: String(buildingCountOf(featureB)),
-              label: "Buildings",
-              sublabel: nameB,
-              sublabelIsHebrew: true,
-              valueClass: "hood-compare-slot-b",
-            },
-            {
-              value: formatScoreInteger(cityScore),
-              label: "City score avg",
-              valueClass: "hood-compare-slot-city",
-            },
-          ];
-          if (avgBuildings != null) {
-            summaryCards.push({
-              value: String(avgBuildings),
-              label: "Avg buildings / neighborhood",
-              valueClass: "hood-compare-slot-city",
-            });
-          }
-          bodyHtml += buildSummaryHtml(escapeHtml, summaryCards);
-        }
-        bodyHtml += buildHistSectionHtml(escapeHtml, hasDist, filterActive);
-        bodyHtml += buildTopGapsHtml(escapeHtml, formatMetricNumber, ledgerRows, nameA, nameB);
-        bodyHtml += buildGapLedgerHtml(escapeHtml, formatMetricNumber, ledgerRows, {
-          title: showingPartial ? "Gap ledger (selected metric)" : "Gap ledger",
-          scaleMax: 100,
-          showCity: true,
-          nameA: nameA,
-          nameB: nameB,
-        });
-        if (showingPartial) {
-          bodyHtml += buildDisclosureHtml(escapeHtml, allRows, formatMetricNumber, {
-            summary: "Show full Urban95 comparison",
-            scaleMax: 100,
-          });
-        }
-
-        finishRender(host, bodyHtml, function () {
-          if (hasDist) bindDualHistogram(host, distA, distB, nameA, nameB);
-        });
+    var bodyHtml = '<div class="hood-compare-status-category">';
+    bodyHtml += '<div class="cw-section"><div class="cw-section-title">' +
+      escapeHtml(nameA) + "</div>" + renderComposition({ escapeHtml: escapeHtml }, propsA, activeMetric) + "</div>";
+    bodyHtml += '<div class="cw-section"><div class="cw-section-title">' +
+      escapeHtml(nameB) + "</div>" + renderComposition({ escapeHtml: escapeHtml }, propsB, activeMetric) + "</div>";
+    bodyHtml += "</div>";
+    if (activeMetric.kind === "weighted-overall") {
+      var registry = window.Urban95ScoreModel && window.Urban95ScoreModel.buildWeightedMetricRegistry
+        ? window.Urban95ScoreModel.buildWeightedMetricRegistry()
+        : {};
+      var categories = Object.keys(registry).map(function (id) { return registry[id]; }).filter(function (metric) {
+        return metric && metric.kind === "weighted-category";
       });
-    });
+      bodyHtml += '<div class="cw-section"><div class="cw-section-title">Category status compositions</div>';
+      categories.forEach(function (metric) {
+        bodyHtml += '<div class="u95-status-category"><strong>' + escapeHtml(metric.label) + "</strong>" +
+          '<div class="hood-compare-status-category"><div>' + renderComposition({ escapeHtml: escapeHtml }, propsA, metric) +
+          "</div><div>" + renderComposition({ escapeHtml: escapeHtml }, propsB, metric) + "</div></div></div>";
+      });
+      bodyHtml += "</div>";
+    }
+    finishRender(host, bodyHtml);
+  }
+
+  function renderWeighted(state, host) {
+    var activeMetric = host.getActiveMetric ? host.getActiveMetric() : null;
+    if (activeMetric && activeMetric.scale === "status") {
+      renderStatusCompare(state, host, activeMetric);
+      return;
+    }
+    var featureA = state.slots[0];
+    var featureB = state.slots[1];
+    var nameA = nameOf(featureA);
+    var nameB = nameOf(featureB);
+    var escapeHtml = host.escapeHtml;
+    populateShell(
+      host,
+      buildPairChipsHtml(escapeHtml, nameA, nameB),
+      buildUnavailableHeroHtml(escapeHtml, "Urban95")
+    );
+    finishRender(
+      host,
+      '<div class="cw-section"><p class="sidebar-section-hint">Summary unavailable</p></div>'
+    );
   }
 
   function renderExpanded(state, host) {

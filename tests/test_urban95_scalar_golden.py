@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 import pytest
 from shapely import make_valid
 from shapely.geometry import LineString, Point, Polygon, box
@@ -356,7 +357,7 @@ def test_frozen_street_light_union_coverage_and_tiers_match_scalar():
             case["expected"]["illuminated_percentage"], abs=tolerance, rel=0.0
         )
         assert details["street_lights"] == case["expected"]["street_lights_subscore"]
-        assert category == case["expected"]["isolated_category_score"]
+        assert category == case["expected"]["street_lights_subscore"] / 4.0
 
 
 def test_frozen_park_source_area_presence_and_edge_semantics_match_scalar():
@@ -398,10 +399,14 @@ def test_frozen_service_distance_count_speed_and_weight_branches_match_scalar():
     fixture = _load_fixture()
     for case in fixture["case_groups"]["service_thresholds"]:
         category, details = functions[case["function"]](Point(case["point"]), _layers(case["layers"]))
-        _assert_nested_exact(
-            {"category_score": category, "details": details},
-            case["expected"],
+        _assert_nested_exact(details, case["expected"]["details"])
+        from lib.urban95_status import STATUS_HIERARCHY, attainment_from_score, equal_mean
+
+        expected_attainment = equal_mean(
+            attainment_from_score(details[child])
+            for child in STATUS_HIERARCHY[case["function"]]
         )
+        assert category == expected_attainment * 100.0
 
 
 def test_frozen_shade_sanitization_overlap_order_weighting_and_storage_match_scalar():
@@ -481,8 +486,8 @@ def test_frozen_si_half_up_project_and_official_boundaries_match_scalar():
 
 def _published_scalar_row(case: dict) -> dict:
     from core.geo_io import WALK_MINUTES
+    from lib.shade_si import round_building_summer_si
     from lib.urban95_weights import calculate_master_index
-    from stages.urban95_scoring import WEIGHTED_CATEGORY_STEMS, _weighted_component_stem
 
     result = calculate_master_index(
         case["point"][0],
@@ -490,21 +495,10 @@ def _published_scalar_row(case: dict) -> dict:
         _layers(case["layers"]),
         precomputed={"summer_si": _decode_scalar_value(case["precomputed_summer_si"])},
     )
-    scalar_row = {"summer_si": result["subcategory_scores"]["Environmental Quality"]["summer_si"]}
+    scalar_row = {"summer_si": round_building_summer_si(_decode_scalar_value(case["precomputed_summer_si"]))}
     for minutes in WALK_MINUTES:
         suffix = f"_{minutes}min"
-        scalar_row[f"score_weighted{suffix}"] = result["final_index"]
-        for category_name, category_stem in WEIGHTED_CATEGORY_STEMS.items():
-            scalar_row[f"score_weighted_{category_stem}{suffix}"] = result["category_scores"][
-                category_name
-            ]
-            for subcategory_name, value in result["subcategory_scores"][category_name].items():
-                if subcategory_name == "summer_si":
-                    continue
-                subcategory_stem = _weighted_component_stem(subcategory_name)
-                scalar_row[
-                    f"score_weighted_sub_{category_stem}_{subcategory_stem}{suffix}"
-                ] = value
+        scalar_row[f"u95_status{suffix}"] = result["overview_status"]
     return {"master_result": result, "published_columns": scalar_row}
 
 
@@ -521,7 +515,7 @@ def test_frozen_complete_rows_match_every_scalar_intermediate_and_5_10_15_copy_c
             assert published[f"{stem}_5min"] == published[f"{stem}_15min"]
 
 
-def test_real_append_stage_writes_exact_full_inventory_and_zeroes_only_failing_row(monkeypatch):
+def test_real_append_stage_writes_status_inventory_and_preserves_unknown_row(monkeypatch):
     from stages import urban95_scoring
 
     fixture = _load_fixture()
@@ -534,28 +528,22 @@ def test_real_append_stage_writes_exact_full_inventory_and_zeroes_only_failing_r
         geometry=[Point(0.0, 0.0), Point(1.0, 0.0)],
         crs="EPSG:2039",
     )
-    calls = []
-
     monkeypatch.setattr(urban95_scoring, "build_layers", lambda **_: {})
 
-    def fake_attach(frame, streets, open_spaces, *, chunk_size):
-        assert streets is None and open_spaces is None
-        assert chunk_size == urban95_scoring.SI_ATTACH_CHUNK_SIZE
-        out = frame.copy()
-        out["summer_si"] = [0.4, 0.2]
-        return out
+    def fake_layerwise(*_args, **_kwargs):
+        return pd.DataFrame(
+            {
+                "summer_si": [0.4, 0.2],
+                "u95_status_5min": ["thriving", "unknown"],
+                "u95_status_10min": ["thriving", "unknown"],
+                "u95_status_15min": ["thriving", "unknown"],
+            },
+            index=buildings.index,
+        )
 
-    def fake_scalar(x, y, layers, precomputed, building_geometry=None):
-        calls.append((x, y, precomputed["summer_si"]))
-        if x == 1.0:
-            raise RuntimeError("literal scorer failure")
-        return copy.deepcopy(expected_valid["master_result"])
+    monkeypatch.setattr(urban95_scoring, "score_urban95_layerwise", fake_layerwise)
 
-    monkeypatch.setattr(urban95_scoring, "attach_summer_si_to_buildings", fake_attach)
-    monkeypatch.setattr(urban95_scoring, "calculate_master_index", fake_scalar)
-
-    actual = urban95_scoring.append_weighted_urban95_scores(buildings, workers=1)
-    assert calls == [(0.0, 0.0, 0.4), (1.0, 0.0, 0.2)]
+    actual = urban95_scoring.append_urban95_statuses(buildings, workers=1)
     assert set(actual.columns) == {
         "building_id",
         "geometry",
@@ -566,7 +554,7 @@ def test_real_append_stage_writes_exact_full_inventory_and_zeroes_only_failing_r
     assert actual.loc[1, "summer_si"] == 0.2
     for column, expected in expected_score_columns.items():
         assert actual.loc[0, column] == expected
-        assert actual.loc[1, column] == 0.0
+        assert actual.loc[1, column] == "unknown"
 
     missing_time_writes = actual.drop(
         columns=[column for column in expected_score_columns if column.endswith(("_10min", "_15min"))]
@@ -591,12 +579,88 @@ def test_frozen_invalid_coordinate_exception_semantics_match_scalar():
             calculate_master_index(case["x_coord"], case["y_coord"], {})
 
 
+def test_scalar_indicator_failure_marks_only_its_category_unknown(monkeypatch):
+    from lib.urban95_status import STATUS_HIERARCHY
+    from lib.urban95_weights import calculate_master_index
+
+    empty = gpd.GeoDataFrame(geometry=[], crs="EPSG:2039")
+    layers = {
+        source: empty.copy()
+        for source in (
+            "trees", "roads", "parks", "urban_nature_areas", "playgrounds",
+            "street_lights", "bikes", "bus_stops", "shelters", "education",
+            "community", "business", "health",
+        )
+    }
+    monkeypatch.setattr(
+        "lib.urban95_weights.round_building_summer_si",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("shade failed")),
+    )
+
+    result = calculate_master_index(0.0, 0.0, layers, precomputed={"summer_si": 0.4})
+
+    assert result["subcategory_statuses"]["environmental_quality"]["shade"] == "unknown"
+    assert result["category_statuses"]["environmental_quality"] == "unknown"
+    assert result["overview_status"] == "unknown"
+    assert all(
+        result["category_statuses"][category] != "unknown"
+        for category in STATUS_HIERARCHY
+        if category != "environmental_quality"
+    )
+
+
+def test_scalar_parks_failure_preserves_urban_nature_playgrounds_and_business(monkeypatch):
+    from lib import urban95_weights
+
+    empty = gpd.GeoDataFrame(geometry=[], crs="EPSG:2039")
+    layers = {
+        "trees": empty.copy(),
+        "roads": gpd.GeoDataFrame({"maxspeed": []}, geometry=[], crs="EPSG:2039"),
+        "parks": gpd.GeoDataFrame(
+            {"fail_parks": [True]}, geometry=[Point(0, 0)], crs="EPSG:2039"
+        ),
+        "urban_nature_areas": gpd.GeoDataFrame(geometry=[Point(0, 0)], crs="EPSG:2039"),
+        "playgrounds": gpd.GeoDataFrame(geometry=[Point(0, 0)], crs="EPSG:2039"),
+        "street_lights": empty.copy(),
+        "bikes": empty.copy(),
+        "bus_stops": empty.copy(),
+        "shelters": empty.copy(),
+        "education": empty.copy(),
+        "community": empty.copy(),
+        "business": gpd.GeoDataFrame(geometry=[Point(0, 0)], crs="EPSG:2039"),
+        "health": empty.copy(),
+    }
+    original = urban95_weights._features_intersecting
+
+    def fail_only_parks(source, geometry):
+        if "fail_parks" in source.columns:
+            raise RuntimeError("parks failed")
+        return original(source, geometry)
+
+    monkeypatch.setattr(urban95_weights, "_features_intersecting", fail_only_parks)
+    result = urban95_weights.calculate_master_index(
+        0.0,
+        0.0,
+        layers,
+        precomputed={"summer_si": 0.4},
+    )
+
+    assert result["subcategory_statuses"]["nature"] == {
+        "parks": "unknown",
+        "urban_nature_areas": "thriving",
+    }
+    assert result["category_statuses"]["nature"] == "unknown"
+    assert result["subcategory_statuses"]["play"]["playgrounds"] == "thriving"
+    assert result["category_statuses"]["play"] == "thriving"
+    assert result["subcategory_statuses"]["family_services"]["business"] == "thriving"
+
+
 def test_mutating_a_literal_expected_value_is_detected():
     fixture = _load_fixture()
     case = fixture["case_groups"]["complete_rows"][0]
     actual = _published_scalar_row(case)
     mutated_expected = copy.deepcopy(case["expected"])
-    mutated_expected["master_result"]["final_index"] += 0.1
+    mutated_expected["master_result"]["overview_status"] = "unknown"
     with pytest.raises(AssertionError):
         _assert_nested_exact(actual, mutated_expected)
 
@@ -607,15 +671,18 @@ def test_sub_tolerance_mutations_of_stored_and_published_outputs_are_detected_ex
     actual = _published_scalar_row(case)
     for path in (
         ("published_columns", "summer_si"),
-        ("published_columns", "score_weighted_10min"),
-        ("master_result", "category_scores", "Nature"),
-        ("master_result", "subcategory_weights", "Nature", "parks"),
+        ("published_columns", "u95_status_10min"),
+        ("master_result", "category_statuses", "nature"),
+        ("master_result", "subcategory_statuses", "nature", "parks"),
     ):
         mutated = copy.deepcopy(case["expected"])
         target = mutated
         for key in path[:-1]:
             target = target[key]
-        target[path[-1]] += 5e-10
+        if isinstance(target[path[-1]], str):
+            target[path[-1]] = "unknown" if target[path[-1]] != "unknown" else "thriving"
+        else:
+            target[path[-1]] += 5e-10
         with pytest.raises(AssertionError):
             _assert_nested_exact(actual, mutated)
 

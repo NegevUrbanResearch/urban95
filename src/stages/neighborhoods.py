@@ -25,11 +25,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from shapely.geometry import Polygon, mapping as shapely_mapping
+from shapely.geometry import Point, Polygon, mapping as shapely_mapping
 
 from core.paths import DOCS_DATA_DIR, layer
 from lib.neighborhood_distributions import build_per_neighborhood_distributions
 from lib.neighborhood_idw import IDWPlan, apply_idw_plan, build_idw_plan
+from lib.urban95_status import (
+    STATUS_DIAGNOSTICS,
+    STATUS_HIERARCHY,
+    STATUS_TOKENS,
+    STATUS_UNKNOWN,
+    category_status_field,
+    diagnostic_status_field,
+    indicator_status_field,
+    status_composition_prefix,
+)
 
 # Publish-read exception: neighborhood aggregates read scored buildings from docs/data.
 BUILDINGS_CANDIDATES = [
@@ -42,26 +52,12 @@ AMENITIES_LEGACY_PATH = layer("amenities_legacy").path
 TREES_PATH = layer("trees").path
 
 WALK_MINUTES = [5, 10, 15]
-WEIGHTED_CATEGORY_STEMS = [
-    "environmental_quality",
-    "nature",
-    "play",
-    "safety_mobility",
-    "family_services",
-]
-
 EXCLUDED_CLEAN_MANIFEST_INVENTORY_TYPES = frozenset({"bicycle_track"})
 
 HEX_CELL_SIDE_METERS = 50.0
 HEX_LOCAL_DATA_RADIUS_METERS = 470.0
 HEX_IDW_RADIUS_METERS = 425.0
 URBAN95_FIXED_MINUTES = 10
-DIAGNOSTIC_ACCESS_SURFACE_FIELDS = {
-    "access_school_10min": "access_school",
-    "access_kindergarten_10min": "access_kindergarten",
-    "access_clinic_10min": "access_clinic",
-    "access_tipat_halav_10min": "access_tipat_halav",
-}
 
 
 def amenity_stat_keys_from_buildings(buildings: gpd.GeoDataFrame) -> list:
@@ -150,25 +146,6 @@ def load_geodataframe(path: Path) -> gpd.GeoDataFrame:
     return gpd.read_file(path)
 
 
-def weighted_subcategory_stems_from_buildings(buildings: gpd.GeoDataFrame) -> dict[str, list[str]]:
-    out = {stem: set() for stem in WEIGHTED_CATEGORY_STEMS}
-    for col in buildings.columns:
-        col_s = str(col)
-        for stem in WEIGHTED_CATEGORY_STEMS:
-            prefix = f"score_weighted_sub_{stem}_"
-            if not col_s.startswith(prefix):
-                continue
-            for minutes in WALK_MINUTES:
-                suffix = f"_{minutes}min"
-                if not col_s.endswith(suffix):
-                    continue
-                sub_stem = col_s[len(prefix):-len(suffix)]
-                if sub_stem:
-                    out[stem].add(sub_stem)
-                break
-    return {k: sorted(v) for k, v in out.items()}
-
-
 def bulk_percentile_ranks(values: np.ndarray) -> np.ndarray:
     """Replicates frontend bulkPercentileRanks (0..100, rounded)."""
     n = int(values.size)
@@ -187,6 +164,155 @@ def as_numeric_series(df: pd.DataFrame, col: str, fallback: float = 0.0) -> np.n
         return np.full(len(df), fallback, dtype=float)
     vals = pd.to_numeric(df[col], errors="coerce").fillna(fallback)
     return vals.to_numpy(dtype=float)
+
+
+def status_composition(values: pd.Series, prefix: str = "u95") -> dict[str, float | int]:
+    """Return four-status counts and exact-denominator percentages."""
+    normalized = values.where(values.isin(STATUS_TOKENS), STATUS_UNKNOWN)
+    total = len(normalized)
+    out: dict[str, float | int] = {}
+    for token in STATUS_TOKENS:
+        count = int((normalized == token).sum())
+        out[f"{prefix}_count_{token}"] = count
+        out[f"{prefix}_pct_{token}"] = round((count / total * 100.0) if total else 0.0, 1)
+    return out
+
+
+def status_summary(values: pd.Series, prefix: str = "u95") -> dict[str, float | int | str]:
+    """Add a deterministic categorical headline, support, and reason to a composition."""
+    out: dict[str, float | int | str] = status_composition(values, prefix)
+    total = len(values)
+    out[f"{prefix}_support_count"] = total
+    if total == 0:
+        out[f"{prefix}_status"] = STATUS_UNKNOWN
+        out[f"{prefix}_summary_reason"] = "no_buildings"
+        return out
+
+    counts = {token: out[f"{prefix}_count_{token}"] for token in STATUS_TOKENS}
+    maximum = max(counts.values())
+    leaders = [token for token, count in counts.items() if count == maximum]
+    if len(leaders) != 1:
+        out[f"{prefix}_status"] = STATUS_UNKNOWN
+        out[f"{prefix}_summary_reason"] = "tie"
+    elif leaders[0] == STATUS_UNKNOWN:
+        out[f"{prefix}_status"] = STATUS_UNKNOWN
+        out[f"{prefix}_summary_reason"] = "predominantly_unknown"
+    else:
+        out[f"{prefix}_status"] = leaders[0]
+        out[f"{prefix}_summary_reason"] = "predominant"
+    return out
+
+
+def status_metric_definitions(minutes: int = URBAN95_FIXED_MINUTES) -> list[tuple[str, str, str]]:
+    """Return (surface/status key, flat composition prefix, source-column) tuples."""
+    suffix = f"_{minutes}min"
+    metrics = [("u95_status", "u95", f"u95_status{suffix}")]
+    for category, indicators in STATUS_HIERARCHY.items():
+        metrics.append((
+            f"u95_status_{category}",
+            status_composition_prefix(category=category),
+            category_status_field(category, suffix),
+        ))
+        for indicator in indicators:
+            metrics.append((
+                f"u95_status_sub_{category}_{indicator}",
+                status_composition_prefix(category=category, indicator=indicator),
+                indicator_status_field(category, indicator, suffix),
+            ))
+            for child in STATUS_DIAGNOSTICS.get((category, indicator), ()):
+                metrics.append((
+                    f"u95_status_detail_{category}_{indicator}_{child}",
+                    status_composition_prefix(
+                        category=category,
+                        indicator=indicator,
+                        parent=indicator,
+                        child=child,
+                    ),
+                    diagnostic_status_field(category, indicator, child, suffix),
+                ))
+    return metrics
+
+
+def status_values(frame: pd.DataFrame, source_column: str) -> pd.Series:
+    if source_column in frame.columns:
+        return frame[source_column]
+    return pd.Series(STATUS_UNKNOWN, index=frame.index, dtype=object)
+
+
+def normalize_status_token(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return STATUS_UNKNOWN
+    except (TypeError, ValueError):
+        return STATUS_UNKNOWN
+    return value if isinstance(value, str) and value in STATUS_TOKENS else STATUS_UNKNOWN
+
+
+def _unique_count_leader(values: list[str]) -> str:
+    counts = {token: values.count(token) for token in STATUS_TOKENS}
+    maximum = max(counts.values())
+    leaders = [token for token, count in counts.items() if count == maximum]
+    return leaders[0] if len(leaders) == 1 else STATUS_UNKNOWN
+
+
+def _unique_influence_leader(influence: dict[str, float]) -> str:
+    maximum = max(influence.values())
+    leaders = [
+        token
+        for token, value in influence.items()
+        if math.isclose(value, maximum, rel_tol=1e-12, abs_tol=0.0)
+    ]
+    return leaders[0] if len(leaders) == 1 else STATUS_UNKNOWN
+
+
+def apply_categorical_status_plan(
+    status_values_input: pd.Series | list,
+    plan: IDWPlan,
+) -> list[tuple[str, int]]:
+    """Infer one categorical status per target without averaging status codes."""
+    normalized = [normalize_status_token(value) for value in list(status_values_input)]
+    if len(normalized) != plan.source_count:
+        raise ValueError("status_values must have length plan.source_count")
+
+    results: list[tuple[str, int]] = []
+    for target_position in range(plan.target_count):
+        start = int(plan.in_radius_indptr[target_position])
+        stop = int(plan.in_radius_indptr[target_position + 1])
+        source_positions = plan.in_radius_source_positions[start:stop]
+        weights = plan.in_radius_weights[start:stop]
+        exact_positions = source_positions[weights == 0.0]
+
+        if len(exact_positions):
+            exact_statuses = [normalized[int(position)] for position in exact_positions]
+            results.append((_unique_count_leader(exact_statuses), len(exact_positions)))
+            continue
+
+        if len(source_positions):
+            influence = {
+                token: math.fsum(
+                    float(weight)
+                    for position, weight in zip(source_positions, weights)
+                    if normalized[int(position)] == token
+                )
+                for token in STATUS_TOKENS
+            }
+            results.append((_unique_influence_leader(influence), len(source_positions)))
+            continue
+
+        nearest_position = int(plan.nearest_source_positions[target_position])
+        if nearest_position >= 0:
+            results.append((normalized[nearest_position], 1))
+        else:
+            results.append((STATUS_UNKNOWN, 0))
+    return results
+
+
+def add_status_summaries(out: dict, frame: pd.DataFrame) -> None:
+    """Attach all canonical Urban95 metric summaries to an area payload."""
+    for status_key, prefix, source_column in status_metric_definitions():
+        summary = status_summary(status_values(frame, source_column), prefix)
+        summary[status_key] = summary.pop(f"{prefix}_status")
+        out.update(summary)
 
 
 def build_hexagon(cx: float, cy: float, side: float) -> Polygon:
@@ -337,256 +463,222 @@ def amenity_filter_score_by_type(buildings_df: pd.DataFrame, amenity_type: str, 
     return as_numeric_series(buildings_df, f"amen_{stat_key}{sfx}", fallback=0.0)
 
 
+def assign_centroids_to_hexes(centroids: list[Point], hexes: list[dict]) -> list[str | None]:
+    """Assign each centroid to one clipped hex, breaking shared edges by hex id."""
+    assignments: list[str | None] = []
+    for centroid in centroids:
+        if centroid is None or centroid.is_empty:
+            assignments.append(None)
+            continue
+        matches = sorted(
+            str(cell["hex_id"])
+            for cell in hexes
+            if cell["geometry"].intersects(centroid)
+        )
+        assignments.append(matches[0] if matches else None)
+    return assignments
+
+
+def _has_finite_point_coordinates(point: object) -> bool:
+    if point is None:
+        return False
+    try:
+        return not point.is_empty and math.isfinite(float(point.x)) and math.isfinite(float(point.y))
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
+def _stable_building_id_key(value: object) -> tuple:
+    try:
+        if pd.isna(value):
+            return (2, "", "")
+    except (TypeError, ValueError):
+        return (2, "", "")
+    text = str(value)
+    try:
+        numeric = float(text)
+    except (TypeError, ValueError):
+        numeric = math.nan
+    if math.isfinite(numeric):
+        return (0, numeric, text)
+    return (1, text.casefold(), text)
+
+
 def build_neighborhood_surface_geojson(
     neighborhoods_projected: gpd.GeoDataFrame,
     buildings: gpd.GeoDataFrame,
     filter_types: list[str],
 ) -> dict:
-    assigned = buildings[buildings["neighborhood"].notna()].copy()
-    if len(assigned) == 0:
-        return {"type": "FeatureCollection", "features": []}
+    if "Name" not in neighborhoods_projected.columns:
+        raise ValueError("Neighborhood Name values must be non-null and unique")
+    neighborhood_names = neighborhoods_projected["Name"]
+    if neighborhood_names.isna().any():
+        raise ValueError("Neighborhood Name values must be non-null")
+    if neighborhood_names.astype(str).duplicated().any():
+        raise ValueError("Neighborhood Name values must be unique")
 
-    diagnostic_values = {
-        surface_key: np.clip(as_numeric_series(assigned, building_key, fallback=0.0), 0.0, 100.0)
-        for building_key, surface_key in DIAGNOSTIC_ACCESS_SURFACE_FIELDS.items()
-        if building_key in assigned.columns
-    }
-    weighted_by_minutes: dict[int, np.ndarray] = {}
-    expanded_pct_by_minutes: dict[int, np.ndarray] = {}
-    filter_pct_by_minutes: dict[int, dict[str, np.ndarray]] = {}
-    weighted_category_by_minutes: dict[int, dict[str, np.ndarray]] = {}
-    weighted_subcategory_by_minutes: dict[int, dict[str, dict[str, np.ndarray]]] = {}
-    weighted_sub_stems = weighted_subcategory_stems_from_buildings(assigned)
+    assigned = buildings[buildings["neighborhood"].notna()].copy().reset_index(drop=True)
+
+    expanded_pct: dict[int, np.ndarray] = {}
+    filter_pct: dict[int, dict[str, np.ndarray]] = {}
     for minutes in WALK_MINUTES:
-        sfx = f"_{minutes}min"
-
-        weighted = as_numeric_series(
-            assigned,
-            f"score_weighted{sfx}" if f"score_weighted{sfx}" in assigned.columns else "score_weighted",
-            fallback=0.0,
-        )
-        weighted_by_minutes[minutes] = np.clip(weighted, 0.0, 100.0)
-
-        if f"score_expanded{sfx}" in assigned.columns:
-            expanded_raw = as_numeric_series(assigned, f"score_expanded{sfx}", fallback=0.0)
+        suffix = f"_{minutes}min"
+        expanded_column = f"score_expanded{suffix}"
+        if expanded_column in assigned.columns:
+            raw = as_numeric_series(assigned, expanded_column, fallback=0.0)
         else:
-            amenities = as_numeric_series(assigned, f"num_amenities{sfx}", fallback=0.0)
-            trees = as_numeric_series(assigned, f"num_trees{sfx}", fallback=0.0)
-            street_lights = as_numeric_series(assigned, f"num_street_lights{sfx}", fallback=0.0)
-            expanded_raw = amenities + trees * 0.25 + street_lights * 0.25
-        expanded_pct_by_minutes[minutes] = np.clip(bulk_percentile_ranks(expanded_raw), 0.0, 100.0)
+            raw = (
+                as_numeric_series(assigned, f"num_amenities{suffix}", fallback=0.0)
+                + as_numeric_series(assigned, f"num_trees{suffix}", fallback=0.0) * 0.25
+                + as_numeric_series(assigned, f"num_street_lights{suffix}", fallback=0.0) * 0.25
+            )
+        expanded_pct[minutes] = np.clip(bulk_percentile_ranks(raw), 0.0, 100.0)
+        filter_pct[minutes] = {
+            filter_type: np.clip(
+                bulk_percentile_ranks(amenity_filter_score_by_type(assigned, filter_type, minutes)),
+                0.0,
+                100.0,
+            )
+            for filter_type in filter_types
+        }
 
-        pct_by_filter: dict[str, np.ndarray] = {}
-        for f_type in filter_types:
-            filter_vals = amenity_filter_score_by_type(assigned, f_type, minutes)
-            pct_by_filter[f_type] = np.clip(bulk_percentile_ranks(filter_vals), 0.0, 100.0)
-        filter_pct_by_minutes[minutes] = pct_by_filter
-
-        category_vals: dict[str, np.ndarray] = {}
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            cat_col = f"score_weighted_{cat_stem}{sfx}"
-            if cat_col in assigned.columns:
-                vals = as_numeric_series(assigned, cat_col, fallback=0.0)
-            else:
-                vals = np.zeros(len(assigned), dtype=float)
-            category_vals[cat_stem] = np.clip(vals, 0.0, 100.0)
-        weighted_category_by_minutes[minutes] = category_vals
-
-        subcategory_vals: dict[str, dict[str, np.ndarray]] = {}
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            subcategory_vals[cat_stem] = {}
-            for sub_stem in weighted_sub_stems.get(cat_stem, []):
-                sub_col = f"score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
-                if sub_col in assigned.columns:
-                    sub_vals = as_numeric_series(assigned, sub_col, fallback=0.0)
-                else:
-                    sub_vals = np.zeros(len(assigned), dtype=float)
-                subcategory_vals[cat_stem][sub_stem] = np.clip(sub_vals, 0.0, 100.0)
-        weighted_subcategory_by_minutes[minutes] = subcategory_vals
-
-    weighted_fixed = weighted_by_minutes.get(URBAN95_FIXED_MINUTES)
-    if weighted_fixed is None:
-        weighted_fixed = weighted_by_minutes.get(10) or weighted_by_minutes.get(5) or weighted_by_minutes.get(15)
-    if weighted_fixed is None:
-        weighted_fixed = np.zeros(len(assigned), dtype=float)
-
-    weighted_categories_fixed = weighted_category_by_minutes.get(URBAN95_FIXED_MINUTES, {})
-    weighted_subcategories_fixed = weighted_subcategory_by_minutes.get(URBAN95_FIXED_MINUTES, {})
-
-    local_points_by_name: dict[str, list[tuple[float, float]]] = {}
-    local_scores_by_name: dict[str, dict[str, list[tuple[float, float, float]]]] = {}
-    for i, (_, row) in enumerate(assigned.iterrows()):
-        name = str(row.get("neighborhood", ""))
-        geom_proj = row.get("_centroid_proj")
-        if geom_proj is None or geom_proj.is_empty:
-            continue
-        x = float(geom_proj.x)
-        y = float(geom_proj.y)
-        local_points_by_name.setdefault(name, []).append((x, y))
-        score_bucket = local_scores_by_name.setdefault(name, {})
-        score_bucket.setdefault("score_weighted", []).append((x, y, float(weighted_fixed[i])))
-        for surface_key, values in diagnostic_values.items():
-            score_bucket.setdefault(surface_key, []).append((x, y, float(values[i])))
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            cat_key = f"score_weighted_{cat_stem}"
-            cat_arr = weighted_categories_fixed.get(cat_stem)
-            cat_val = float(cat_arr[i]) if cat_arr is not None else 0.0
-            score_bucket.setdefault(cat_key, []).append((x, y, cat_val))
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            for sub_stem in weighted_sub_stems.get(cat_stem, []):
-                sub_key = f"score_weighted_sub_{cat_stem}_{sub_stem}"
-                sub_arr = weighted_subcategories_fixed.get(cat_stem, {}).get(sub_stem)
-                sub_val = float(sub_arr[i]) if sub_arr is not None else 0.0
-                score_bucket.setdefault(sub_key, []).append((x, y, sub_val))
-        for minutes in WALK_MINUTES:
-            e_key = f"score_expanded_{minutes}min"
-            score_bucket.setdefault(e_key, []).append((x, y, float(expanded_pct_by_minutes[minutes][i])))
-            for f_type in filter_types:
-                f_norm = normalize_surface_filter_key(f_type)
-                f_key = f"score_filter_{f_norm}_{minutes}min"
-                score_bucket.setdefault(f_key, []).append((x, y, float(filter_pct_by_minutes[minutes][f_type][i])))
-
-    geoms: list = []
-    props: list[dict] = []
-
-    hoods_proj = neighborhoods_projected[["Name", "geometry"]].copy()
-    for _, hood_row in hoods_proj.iterrows():
+    cells_by_hood: dict[str, list[dict]] = {}
+    for hood_index, (_, hood_row) in enumerate(neighborhoods_projected[["Name", "geometry"]].iterrows()):
         hood_name = str(hood_row.get("Name", "Unknown neighborhood"))
-        poly = hood_row.geometry
-        if poly is None or poly.is_empty:
+        polygon = hood_row.geometry
+        if polygon is None or polygon.is_empty:
             continue
-        minx, miny, maxx, maxy = poly.bounds
-        grid = hex_grid_for_polygon_bounds(minx, miny, maxx, maxy, HEX_CELL_SIDE_METERS)
-
-        local_points = local_points_by_name.get(hood_name, [])
-        local_scores = local_scores_by_name.get(hood_name, {})
-
-        clipped_geoms: list = []
-        cx_list: list[float] = []
-        cy_list: list[float] = []
-        for cell in grid:
+        cells: list[dict] = []
+        for cell_index, cell in enumerate(hex_grid_for_polygon_bounds(*polygon.bounds, HEX_CELL_SIDE_METERS)):
             try:
-                clipped = cell.intersection(poly)
+                clipped = cell.intersection(polygon)
             except Exception:
                 continue
-            if clipped is None or clipped.is_empty:
+            if clipped is None or clipped.is_empty or clipped.geom_type not in ("Polygon", "MultiPolygon"):
                 continue
-            if clipped.geom_type not in ("Polygon", "MultiPolygon"):
-                continue
-            centroid = clipped.centroid
-            clipped_geoms.append(clipped)
-            cx_list.append(float(centroid.x))
-            cy_list.append(float(centroid.y))
-
-        if not clipped_geoms:
-            continue
-
-        cx_arr = np.asarray(cx_list, dtype=float)
-        cy_arr = np.asarray(cy_list, dtype=float)
-        field_keys = ["score_weighted"]
-        field_keys.extend(
-            f"score_weighted_{cat_stem}" for cat_stem in WEIGHTED_CATEGORY_STEMS
-        )
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            field_keys.extend(
-                f"score_weighted_sub_{cat_stem}_{sub_stem}"
-                for sub_stem in weighted_sub_stems.get(cat_stem, [])
-            )
-        field_keys.extend(diagnostic_values)
-        field_keys.extend(f"score_expanded_{minutes}min" for minutes in WALK_MINUTES)
-        for minutes in WALK_MINUTES:
-            for f_type in filter_types:
-                field_keys.append(
-                    f"score_filter_{normalize_surface_filter_key(f_type)}_{minutes}min"
-                )
-
-        source_values = np.zeros((len(local_points), len(field_keys)), dtype=float)
-        for field_index, key in enumerate(field_keys):
-            samples = local_scores.get(key, [])
-            if len(samples) != len(local_points):
-                # Every generated field normally has one value per source row;
-                # retain the scalar default if a sparse optional field is absent.
-                continue
-            source_values[:, field_index] = np.asarray(
-                [float(sample[2]) for sample in samples], dtype=float
-            )
-        plan = build_idw_plan(
-            np.asarray(local_points, dtype=float).reshape((-1, 2)),
-            np.column_stack((cx_arr, cy_arr)),
-            HEX_IDW_RADIUS_METERS,
-            HEX_LOCAL_DATA_RADIUS_METERS,
-        )
-        field_values = apply_idw_plan(source_values, plan)
-        field_values_by_key = {
-            key: field_values[:, field_index] for field_index, key in enumerate(field_keys)
-        }
-        diagnostic_surface_values = {
-            key: field_values_by_key[key] for key in diagnostic_values
-        }
-        has_local = plan.local_data_mask
-        sw_vals = field_values_by_key["score_weighted"]
-        cat_vals = {
-            cat_stem: field_values_by_key[f"score_weighted_{cat_stem}"]
-            for cat_stem in WEIGHTED_CATEGORY_STEMS
-        }
-        sub_vals: dict[str, np.ndarray] = {}
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            for sub_stem in weighted_sub_stems.get(cat_stem, []):
-                sub_key = f"score_weighted_sub_{cat_stem}_{sub_stem}"
-                sub_vals[sub_key] = field_values_by_key[sub_key]
-        expanded_vals = {
-            minutes: field_values_by_key[f"score_expanded_{minutes}min"]
-            for minutes in WALK_MINUTES
-        }
-        filter_vals: dict[str, np.ndarray] = {}
-        for minutes in WALK_MINUTES:
-            for f_type in filter_types:
-                f_key = f"score_filter_{normalize_surface_filter_key(f_type)}_{minutes}min"
-                filter_vals[f_key] = field_values_by_key[f_key]
-
-        for i, clipped in enumerate(clipped_geoms):
-            out_props = {
-                "hex_id": f"H{i + 1}",
+            cells.append({
+                "hex_id": f"H{hood_index:04d}_{cell_index:06d}",
+                "geometry": clipped,
                 "neighborhood_name": hood_name,
-                "has_buildings": 1 if bool(has_local[i]) else 0,
+            })
+        if cells:
+            cells_by_hood[hood_name] = cells
+
+    metric_definitions = status_metric_definitions()
+    output_cells: list[dict] = []
+    for hood_name, cells in cells_by_hood.items():
+        local = assigned[assigned["neighborhood"].astype(str) == hood_name].copy()
+        raw_centroids = (
+            local["_centroid_proj"].tolist()
+            if "_centroid_proj" in local.columns
+            else local.geometry.centroid.tolist()
+        )
+        usable_positions = [
+            position
+            for position, point in enumerate(raw_centroids)
+            if _has_finite_point_coordinates(point)
+        ]
+        local = local.iloc[usable_positions].copy()
+        centroids = [raw_centroids[position] for position in usable_positions]
+        building_ids = local["building_id"].tolist() if "building_id" in local.columns else local.index.tolist()
+        source_order = sorted(
+            range(len(local)),
+            key=lambda position: (
+                _stable_building_id_key(building_ids[position]),
+                int(local.index[position]),
+            ),
+        )
+        local = local.iloc[source_order]
+        centroids = [centroids[position] for position in source_order]
+
+        values_by_hex = {
+            cell["hex_id"]: {source: [] for _status_key, _prefix, source in metric_definitions}
+            for cell in cells
+        }
+        for (_, row), hex_id in zip(local.iterrows(), assign_centroids_to_hexes(centroids, cells)):
+            if hex_id is None:
+                continue
+            for _status_key, _prefix, source in metric_definitions:
+                values_by_hex[hex_id][source].append(row.get(source, STATUS_UNKNOWN))
+
+        numeric_fields = [f"score_expanded_{minutes}min" for minutes in WALK_MINUTES]
+        numeric_fields.extend(
+            f"score_filter_{normalize_surface_filter_key(filter_type)}_{minutes}min"
+            for minutes in WALK_MINUTES
+            for filter_type in filter_types
+        )
+        points = (
+            np.asarray([(point.x, point.y) for point in centroids], dtype=float)
+            if centroids
+            else np.empty((0, 2), dtype=float)
+        )
+        queries = np.asarray(
+            [(cell["geometry"].centroid.x, cell["geometry"].centroid.y) for cell in cells],
+            dtype=float,
+        )
+        plan = build_idw_plan(points, queries, HEX_IDW_RADIUS_METERS, HEX_LOCAL_DATA_RADIUS_METERS)
+        source_values = np.zeros((len(local), len(numeric_fields)), dtype=float)
+        local_positions = local.index.to_numpy(dtype=int)
+        for field_index, field in enumerate(numeric_fields):
+            if field.startswith("score_expanded_"):
+                minutes = int(field.split("_")[-1].removesuffix("min"))
+                source_values[:, field_index] = expanded_pct[minutes][local_positions]
+            else:
+                parts = field.rsplit("_", 1)
+                minutes = int(parts[1].removesuffix("min"))
+                filter_stem = parts[0].removeprefix("score_filter_")
+                filter_type = next(
+                    item for item in filter_types if normalize_surface_filter_key(item) == filter_stem
+                )
+                source_values[:, field_index] = filter_pct[minutes][filter_type][local_positions]
+        interpolated = apply_idw_plan(source_values, plan)
+        numeric_values = {
+            field: interpolated[:, field_index]
+            for field_index, field in enumerate(numeric_fields)
+        }
+        inferred_statuses = {
+            source: apply_categorical_status_plan(status_values(local, source), plan)
+            for _status_key, _prefix, source in metric_definitions
+        }
+
+        for cell_index, cell in enumerate(cells):
+            prop = {
+                "hex_id": cell["hex_id"],
+                "neighborhood_name": hood_name,
             }
-            out_props["score_weighted"] = round(
-                max(0.0, min(100.0, float(sw_vals[i]))), 2
-            )
-            for cat_stem in WEIGHTED_CATEGORY_STEMS:
-                cat_key = f"score_weighted_{cat_stem}"
-                out_props[cat_key] = round(
-                    max(0.0, min(100.0, float(cat_vals[cat_stem][i]))), 2
-                )
-            for cat_stem in WEIGHTED_CATEGORY_STEMS:
-                for sub_stem in weighted_sub_stems.get(cat_stem, []):
-                    sub_key = f"score_weighted_sub_{cat_stem}_{sub_stem}"
-                    out_props[sub_key] = round(
-                        max(0.0, min(100.0, float(sub_vals[sub_key][i]))), 2
+            for status_key, prefix, source in metric_definitions:
+                observed = pd.Series(values_by_hex[cell["hex_id"]][source], dtype=object)
+                if len(observed):
+                    summary = status_summary(observed, prefix)
+                    if summary[f"{prefix}_summary_reason"] == "tie":
+                        inferred_status, support_count = inferred_statuses[source][cell_index]
+                        prop[status_key] = inferred_status
+                        prop[f"{prefix}_support_count"] = support_count
+                        prop[f"{prefix}_summary_reason"] = "inferred_spatial"
+                    else:
+                        prop[status_key] = summary[f"{prefix}_status"]
+                        prop[f"{prefix}_support_count"] = summary[f"{prefix}_support_count"]
+                        prop[f"{prefix}_summary_reason"] = summary[f"{prefix}_summary_reason"]
+                else:
+                    inferred_status, support_count = inferred_statuses[source][cell_index]
+                    prop[status_key] = inferred_status
+                    prop[f"{prefix}_support_count"] = support_count
+                    prop[f"{prefix}_summary_reason"] = (
+                        "inferred_spatial" if support_count else "no_buildings"
                     )
-            for key, values in diagnostic_surface_values.items():
-                out_props[key] = round(
-                    max(0.0, min(100.0, float(values[i]))), 2
-                )
-            for minutes in WALK_MINUTES:
-                e_key = f"score_expanded_{minutes}min"
-                out_props[e_key] = round(
-                    max(0.0, min(100.0, float(expanded_vals[minutes][i]))), 2
-                )
-                for f_type in filter_types:
-                    f_norm = normalize_surface_filter_key(f_type)
-                    f_key = f"score_filter_{f_norm}_{minutes}min"
-                    out_props[f_key] = round(
-                        max(0.0, min(100.0, float(filter_vals[f_key][i]))), 2
-                    )
+            prop["has_buildings"] = 1 if bool(plan.local_data_mask[cell_index]) else 0
+            for field, values in numeric_values.items():
+                prop[field] = round(max(0.0, min(100.0, float(values[cell_index]))), 2)
+            output_cells.append({"properties": prop, "geometry": cell["geometry"]})
 
-            geoms.append(clipped)
-            props.append(out_props)
-
-    if not geoms:
+    if not output_cells:
         return {"type": "FeatureCollection", "features": []}
 
-    surface_gdf = gpd.GeoDataFrame(props, geometry=geoms, crs=neighborhoods_projected.crs)
+    surface_gdf = gpd.GeoDataFrame(
+        [cell["properties"] for cell in output_cells],
+        geometry=[cell["geometry"] for cell in output_cells],
+        crs=neighborhoods_projected.crs,
+    )
     surface_wgs84 = surface_gdf.to_crs(epsg=4326)
     features = []
     for _, row in surface_wgs84.iterrows():
@@ -637,7 +729,6 @@ def main():
     logging.info("  %d buildings unassigned (outside all neighborhoods)", unassigned)
 
     existing_types = amenity_stat_keys_from_buildings(buildings)
-    weighted_sub_stems = weighted_subcategory_stems_from_buildings(buildings)
     logging.info("  %d amenity stat keys in buildings: %s", len(existing_types), existing_types[:12])
 
     # Build neighborhood stats
@@ -681,30 +772,7 @@ def main():
                 stats[f"avg_score_clean{sfx}"] = 0.0
                 stats[f"coverage_clean{sfx}"] = 0.0
 
-            sw_col = f"score_weighted{sfx}"
-            if sw_col in group.columns:
-                sw_vals = pd.to_numeric(group[sw_col], errors="coerce").fillna(0)
-                stats[f"avg_score_weighted{sfx}"] = round(float(sw_vals.mean()), 2)
-                stats[f"coverage_weighted{sfx}"] = round(float((sw_vals > 0).mean() * 100), 1)
-            else:
-                stats[f"avg_score_weighted{sfx}"] = 0.0
-                stats[f"coverage_weighted{sfx}"] = 0.0
-
-            for cat_stem in WEIGHTED_CATEGORY_STEMS:
-                cat_col = f"score_weighted_{cat_stem}{sfx}"
-                if cat_col in group.columns:
-                    cat_vals = pd.to_numeric(group[cat_col], errors="coerce").fillna(0)
-                    stats[f"avg_score_weighted_{cat_stem}{sfx}"] = round(float(cat_vals.mean()), 2)
-                else:
-                    stats[f"avg_score_weighted_{cat_stem}{sfx}"] = 0.0
-                for sub_stem in weighted_sub_stems.get(cat_stem, []):
-                    sub_col = f"score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
-                    out_col = f"avg_score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
-                    if sub_col in group.columns:
-                        sub_vals = pd.to_numeric(group[sub_col], errors="coerce").fillna(0)
-                        stats[out_col] = round(float(sub_vals.mean()), 2)
-                    else:
-                        stats[out_col] = 0.0
+        add_status_summaries(stats, group)
 
         neighborhood_stats[name] = stats
 
@@ -745,12 +813,27 @@ def main():
             rank = sum(1 for v in sorted_vals if v <= val)
             neighborhood_stats[name][f"pct_clean_overall{sfx}"] = round(rank / n_total * 100) if n_total else 0
 
-        vals = {n: s.get(f"avg_score_weighted{sfx}", 0) for n, s in neighborhood_stats.items()}
-        sorted_vals = sorted(vals.values())
-        n_total = len(sorted_vals)
-        for name, val in vals.items():
-            rank = sum(1 for v in sorted_vals if v <= val)
-            neighborhood_stats[name][f"pct_weighted_overall{sfx}"] = round(rank / n_total * 100) if n_total else 0
+    for hood_name in neighborhoods["Name"].dropna().astype(str):
+        if hood_name in neighborhood_stats:
+            continue
+        empty_stats = {"name": hood_name, "building_count": 0}
+        add_status_summaries(empty_stats, buildings.iloc[0:0])
+        neighborhood_stats[hood_name] = empty_stats
+
+    neighborhood_status_groups = {token: [] for token in STATUS_TOKENS}
+    for name, stats in neighborhood_stats.items():
+        headline = str(stats.get("u95_status", STATUS_UNKNOWN))
+        if headline not in neighborhood_status_groups:
+            headline = STATUS_UNKNOWN
+        neighborhood_status_groups[headline].append({
+            "name": str(name),
+            "building_count": stats["building_count"],
+            "u95_status": headline,
+            "u95_support_count": stats["u95_support_count"],
+            "u95_summary_reason": stats["u95_summary_reason"],
+        })
+    for token in STATUS_TOKENS:
+        neighborhood_status_groups[token].sort(key=lambda item: item["name"])
 
     # Point-in-polygon inventory (clean vs legacy taxonomy) for neighborhood/city pies
     logging.info("Computing per-neighborhood POI inventory (clean vs legacy)...")
@@ -837,6 +920,8 @@ def main():
     # Citywide statistics
     logging.info("Computing citywide statistics...")
     citywide = {"total_buildings": len(buildings)}
+    add_status_summaries(citywide, buildings)
+    citywide["neighborhood_status_groups"] = neighborhood_status_groups
 
     # Pie chart: legacy POI inventory (same taxonomy as building amen_* / neighborhood breakdown).
     if AMENITIES_LEGACY_PATH.is_file():
@@ -899,31 +984,6 @@ def main():
                 "counts": hc.tolist(),
                 "edges": [round(e, 2) for e in he.tolist()],
             }
-        sw_col = f"score_weighted{sfx}"
-        if sw_col in buildings.columns:
-            weighted_vals = pd.to_numeric(buildings[sw_col], errors="coerce").fillna(0)
-            hc, he = np.histogram(weighted_vals, bins=20)
-            citywide[f"distribution_weighted{sfx}"] = {
-                "counts": hc.tolist(),
-                "edges": [round(e, 2) for e in he.tolist()],
-            }
-
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            cat_col = f"score_weighted_{cat_stem}{sfx}"
-            if cat_col in buildings.columns:
-                cat_vals = pd.to_numeric(buildings[cat_col], errors="coerce").fillna(0)
-                citywide[f"avg_score_weighted_{cat_stem}{sfx}"] = round(float(cat_vals.mean()), 2)
-            else:
-                citywide[f"avg_score_weighted_{cat_stem}{sfx}"] = 0.0
-            for sub_stem in weighted_sub_stems.get(cat_stem, []):
-                sub_col = f"score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
-                out_col = f"avg_score_weighted_sub_{cat_stem}_{sub_stem}{sfx}"
-                if sub_col in buildings.columns:
-                    sub_vals = pd.to_numeric(buildings[sub_col], errors="coerce").fillna(0)
-                    citywide[out_col] = round(float(sub_vals.mean()), 2)
-                else:
-                    citywide[out_col] = 0.0
-
         hist_counts, hist_edges = np.histogram(overall, bins=20)
         citywide[f"distribution{sfx}"] = {
             "counts": hist_counts.tolist(),
@@ -971,42 +1031,14 @@ def main():
         })
     citywide["neighborhood_ranking_clean"] = ranking_clean
 
-    ranking_weighted = []
-    for name, stats in sorted(
-        neighborhood_stats.items(),
-        key=lambda x: x[1].get("avg_score_weighted_10min", 0),
-        reverse=True,
-    ):
-        entry = {
-            "name": name,
-            "building_count": stats["building_count"],
-            "avg_score_weighted_5min": stats.get("avg_score_weighted_5min", 0),
-            "avg_score_weighted_10min": stats.get("avg_score_weighted_10min", 0),
-            "avg_score_weighted_15min": stats.get("avg_score_weighted_15min", 0),
-            "pct_weighted_overall_5min": stats.get("pct_weighted_overall_5min", 0),
-            "pct_weighted_overall_10min": stats.get("pct_weighted_overall_10min", 0),
-            "pct_weighted_overall_15min": stats.get("pct_weighted_overall_15min", 0),
-            "coverage_weighted_10min": stats.get("coverage_weighted_10min", 0),
-        }
-        for cat_stem in WEIGHTED_CATEGORY_STEMS:
-            for minutes in WALK_MINUTES:
-                key = f"avg_score_weighted_{cat_stem}_{minutes}min"
-                entry[key] = stats.get(key, 0)
-            for sub_stem in weighted_sub_stems.get(cat_stem, []):
-                for minutes in WALK_MINUTES:
-                    sub_key = f"avg_score_weighted_sub_{cat_stem}_{sub_stem}_{minutes}min"
-                    entry[sub_key] = stats.get(sub_key, 0)
-        ranking_weighted.append(entry)
-    citywide["neighborhood_ranking_weighted"] = ranking_weighted
-
     # Per-type neighborhood comparison (top/bottom for each type at 10min)
     type_comparisons = {}
     for t in existing_types:
         key = f"avg_{t}_10min"
         sorted_hoods = sorted(neighborhood_stats.items(), key=lambda x: x[1].get(key, 0), reverse=True)
         type_comparisons[t] = {
-            "best": [{"name": n, "avg": s[key]} for n, s in sorted_hoods[:5]],
-            "worst": [{"name": n, "avg": s[key]} for n, s in sorted_hoods[-5:]],
+            "best": [{"name": n, "avg": s.get(key, 0)} for n, s in sorted_hoods[:5]],
+            "worst": [{"name": n, "avg": s.get(key, 0)} for n, s in sorted_hoods[-5:]],
             "citywide_avg": citywide.get(f"avg_{t}_10min", 0),
         }
     citywide["type_comparisons"] = type_comparisons

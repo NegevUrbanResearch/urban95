@@ -11,7 +11,6 @@
   var pendingDeckIdleGeneration = 0;
   var deckIdleFallbackTimer = null;
   var deckIdleListenerCleanup = null;
-
   function clearPendingDeckUpdateTimer(currentDeps) {
     if (
       !currentDeps ||
@@ -1434,17 +1433,37 @@
         return;
       }
 
-      if (isWeighted || hasExpandedSelection) {
+      if (isWeighted) {
+        if (d.hasGeneratedArtifact("buildings")) {
+          perfSpan(d, "renderer:updateBuildingColors:setFeatureState", function () {
+            return { buildings: feats.length, scale: "status" };
+          }, function () {
+            feats.forEach(function (feature) {
+              var props = feature.properties || {};
+              var bid = Number(props.building_id);
+              var status = d.normalizeStatus(props[activeMetric.buildingPropertyKey]);
+              if (!Number.isFinite(bid)) {
+                if (!missingBuildingIdLogged) {
+                  console.warn(
+                    "[urban95] Some building features lack numeric building_id; map feature-state choropleth skipped for those."
+                  );
+                  missingBuildingIdLogged = true;
+                }
+                return;
+              }
+              d.map.setFeatureState(
+                { source: d.buildingsMapSourceId, sourceLayer: d.buildingsVectorLayerId, id: bid },
+                Object.fromEntries([[d.buildingsStatusStateKey, status]])
+              );
+            });
+          });
+        }
+      } else if (hasExpandedSelection) {
         var scores = d.collectBuildingScores();
-        var ranks = isWeighted ? null : d.bulkPercentileRanks(scores);
+        var ranks = d.bulkPercentileRanks(scores);
         feats.forEach(function (feature, index) {
           var props = feature.properties || {};
-          if (isWeighted) {
-            var rawScore = scores[index];
-            props[symPctKey] = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, rawScore)) : 0;
-          } else {
-            props[symPctKey] = ranks[index] != null ? ranks[index] : 0;
-          }
+          props[symPctKey] = ranks[index] != null ? ranks[index] : 0;
         });
       } else {
         feats.forEach(function (feature) {
@@ -1453,7 +1472,7 @@
         });
       }
 
-      if (d.hasGeneratedArtifact("buildings")) {
+      if (!isWeighted && d.hasGeneratedArtifact("buildings")) {
         perfSpan(d, "renderer:updateBuildingColors:setFeatureState", function () {
           return { buildings: feats.length };
         }, function () {
@@ -1479,11 +1498,16 @@
       }
 
       if (d.map.getLayer(d.buildingsFillLayerId)) {
-        d.map.setPaintProperty(
-          d.buildingsFillLayerId,
-          "fill-color",
-          d.buildingsChoroplethFillColorExpr
-        );
+          d.map.setPaintProperty(
+            d.buildingsFillLayerId,
+            "fill-color",
+            isWeighted
+              ? d.createBuildingFillColorExpression(
+                  activeMetric,
+                  d.hasGeneratedArtifact("buildings") ? d.buildingsStatusStateKey : null
+                )
+              : d.buildingsChoroplethFillColorExpr
+          );
       }
     });
   }
@@ -1503,6 +1527,14 @@
       var activeMetric = getActiveMetricFromDeps(d);
       var renderState = requireRenderState(d);
       var neighborhoodSurfaceData = d.getNeighborhoodSurfaceData();
+
+      if (d.map.getLayer("neighborhoods-surface")) {
+        var surfaceFilter =
+          d.getCurrentMode() === "house" && d.getScoreMode() !== "weighted"
+            ? ["==", ["to-number", ["get", "has_buildings"], 0], 1]
+            : null;
+        d.map.setFilter("neighborhoods-surface", surfaceFilter);
+      }
 
       if (d.hasGeneratedArtifact("neighborhood_surface")) {
         var generatedScoreKey = d.getNeighborhoodSurfaceScorePropertyKey();
@@ -1526,7 +1558,7 @@
           return;
         }
         if (d.map.getLayer("neighborhoods-surface")) {
-          var colorExpr = d.getNeighborhoodSurfaceColorExpression(generatedScoreKey);
+          var colorExpr = d.getNeighborhoodSurfaceColorExpression(generatedScoreKey, activeMetric);
           var outlineExpr = d.getCurrentMode() === "house" ? "rgba(0,0,0,0)" : colorExpr;
           d.map.setPaintProperty("neighborhoods-surface", "fill-color", colorExpr);
           d.map.setPaintProperty("neighborhoods-surface", "fill-outline-color", outlineExpr);
@@ -1570,7 +1602,7 @@
           surfaceSrc.setData(neighborhoodSurfaceData);
         });
         if (d.map.getLayer("neighborhoods-surface")) {
-          var dataColorExpr = d.getNeighborhoodSurfaceColorExpression(precomputedScoreKey);
+          var dataColorExpr = d.getNeighborhoodSurfaceColorExpression(precomputedScoreKey, activeMetric);
           var dataOutlineExpr = d.getCurrentMode() === "house" ? "rgba(0,0,0,0)" : dataColorExpr;
           d.map.setPaintProperty("neighborhoods-surface", "fill-color", dataColorExpr);
           d.map.setPaintProperty("neighborhoods-surface", "fill-outline-color", dataOutlineExpr);
@@ -1587,7 +1619,7 @@
         surfaceSrc.setData({ type: "FeatureCollection", features: [] });
       });
       if (d.map.getLayer("neighborhoods-surface")) {
-        var emptyColorExpr = d.getNeighborhoodSurfaceColorExpression(precomputedScoreKey || "score");
+        var emptyColorExpr = d.getNeighborhoodSurfaceColorExpression(precomputedScoreKey || "score", activeMetric);
         var emptyOutlineExpr = d.getCurrentMode() === "house" ? "rgba(0,0,0,0)" : emptyColorExpr;
         d.map.setPaintProperty("neighborhoods-surface", "fill-color", emptyColorExpr);
         d.map.setPaintProperty("neighborhoods-surface", "fill-outline-color", emptyOutlineExpr);
@@ -1646,6 +1678,9 @@
       // AF: finite raw avgs only — never coerce missing → 0 for percentile ranks.
       var values = feats.map(function (feature) {
         var props = feature.properties || {};
+        if (d.getScoreMode() === "weighted") {
+          return d.normalizeStatus(props[avgKey]);
+        }
         var raw = Number(props[avgKey]);
         return Number.isFinite(raw) ? raw : NaN;
       });
@@ -1670,7 +1705,8 @@
       var gapModes = d.cityGapModes || window.Urban95CityGapModes;
       var gap = d.getCurrentMode() === "citywide" ? d.getCityGapState() || {} : {};
       var gapMode = gapModes.normalizeMode(gap.mode);
-      var gapEnabled = gapMode !== gapModes.MODE_OFF;
+      var gapEnabled = d.getScoreMode() !== "weighted" && gapMode !== gapModes.MODE_OFF;
+      var cityGapValueKey = d.symPctKey;
       var usePrecomputedInGap =
         d.getCurrentMode() === "citywide" &&
         gapEnabled &&
@@ -1678,21 +1714,16 @@
 
       feats.forEach(function (feature, index) {
         var props = feature.properties || {};
-        if (d.getScoreMode() === "weighted") {
-          var weightedRaw = values[index];
-          var weightedFinite = Number.isFinite(weightedRaw);
-          props[cityGapEligibleKey] = weightedFinite;
-          // symPctKey 0 unused when ineligible (grey case below).
-          props[d.symPctKey] = weightedFinite
-            ? Math.max(0, Math.min(100, weightedRaw))
-            : 0;
-        } else {
+        if (d.getScoreMode() !== "weighted") {
           var afRaw = values[index];
           var rank = ranks[index];
           props[cityGapEligibleKey] = Number.isFinite(afRaw);
           props[d.symPctKey] = rank != null ? rank : 0;
+          props[cityInGapKey] = false;
+        } else {
+          delete props[cityGapEligibleKey];
+          delete props[cityInGapKey];
         }
-        props[cityInGapKey] = false;
       });
 
       var gapCut = NaN;
@@ -1702,7 +1733,7 @@
         feats.forEach(function (feature) {
           var props = feature.properties || {};
           if (!props[cityGapEligibleKey]) return;
-          var choroplethValue = Number(props[d.symPctKey]);
+          var choroplethValue = Number(props[cityGapValueKey]);
           if (!Number.isFinite(choroplethValue)) return;
           var buildingCount = Number(props.building_count);
           eligibleForGap.push({
@@ -1739,7 +1770,9 @@
       }
 
       // House/Building neighborhood-fill ramp (unchanged): pastel mid yellow-greens.
-      var houseColorExpr = [
+      var houseColorExpr = d.getScoreMode() === "weighted"
+        ? d.statusMatchExpression(["get", avgKey])
+        : [
         "interpolate",
         ["linear"],
         ["to-number", ["get", d.symPctKey]],
@@ -1757,7 +1790,9 @@
       // Citywide choropleth: higher-contrast stops readable at ~0.6 fill-opacity
       // (aligned with building fill ramp in mapLayers.js).
       // Unavailable (!city_gap_eligible) → same missing grey as Neighborhood surface.
-      var citywideColorExpr = [
+      var citywideColorExpr = d.getScoreMode() === "weighted"
+        ? d.statusMatchExpression(["get", avgKey])
+        : [
         "case",
         ["!", ["boolean", ["get", cityGapEligibleKey], false]],
         "#9ca3af",
@@ -1806,7 +1841,7 @@
             [
               "all",
               ["boolean", ["get", cityGapEligibleKey], false],
-              [compareOp, ["to-number", ["get", d.symPctKey]], gapCut],
+              [compareOp, ["to-number", ["get", cityGapValueKey]], gapCut],
             ],
             0.6,
             0.18,

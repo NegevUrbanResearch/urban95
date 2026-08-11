@@ -279,8 +279,8 @@
   function renderScoreModeSectionShell() {
     return (
       '<section id="score-type-section" class="control-section">' +
-      '<div class="section-title">Score Type</div>' +
-      '<div class="metric-options segmented-options" id="score-model-toggle" role="radiogroup" aria-label="Building score">' +
+      '<div class="section-title">Map Measure</div>' +
+      '<div class="metric-options segmented-options" id="score-model-toggle" role="radiogroup" aria-label="Map measure">' +
       '<label class="radio-option"><input type="radio" name="score-model" value="weighted" checked /><span>Urban95</span></label>' +
       '<label class="radio-option"><input type="radio" name="score-model" value="expanded" /><span>Amenities Focus</span></label>' +
       "</div></section>"
@@ -317,7 +317,7 @@
 
   function renderIndicatorColumnTitlesMarkup() {
     var viewTitle = "Show companion map layers";
-    var heatTitle = "Color the map by this indicator score";
+    var heatTitle = "Color the map by this indicator status";
     return (
       '<div class="indicator-actions-cols indicator-actions-cols--titles" aria-hidden="true">' +
       '<span class="indicator-action-title indicator-action-title--view" title="' +
@@ -471,7 +471,7 @@
     var heatActive = !!options.heatActive;
     var hideHeat = !!options.hideHeat;
     var showTitle = options.showTitle || "Show companion map layers";
-    var heatTitle = options.heatTitle || "Color the map by this indicator score";
+    var heatTitle = options.heatTitle || "Color the map by this indicator status";
     var showAriaPressed = showState === "mixed" ? "mixed" : showState === "on" ? "true" : "false";
     var heatAriaPressed = heatActive ? "true" : "false";
     var collapseMarkup = "";
@@ -674,7 +674,7 @@
     });
     var expanded = !!options.expanded;
     var hideHeat = !!options.hideHeat;
-    var heatTitle = options.heatTitle || "Color the map by this indicator score";
+    var heatTitle = options.heatTitle || "Color the map by this indicator status";
     var defaultShowTitle = options.defaultShowTitle || "Show companion map layers";
     var categoryListId = "indicator-subs-" + domSafeId(categoryRow.stem);
     var categoryShowState = options.showState || (options.showActive ? "on" : "off");
@@ -749,7 +749,7 @@
       function (metricId) {
         return options.isShowEnabled && options.isShowEnabled(metricId) ? "on" : "off";
       };
-    var heatTitle = "Color the map by this indicator score";
+    var heatTitle = "Color the map by this indicator status";
     var parts = [];
     var index = 0;
 
@@ -1061,11 +1061,39 @@
 
     var legendSpec = metric.legendSpec || {};
     var title = legendSpec.title || metric.label;
+    var statusLegendItems = Array.isArray(legendSpec.items) && legendSpec.items.length
+      ? legendSpec.items
+      : (window.Urban95StatusScale && window.Urban95StatusScale.definitions) || [];
+    if (metric.scale === "status" && statusLegendItems.length) {
+      var knownStatusItems = statusLegendItems.filter(function (item) { return item.token !== "unknown"; });
+      var statusItems = knownStatusItems
+        .map(function (item) {
+          return (
+            '<span class="legend-status-item">' +
+            escapeHtml(item.label || item.token || "Unknown") +
+            "</span>"
+          );
+        })
+        .join("");
+      return (
+        '<div class="legend-block legend-block--status">' +
+        '<div class="legend-title">' +
+        escapeHtml(title) +
+        "</div>" +
+        '<div class="legend-subtitle">Urban95</div>' +
+        '<div class="legend-status-signal"><div class="status-signal status-signal--legend" aria-hidden="true">' +
+        knownStatusItems.map(function (item) {
+          return '<i class="status-signal-lamp" style="--status-lamp:' + escapeHtml(item.color || "#9ca3af") + '"></i>';
+        }).join("") + '</div><div class="legend-status-items">' +
+        statusItems +
+        "</div></div></div>"
+      );
+    }
     var subtitle =
       legendSpec.subtitle ||
       (metric.scale === "percentile"
         ? "Amenities Focus \u00b7 percentile rank"
-        : "Urban95 \u00b7 weighted score (0-100)");
+        : "Score");
     var labels = Array.isArray(legendSpec.labels) && legendSpec.labels.length
       ? legendSpec.labels
       : ["0", "25", "50", "75", "100"];

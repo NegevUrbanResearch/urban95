@@ -74,6 +74,7 @@
 
   var stateKeys = {
     buildingScorePercent: "sym_pct",
+    buildingStatus: "u95Status",
     buildingSelected: "selected",
   };
 

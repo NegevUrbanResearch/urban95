@@ -28,6 +28,20 @@ function requireScriptIndex(scripts, expectedPath) {
   return scriptIndex;
 }
 
+test("Urban95 overview building colors use a categorical match expression", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/map/mapLayers.js", browser);
+
+  const expression = browser.window.Urban95MapLayers.createBuildingFillColorExpression({
+    scale: "status",
+    buildingPropertyKey: "u95_status_10min",
+  });
+  assert.ok(JSON.stringify(expression).includes("match"));
+  assert.ok(!JSON.stringify(expression).includes("interpolate"));
+});
+
 test("nested indicator groups use a neutral hierarchy guide", () => {
   const css = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "control-sidebar.css"),
@@ -622,6 +636,7 @@ test("core modules expose stable Urban95 namespaces", () => {
   runBrowserScript("docs/js/core/appStartupBridge.js", browser);
   runBrowserScript("docs/js/core/startup.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/scoring/scoreContext.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
@@ -2924,6 +2939,76 @@ test("special point render plan prefers generated vectors in weighted mode", () 
   assert.equal(plan.features, null);
 });
 
+function createUrban95CityGapHarness(properties) {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/ui/cityGapThresholds.js", browser);
+  runBrowserScript("docs/js/map/mapRenderers.js", browser);
+
+  const paintCalls = [];
+  const data = {
+    type: "FeatureCollection",
+    features: properties.map((props) => ({ type: "Feature", properties: props })),
+  };
+  browser.window.Urban95MapRenderers.configure({
+    urban95Perf: { phase: (_name, fn) => fn() },
+    renderState: { supportsMetricNeighborhoodAverageData: () => true },
+    map: {
+      getLayer: () => ({}),
+      getSource: () => ({ setData() {} }),
+      setLayoutProperty() {},
+      setPaintProperty(layer, property, value) {
+        paintCalls.push({ layer, property, value });
+      },
+    },
+    getNeighborhoodsData: () => data,
+    getScoreMode: () => "weighted",
+    getCurrentMode: () => "citywide",
+    getScoreMinutes: () => 10,
+    getNeighborhoodAverageKey: () => "u95_status",
+    getActiveMetric: () => ({
+      id: "u95.overall",
+      scale: "status",
+      areaStatusKey: "u95_status",
+    }),
+    normalizeStatus: browser.window.Urban95StatusScale.normalize,
+    statusMatchExpression: browser.window.Urban95StatusScale.matchExpression,
+    getCityGapState: () => ({ mode: "below_city_avg" }),
+    cityGapModes: browser.window.Urban95CityGapModes,
+    symPctKey: "_u95_symb_pct",
+  });
+
+  return { browser, data, paintCalls };
+}
+
+test("Urban95 city mode never creates numeric status ranks or enables gap opacity", () => {
+  const harness = createUrban95CityGapHarness([
+    { Name: "Low", building_count: 10, u95_status: "disappointing" },
+    { Name: "High", building_count: 10, u95_status: "thriving" },
+  ]);
+
+  harness.browser.window.Urban95MapRenderers.updateNeighborhoodColors();
+
+  assert.equal(harness.data.features[0].properties._u95_status_rank, undefined);
+  assert.equal(harness.data.features[1].properties._u95_status_rank, undefined);
+  const opacity = harness.paintCalls.find((call) => call.property === "fill-opacity");
+  assert.doesNotMatch(JSON.stringify(opacity.value), /_u95_status_rank|city_in_gap|city_gap_eligible/);
+  assert.doesNotMatch(JSON.stringify(opacity.value), /_u95_symb_pct/);
+});
+
+test("Urban95 city mode ignores stale Amenities Focus gap state after a mode switch", () => {
+  const harness = createUrban95CityGapHarness([
+    { Name: "Low", building_count: 10, u95_status: "disappointing", _u95_symb_pct: 100 },
+    { Name: "High", building_count: 10, u95_status: "thriving", _u95_symb_pct: 0 },
+  ]);
+
+  harness.browser.window.Urban95MapRenderers.updateNeighborhoodColors();
+
+  const opacity = harness.paintCalls.find((call) => call.property === "fill-opacity");
+  assert.doesNotMatch(JSON.stringify(opacity.value), /_u95_status_rank|city_in_gap|city_gap_eligible/);
+  assert.doesNotMatch(JSON.stringify(opacity.value), /_u95_symb_pct/);
+});
+
 test("weighted amenity points follow the global shown display keys across active heatmaps", () => {
   const browser = createBrowserContext();
   const renderState = loadRenderState(browser);
@@ -3025,7 +3110,6 @@ test("diagnostic neighborhood views publish unavailable copy instead of zero ave
       formatScoreInteger(value) { return String(Math.round(value)); },
       formatMetricNumber(value) { return String(value); },
       heroPercentileMeterFillStyle() { return ""; },
-      weightedCategoryHighlightsFromSource() { return []; },
     },
     getWeightedNeighborhoodMetricValue: renderState.getWeightedNeighborhoodMetricValue,
     hasWeightedNeighborhoodMetricData: renderState.hasWeightedNeighborhoodMetricData,
@@ -5919,8 +6003,8 @@ test("runtime data warns when building score columns are incomplete", () => {
   });
 
   assert.ok(warnings.some((message) => message.includes("num_street_lights_*")));
-  assert.ok(warnings.some((message) => message.includes("score_weighted_*")));
-  assert.ok(warnings.some((message) => message.includes("score_weighted_sub_*")));
+  assert.ok(warnings.some((message) => message.includes("u95_status_10min")));
+  assert.ok(warnings.some((message) => message.includes("u95_status category/direct-indicator")));
 });
 
 test("runtime building fallback does not request ignored plain GeoJSON", async () => {
@@ -6537,7 +6621,6 @@ test("app.js is final coordinator only after ownership extraction", () => {
     appOwnedHelperPattern("handleControlsEscape"),
     appOwnedHelperPattern("handleControlsHeatmapVisibilityChange"),
     appOwnedHelperPattern("clearControlDerivedCaches"),
-    appOwnedHelperPattern("renderWeightedSubcategoryComparisonList"),
     appOwnedHelperPattern("getCurrentScoreModelContext"),
     appOwnedHelperPattern("getCurrentBuildingCleanFilteredScore"),
     appOwnedHelperPattern("getCurrentBuildingOverallScore"),
@@ -8615,6 +8698,7 @@ test("controls bind validates dependencies and returns the coordinator surface",
     listeners.push({ type, handler });
   };
 
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/ui/controlSidebarMarkup.js", browser);
@@ -8741,6 +8825,7 @@ test("controls bind validates dependencies and returns the coordinator surface",
 
 test("controls binding fails fast when onHeatmapSelectionChanged is missing", () => {
   const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/ui/controlSidebarMarkup.js", browser);
@@ -8827,14 +8912,11 @@ test("task-3 app coordinator binds score model helpers without reimplementing ex
   assert.match(appSource, /(?:const|var) formatMetricNumber = requireScoreModelMember\(Urban95ScoreModel, "formatMetricNumber"\);/);
 
   assert.doesNotMatch(appSource, /function percentileBreakpoints\s*\(/);
-  assert.doesNotMatch(appSource, /function buildHistogramDistributionFromScores\s*\(/);
   assert.doesNotMatch(appSource, /function getColorForValue\s*\(/);
   assert.doesNotMatch(appSource, /function computePercentileRank\s*\(/);
   assert.doesNotMatch(appSource, /function bulkPercentileRanks\s*\(/);
   assert.doesNotMatch(appSource, /function formatMetricNumber\s*\(/);
   assert.doesNotMatch(appSource, /function formatScoreInteger\s*\(/);
-  assert.doesNotMatch(appSource, /function weightedCategoryHighlightsFromSource\s*\(/);
-  assert.doesNotMatch(appSource, /function weightedSubcategoryComparisonRows\s*\(/);
 });
 
 test("task-5 app coordinator wires the score sidebar module instead of keeping local sidebar logic", () => {
@@ -9046,6 +9128,7 @@ test("score sidebar shell records opt-in perf span without building breakdown co
 
   let breakdownCalls = 0;
   let metricsCalls = 0;
+  let currentBreakdown = null;
   const building = {
     feature: {
       properties: {
@@ -9071,7 +9154,7 @@ test("score sidebar shell records opt-in perf span without building breakdown co
     },
     buildExplainScoreBreakdown() {
       breakdownCalls += 1;
-      return null;
+      return currentBreakdown;
     },
     buildPercentileMetrics() {
       metricsCalls += 1;
@@ -9079,6 +9162,13 @@ test("score sidebar shell records opt-in perf span without building breakdown co
     },
     getScoreModeLabel() {
       return "Urban95";
+    },
+    getActiveMetric() {
+      return {
+        id: "u95.cat.nature",
+        kind: "weighted-category",
+        selectedWeightedStem: "nature",
+      };
     },
     getScoreMinutes() {
       return 10;
@@ -9159,7 +9249,7 @@ test("score sidebar shell records opt-in perf span without building breakdown co
   assert.equal(metricsCalls, 0);
   assert.equal(bodyEl.innerHTML, "");
   assert.equal(emptyEl.hidden, false);
-  assert.equal(emptyEl.textContent, "Loading score details...");
+  assert.equal(emptyEl.textContent, "Loading status details...");
   assert.equal(buildingContextEl.hidden, false);
   assert.equal(buildingContextIdEl.textContent, "Building #87");
   assert.equal(buildingContextCoordsEl.textContent, "31.25100, 34.79100");
@@ -9207,7 +9297,7 @@ test("score sidebar shell records opt-in perf span without building breakdown co
 
   bodyEl.innerHTML = "<p>Existing amenity detail</p>";
   emptyEl.hidden = false;
-  emptyEl.textContent = "Loading score details...";
+  emptyEl.textContent = "Loading status details...";
   browser.window.Urban95ScoreSidebar.showShell(building, {
     preserveExistingDetail: true,
     reason: "amenitiesHouseSwitch",
@@ -9229,6 +9319,18 @@ test("score sidebar shell records opt-in perf span without building breakdown co
         record.meta.reason === "amenitiesHouseSwitch"
     )
   );
+  currentBreakdown = {
+    overallStatus: { token: "disappointing", label: "Disappointing", color: "#c84945" },
+    activeStatus: { token: "thriving", label: "Thriving", color: "#2f855a" },
+    weightedCategories: [
+      { stem: "nature", label: "Nature", status: { token: "thriving", label: "Thriving", color: "#2f855a" }, subrows: [] },
+    ],
+  };
+  browser.window.Urban95ScoreSidebar.sync();
+
+  assert.match(heroEl.innerHTML, /Thriving/);
+  assert.doesNotMatch(heroEl.innerHTML, /Disappointing/);
+  assert.doesNotMatch(bodyEl.innerHTML, /CURRENT STATUS|Current status|Five categories:/);
 });
 
 test("task-5 app coordinator injects sidebar chrome and uses non-focus-stealing cleanup hides", () => {
@@ -9643,12 +9745,13 @@ test("score explanation create fails fast when a required scoreModel member is m
   );
 });
 
-test("score explanation module builds weighted breakdowns without app.js helpers", () => {
+test("score explanation module builds Urban95 status breakdowns without app.js helpers", () => {
   const browser = createBrowserContext();
   const explainSource = fs.readFileSync(
     path.resolve(__dirname, "..", "..", "docs", "js", "scoring", "scoreExplain.js"),
     "utf8"
   );
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/scoring/scoreExplain.js", browser);
 
@@ -9670,7 +9773,17 @@ test("score explanation module builds weighted breakdowns without app.js helpers
       nature: { stem: "nature", label: "Nature", weight: 1, color: "#7CB342" },
     },
     WEIGHTED_SUBCATEGORY_COMPONENTS: {
-      nature: [{ stem: "parks", label: "Parks", weight: 1 }],
+      nature: [
+        {
+          stem: "parks",
+          label: "Parks",
+          weight: 1,
+          evidenceFields: [{ propertyKey: "park_distance_m", label: "Nearest park", unit: "m" }],
+        },
+      ],
+    },
+    WEIGHTED_DETAIL_COMPONENTS: {
+      parks: [{ stem: "nearby", label: "Nearby park access", buildingKey: "access_park_10min" }],
     },
     CLEAN_SCORE_COMPONENTS: [],
     CLEAN_WEIGHTS: {},
@@ -9708,7 +9821,7 @@ test("score explanation module builds weighted breakdowns without app.js helpers
       return String(Math.round(Number(value) || 0));
     },
     getBuildingOverallScore() {
-      return 72;
+      return null;
     },
   };
   const explain = browser.window.Urban95ScoreExplain.create({
@@ -9760,27 +9873,32 @@ test("score explanation module builds weighted breakdowns without app.js helpers
     },
   });
   const props = {
-    score_weighted_10min: 72,
-    score_weighted_nature_10min: 72,
-    score_weighted_sub_nature_parks_10min: 55,
+    u95_status_10min: "functioning",
+    u95_status_nature_10min: "thriving",
+    u95_status_sub_nature_parks_10min: "functioning",
+    u95_status_detail_nature_parks_nearby_10min: "thriving",
+    park_distance_m: 175,
+    access_park_10min: 1,
   };
 
   const breakdown = explain.buildExplainScoreBreakdown(props);
 
-  assert.equal(breakdown.overallScoreLabel, "72");
+  assert.equal(breakdown.overallStatus.label, "Functioning");
   assert.equal(breakdown.weightedCategories.length, 1);
-  assert.equal(breakdown.weightedCategories[0].subrows[0].value, 55);
-  assert.equal(
-    breakdown.formulaLine,
-    "Urban95 score = (0.20×Environmental Quality) + (0.15×Nature) + (0.15×Play) + (0.25×Safety & Mobility) + (0.25×Family Services)."
-  );
+  assert.equal(breakdown.weightedCategories[0].status.label, "Thriving");
+  assert.equal(breakdown.weightedCategories[0].subrows[0].status.label, "Functioning");
+  assert.deepEqual(JSON.parse(JSON.stringify(breakdown.weightedCategories[0].subrows[0].rawEvidence)), [
+    { label: "Nearest park", value: 175, unit: "m" },
+  ]);
+  assert.equal(breakdown.weightedCategories[0].subrows[0].details[0].status.label, "Thriving");
+  assert.deepEqual(JSON.parse(JSON.stringify(breakdown.weightedCategories[0].subrows[0].details[0].rawEvidence)), [
+    { label: "Observed access", value: 1, unit: "" },
+  ]);
+  assert.equal(breakdown.formulaLine, undefined);
   assert.match(explainSource, /weight \+ " pts × \("/);
   assert.match(explainSource, /Amenities Focus index = POI count \+ \\u00bc× trees \+ \\u00bc× street lights\./);
   assert.match(explainSource, /Partial Amenities Focus index = sum of selected POI counts plus \\u00bc× trees and \\u00bc× lights when selected\./);
-  assert.equal(
-    breakdown.weightedCategories[0].subrows[0].valueLabel,
-    "55 / 100"
-  );
+  assert.doesNotMatch(JSON.stringify(breakdown), /\/\s*100|Urban95 score\s*=/);
   assert.equal(explain.getWeightedCategoryIcon("nature"), "nature");
   assert.equal(typeof explain.renderHorizonIcon, "undefined");
   assert.equal(typeof explain.buildFilteredFormulaLine, "undefined");
@@ -10159,6 +10277,7 @@ function loadAppStatePrerequisites(browser) {
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
   runBrowserScript("docs/js/scoring/scoreContext.js", browser);
@@ -10289,6 +10408,7 @@ test("app.js fails fast when a required Urban95ScoreModel member is missing", ()
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   delete browser.window.Urban95ScoreModel.formatMetricNumber;
 
@@ -10314,6 +10434,7 @@ test("app.js fails fast when a required Urban95ScoreModel member is undefined", 
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   browser.window.Urban95ScoreModel.formatMetricNumber = undefined;
 
@@ -10339,6 +10460,7 @@ test("app.js fails fast when Urban95MapLayers is missing", () => {
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
 
   assert.throws(
@@ -10363,6 +10485,7 @@ test("app.js fails fast when Urban95ScoreSidebar is missing", () => {
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
 
@@ -10388,6 +10511,7 @@ test("app.js fails fast when a required Urban95Dashboards member is missing", ()
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
@@ -10417,6 +10541,7 @@ test("app.js fails fast when a required Urban95Dashboards member has the wrong t
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
@@ -10446,6 +10571,7 @@ test("app.js fails fast when a required Urban95CitySidebar member is missing", (
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
@@ -10473,6 +10599,7 @@ function loadModeControllerAppPrerequisites(browser) {
   runBrowserScript("docs/js/core/pointDataSources.js", browser);
   runBrowserScript("docs/js/core/startup.js", browser);
   runBrowserScript("docs/js/core/loadingUi.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/ui/weightedMetricShowRegistry.js", browser);
   runBrowserScript("docs/js/scoring/scoreContext.js", browser);
@@ -10576,6 +10703,7 @@ test("app.js fails fast when a required Urban95MapLayers member is missing", () 
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   delete browser.window.Urban95MapLayers.createBuildingsSource;
@@ -10602,6 +10730,7 @@ test("app.js fails fast when a required Urban95MapLayers member has the wrong ty
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   browser.window.Urban95MapLayers.createBuildingsSource = 123;
@@ -10628,6 +10757,7 @@ test("app.js fails fast when Urban95MapRenderers is missing", () => {
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
@@ -10656,6 +10786,7 @@ test("app.js fails fast when a required Urban95MapRenderers member has the wrong
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
@@ -10686,6 +10817,7 @@ test("app.js fails fast when Urban95Selection is missing", () => {
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
@@ -10715,6 +10847,7 @@ test("app.js fails fast when a required Urban95Selection member has the wrong ty
   runBrowserScript("docs/js/core/loaders.js", browser);
   runBrowserScript("docs/js/core/runtimeData.js", browser);
   runBrowserScript("docs/js/core/perfPanel.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/map/mapLayers.js", browser);
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
@@ -10875,31 +11008,484 @@ test("desktopOnlyGate supports ?desktop bypass for testing", () => {
   );
 });
 
-test("weighted metric registry fields exist in generated neighborhood artifacts", () => {
+test("Urban95 status registry exposes flat aggregate contract fields", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
 
   const registry = browser.window.Urban95ScoreModel.buildWeightedMetricRegistry();
-  const metrics = Object.values(registry).filter((metric) => metric && metric.kind.indexOf("weighted") === 0);
-  const neighborhoodSurface = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "data", "neighborhood_surface.geojson"), "utf8")
-  );
-  const citywideStats = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "data", "citywide_stats.json"), "utf8")
-  );
-  const surfaceProps = ((neighborhoodSurface.features || [])[0] || {}).properties || {};
-  const rankingRows = citywideStats.neighborhood_ranking_weighted || [];
+  const metrics = Object.values(registry).filter((metric) => metric && metric.scale === "status");
 
   metrics.forEach((metric) => {
-    assert.ok(
-      Object.prototype.hasOwnProperty.call(surfaceProps, metric.surfacePropertyKey),
-      metric.id + " missing surface field " + metric.surfacePropertyKey
-    );
-    assert.ok(
-      Object.prototype.hasOwnProperty.call(citywideStats, metric.neighborhoodAverageKey) ||
-        rankingRows.some((row) => Object.prototype.hasOwnProperty.call(row, metric.neighborhoodAverageKey)),
-      metric.id + " missing citywide/ranking field " + metric.neighborhoodAverageKey
-    );
+    assert.ok(metric.buildingPropertyKey.startsWith("u95_status"), metric.id + " building status field");
+    assert.ok(metric.areaStatusKey.startsWith("u95_status"), metric.id + " area status field");
+    assert.ok(metric.areaSupportCountKey.endsWith("_support_count"), metric.id + " area support field");
+    assert.ok(metric.areaSummaryReasonKey.endsWith("_summary_reason"), metric.id + " area reason field");
   });
+});
+
+test("Urban95 area composition resolves the active prefix and preserves unavailable summaries", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  const render = browser.window.Urban95NeighborhoodPanelRender;
+  const escapeHtml = (value) => String(value == null ? "" : value);
+  const metric = { statusCompositionPrefix: "u95_sub_environmental_quality_shade" };
+  const props = {
+    u95_sub_environmental_quality_shade_count_disappointing: 1,
+    u95_sub_environmental_quality_shade_count_functioning: 2,
+    u95_sub_environmental_quality_shade_count_thriving: 3,
+    u95_sub_environmental_quality_shade_count_unknown: 4,
+    u95_sub_environmental_quality_shade_pct_disappointing: 10,
+    u95_sub_environmental_quality_shade_pct_functioning: 20,
+    u95_sub_environmental_quality_shade_pct_thriving: 30,
+    u95_sub_environmental_quality_shade_pct_unknown: 40,
+  };
+
+  const html = render.renderStatusComposition({ escapeHtml }, props, metric);
+  assert.match(html, /Disappointing[\s\S]*Functioning[\s\S]*Thriving[\s\S]*Unknown/);
+  assert.match(html, /30%/);
+  assert.doesNotMatch(html, /City avg|\/\s*100|histogram|percentile|ranking/i);
+
+  const unavailable = render.renderStatusComposition({ escapeHtml }, {}, metric);
+  assert.match(unavailable, /Summary unavailable/);
+  assert.doesNotMatch(unavailable, /100%\s*Unknown/);
+
+  const partial = { ...props };
+  delete partial.u95_sub_environmental_quality_shade_pct_unknown;
+  assert.match(
+    render.renderStatusComposition({ escapeHtml }, partial, metric),
+    /Summary unavailable/
+  );
+});
+
+test("score sidebar renders Urban95 overview composition and selected indicator evidence as statuses", () => {
+  const browser = createBrowserContext({
+    addEventListener() {},
+    removeEventListener() {},
+    matchMedia() { return { matches: false }; },
+  });
+  runBrowserScript("docs/js/core/palette.js", browser);
+  runBrowserScript("docs/js/ui/sidebarChromeBindings.js", browser);
+  runBrowserScript("docs/js/ui/scoreSidebar.js", browser);
+
+  let activeMetric = { kind: "weighted-overall", label: "All indicators overview" };
+  const element = () => ({
+    hidden: false,
+    innerHTML: "",
+    textContent: "",
+    style: { setProperty() {}, removeProperty() {} },
+    classList: { add() {}, remove() {}, toggle() {} },
+    addEventListener() {},
+    getBoundingClientRect() { return { width: 380 }; },
+  });
+  const requiredElements = Array.from({ length: 10 }, element);
+  browser.window.Urban95ScoreSidebar.configure({
+    getScoreMode: () => "weighted",
+    getSelectedAmenityTypes: () => new Set(),
+    getAllFilterTypes: () => [],
+    getSelectedBuilding: () => null,
+    buildExplainScoreBreakdown: () => null,
+    buildPercentileMetrics: () => null,
+    getScoreModeLabel: () => "Urban95",
+    getActiveMetric: () => activeMetric,
+    getScoreMinutes: () => 10,
+    escapeHtml: (value) => String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;"),
+    renderHorizonLabelCell: () => "",
+    renderHorizonSubLabelCell: () => "",
+    getWeightedCategoryIcon: () => "circle",
+    getWeightedSubcategoryIcon: () => "circle",
+    getScoreExplainRowIcon: () => "circle",
+    getScoreExplainPartialFilterSet: () => null,
+    isScoreExplainCategoryFilterHighlighted: () => false,
+    isScoreExplainRowFilterHighlighted: () => false,
+    formatScoreExplainRowValue: () => "",
+    horizonBarFillStyle: () => "",
+    horizonSubBarFillStyle: () => "",
+    explainRankBarColor: () => "#000",
+    heroPercentileMeterFillStyle: () => "",
+    getOrdinalSuffix: () => "th",
+    formatMetricNumber: (value) => String(value),
+    formatScoreInteger: (value) => String(value),
+    buildBuildingDemographicContext: () => null,
+    setSidebarPadding() {},
+    restoreFocusAfterHide() {},
+    referenceRadiusMeters: 300,
+    scoreExplainIconNeutral: "#64748b",
+    sidebarEl: requiredElements[0],
+    bodyEl: requiredElements[1],
+    emptyEl: requiredElements[2],
+    heroEl: requiredElements[3],
+    noteEl: requiredElements[4],
+    buildingContextEl: requiredElements[5],
+    buildingContextIdEl: requiredElements[6],
+    buildingContextCoordsEl: requiredElements[7],
+    closeButtonEl: requiredElements[8],
+    backdropEl: requiredElements[9],
+  });
+
+  const status = (token, label) => ({ token, label, color: "#123456" });
+  const breakdown = {
+    overallStatus: status("functioning", "Functioning"),
+    weightedCategories: [
+      {
+        stem: "environmental_quality",
+        label: "Environmental <Quality>",
+        status: status("functioning", "Functioning"),
+        subrows: [{
+          stem: "shade",
+          label: "Shade",
+          status: status("thriving", "Thriving"),
+          rawEvidence: [{ label: "Rounded <summer> SI", value: 0.4, unit: "" }],
+          details: [{
+            stem: "shade_check",
+            label: "Shade coverage check",
+            status: status("functioning", "Functioning"),
+            rawEvidence: [{ label: "Observed access", value: 1, unit: "" }],
+          }],
+        }],
+      },
+      { stem: "nature", label: "Nature", status: status("thriving", "Thriving"), subrows: [] },
+      { stem: "play", label: "Play", status: status("disappointing", "Disappointing"), subrows: [] },
+      { stem: "safety_mobility", label: "Safety & Mobility", status: status("functioning", "Functioning"), subrows: [] },
+      { stem: "family_services", label: "Family Services", status: status("unknown", "Unknown"), subrows: [] },
+    ],
+  };
+
+  const overviewHtml = browser.window.Urban95ScoreSidebar.render(breakdown, null, {});
+  const statusTagCount = (overviewHtml.match(/class="urban95-status-tag /g) || []).length;
+  const rowLampCount = (overviewHtml.match(/class="status-signal-lamp status-signal-lamp--/g) || []).length;
+  assert.ok(statusTagCount > 0);
+  assert.equal(rowLampCount, statusTagCount * 3);
+  assert.match(overviewHtml, /status-signal status-signal--row/);
+  assert.doesNotMatch(overviewHtml, /Five categories:|Current status/i);
+  assert.equal((overviewHtml.match(/<details class="urban95-status-category-disclosure"/g) || []).length, 5);
+  assert.match(overviewHtml, /<summary[^>]+aria-label="Environmental &lt;Quality&gt; indicator details"/);
+  assert.match(overviewHtml, /Environmental &lt;Quality&gt;/);
+  assert.match(overviewHtml, /Official SI interpretation/);
+  assert.match(overviewHtml, /Good shade/);
+  assert.match(overviewHtml, /urban95-shade-scale-pointer/);
+  assert.match(overviewHtml, /<details class="urban95-status-subcategory-disclosure"/);
+  assert.match(overviewHtml, /urban95-status-diagnostic-list/);
+  assert.doesNotMatch(overviewHtml, /<div class="urban95-status-evidence"><span>Rounded &lt;summer&gt; SI/);
+  assert.match(overviewHtml, /Shade coverage check/);
+  assert.doesNotMatch(overviewHtml, /Environmental <Quality>|Rounded <summer> SI/);
+
+  activeMetric = {
+    kind: "weighted-category",
+    label: "Environmental Quality",
+    selectedWeightedStem: "environmental_quality",
+  };
+  const categoryHtml = browser.window.Urban95ScoreSidebar.render(breakdown, null, {});
+  assert.equal((categoryHtml.match(/data-status-category=/g) || []).length, 5);
+  assert.match(categoryHtml, /class="urban95-status-category-disclosure is-filter-highlight" open data-status-category="environmental_quality"/);
+  assert.match(categoryHtml, /data-status-category="nature"/);
+  assert.match(categoryHtml, /Shade/);
+  assert.match(categoryHtml, /Rounded summer SI 0\.4, Good shade/);
+
+  activeMetric = {
+    kind: "weighted-subcategory",
+    label: "Shade",
+    selectedWeightedStem: "environmental_quality",
+    selectedWeightedSubStem: "shade",
+  };
+  const indicatorHtml = browser.window.Urban95ScoreSidebar.render(breakdown, null, {});
+  assert.equal((indicatorHtml.match(/data-status-category=/g) || []).length, 5);
+  assert.match(indicatorHtml, /data-status-subrow="shade"/);
+  assert.match(indicatorHtml, /urban95-status-indicator is-active-status-row/);
+  assert.match(indicatorHtml, /Shade/);
+  assert.match(indicatorHtml, /Rounded summer SI 0\.4, Good shade/);
+  assert.match(indicatorHtml, /SI 0\.4/);
+  assert.match(indicatorHtml, /urban95-status-tag/);
+  assert.doesNotMatch(indicatorHtml, /Shade score|indicator score|Building score/);
+
+  activeMetric = {
+    kind: "diagnostic-access",
+    label: "Shade coverage check",
+    parentStem: "environmental_quality",
+    selectedWeightedStem: "environmental_quality",
+    selectedWeightedSubStem: "shade",
+    selectedWeightedDetailStem: "shade_check",
+  };
+  const diagnosticHtml = browser.window.Urban95ScoreSidebar.render(breakdown, null, {});
+  assert.match(diagnosticHtml, /Shade coverage check/);
+  assert.match(diagnosticHtml, /data-status-subrow="shade"/);
+  assert.match(diagnosticHtml, /urban95-status-diagnostic is-active-status-row" data-status-detail="shade_check"/);
+  assert.match(diagnosticHtml, /Observed access/);
+  assert.doesNotMatch(diagnosticHtml, /indicator score|Building score/);
+
+  const css = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "style.css"), "utf8");
+  assert.match(css, /\.score-explain-sidebar-body\s*\{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.urban95-status-tag\s*\{[^}]*width:\s*76px/);
+  assert.match(css, /details-content[^\{]*\{[^}]*transition:/);
+  assert.match(css, /\.urban95-status-category-disclosure > summary\s*\{/);
+  assert.doesNotMatch(css, /\.urban95-status-category-disclosure summary\s*\{/);
+});
+
+test("Urban95 status infrastructure exposes no numeric ranking API or city-gap rank path", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/core/palette.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/scoring/scoreModel.js", browser);
+  assert.equal(browser.window.Urban95StatusScale.rank, undefined);
+  assert.equal(browser.window.Urban95ScoreModel.weightedNeighborhoodRankingRows, undefined);
+  assert.equal(browser.window.Urban95ScoreModel.getCitywideWeightedAverageScore, undefined);
+
+  const rendererSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "map", "mapRenderers.js"),
+    "utf8"
+  );
+  const citySidebarSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "citySidebar.js"),
+    "utf8"
+  );
+  assert.doesNotMatch(rendererSource, /_u95_status_rank|Urban95StatusScale\.rank/);
+  assert.doesNotMatch(citySidebarSource, /if \(isWeighted\)[\s\S]{0,500}bulkPercentileRanks|Average " \+ label \+ " score by neighborhood/);
+});
+
+test("legacy numeric Urban95 neighborhood renderer and histogram plumbing are absent", () => {
+  const productionFiles = [
+    "docs/js/ui/neighborhoodPanelRender.js",
+    "docs/js/map/renderState.js",
+    "docs/js/core/appDependencies.js",
+    "docs/js/scoring/scoreModel.js",
+    "docs/js/scoring/scoreExplain.js",
+    "docs/app.js",
+  ];
+  const source = productionFiles.map((file) => fs.readFileSync(
+    path.resolve(__dirname, "..", "..", ...file.split("/")),
+    "utf8"
+  )).join("\n");
+  assert.doesNotMatch(source, /buildBodyHTMLWeighted|populateHeaderWeighted/);
+  assert.doesNotMatch(source, /getWeightedHistogramDistribution|distribution_weighted/);
+  assert.doesNotMatch(source, /weightedCategoryHighlightsFromSource|weightedSubcategoryComparisonRows|renderWeightedSubcategoryComparisonList/);
+  assert.doesNotMatch(source, /buildHistogramDistributionFromScores|coverage_weighted/);
+});
+
+test("active Urban95 production copy uses status and evidence terminology", () => {
+  const productionFiles = [
+    "docs/index.html",
+    "docs/js/ui/scoreSidebar.js",
+    "docs/js/map/staticPolygonCompanions.js",
+    "docs/js/scoring/scoreModel.js",
+  ];
+  const source = productionFiles.map((file) => fs.readFileSync(
+    path.resolve(__dirname, "..", "..", ...file.split("/")),
+    "utf8"
+  )).join("\n");
+  assert.doesNotMatch(source, /Loading score details|Building weighted average|Score models|before scoring/i);
+  assert.doesNotMatch(source, /<0\.20\s*→\s*0|0\.20–<0\.40\s*→\s*50|≥0\.40\s*→\s*100/);
+  assert.doesNotMatch(source, /<0\.20\s*=\s*0|0\.20-<0\.40\s*=\s*50|>=0\.40\s*=\s*100/);
+  assert.match(source, /Loading status details/);
+  assert.match(source, /300 m area-weighted shade value/);
+  assert.match(source, /Status methodologies/);
+});
+
+test("info copy does not claim gap highlighting applies to Urban95 statuses", () => {
+  const indexSource = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "index.html"), "utf8");
+  assert.doesNotMatch(indexSource, /Show gaps modes highlight areas with lower Urban95 status/i);
+  assert.match(indexSource, /Show gaps[\s\S]{0,180}Amenities Focus/i);
+});
+
+test("Urban95 status composition renders four percentage-driven accessible bar segments", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  const metric = { statusCompositionPrefix: "u95_status" };
+  const props = {
+    u95_status_count_disappointing: 1, u95_status_pct_disappointing: 10,
+    u95_status_count_functioning: 2, u95_status_pct_functioning: 20,
+    u95_status_count_thriving: 3, u95_status_pct_thriving: 30,
+    u95_status_count_unknown: 4, u95_status_pct_unknown: 40,
+  };
+  const html = browser.window.Urban95NeighborhoodPanelRender.renderStatusComposition(
+    { escapeHtml: String }, props, metric
+  );
+
+  assert.match(html, /u95-status-composition-bar/);
+  assert.match(html, /u95-status-composition-segment[^>]*width:10%/);
+  assert.match(html, /u95-status-composition-segment[^>]*width:20%/);
+  assert.match(html, /u95-status-composition-segment[^>]*width:30%/);
+  assert.match(html, /u95-status-composition-segment[^>]*width:40%/);
+  assert.match(html, /aria-label="Thriving: 3 buildings \(30%\)"/);
+  assert.match(html, /title="Unknown: 4 buildings \(40%\)"/);
+});
+
+test("Urban95 status composition rejects coerced empty and boolean numeric fields", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  const render = browser.window.Urban95NeighborhoodPanelRender;
+  const metric = { statusCompositionPrefix: "u95_status" };
+  const valid = {
+    u95_status_count_disappointing: 1, u95_status_pct_disappointing: 10,
+    u95_status_count_functioning: 2, u95_status_pct_functioning: 20,
+    u95_status_count_thriving: 3, u95_status_pct_thriving: 30,
+    u95_status_count_unknown: 4, u95_status_pct_unknown: 40,
+  };
+
+  [null, "   ", true].forEach((value) => {
+    const invalid = { ...valid, u95_status_count_thriving: value };
+    assert.match(render.renderStatusComposition({ escapeHtml: String }, invalid, metric), /Summary unavailable/);
+  });
+  [null, "   ", false].forEach((value) => {
+    const invalid = { ...valid, u95_status_pct_unknown: value };
+    assert.match(render.renderStatusComposition({ escapeHtml: String }, invalid, metric), /Summary unavailable/);
+  });
+});
+
+test("Urban95 comparison places status composition bars in side-by-side columns", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodPanelRender.js", browser);
+  runBrowserScript("docs/js/ui/neighborhoodCompareRender.js", browser);
+  const metric = {
+    scale: "status", kind: "weighted-category", label: "Environment",
+    areaStatusKey: "u95_status_environment", statusCompositionPrefix: "u95_environment",
+  };
+  const props = (name, thrivingPct) => ({
+    Name: name, u95_status_environment: "thriving",
+    u95_environment_count_disappointing: 0, u95_environment_pct_disappointing: 0,
+    u95_environment_count_functioning: 1, u95_environment_pct_functioning: 20,
+    u95_environment_count_thriving: 3, u95_environment_pct_thriving: thrivingPct,
+    u95_environment_count_unknown: 1, u95_environment_pct_unknown: 80 - thrivingPct,
+  });
+  const bodyEl = { innerHTML: "" };
+  browser.window.Urban95NeighborhoodCompareRender.render(
+    { slots: [{ properties: props("A", 60) }, { properties: props("B", 40) }] },
+    {
+      chartInstances: [], bodyEl, heroEl: { innerHTML: "" }, metaEl: { innerHTML: "" }, emptyEl: {},
+      openChrome() {}, getScoreMode() { return "weighted"; }, getActiveMetric() { return metric; },
+      escapeHtml: String, formatMetricNumber: String, formatScoreInteger: String,
+      renderStatusComposition: browser.window.Urban95NeighborhoodPanelRender.renderStatusComposition,
+      statusSummaryLabel: browser.window.Urban95NeighborhoodPanelRender.statusSummaryLabel,
+    }
+  );
+
+  assert.match(bodyEl.innerHTML, /hood-compare-status-category/);
+  assert.equal((bodyEl.innerHTML.match(/u95-status-composition-bar/g) || []).length, 2);
+  assert.match(bodyEl.innerHTML, /width:60%/);
+  assert.match(bodyEl.innerHTML, /width:40%/);
+});
+
+test("Urban95 comparison module has no legacy weighted-total consumers", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "ui", "neighborhoodCompareRender.js"),
+    "utf8"
+  );
+
+  assert.doesNotMatch(source, /avg_score_weighted/);
+  assert.doesNotMatch(source, /WEIGHTED_(?:CATEGORY|SUBCATEGORY)_COMPONENTS/);
+});
+
+test("Urban95 city briefing headline shows the published city status", () => {
+  const browser = createBrowserContext({ Urban95Palette: { accent: "#000" } });
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/ui/cityPanelRender.js", browser);
+  const heroEl = { innerHTML: "" };
+  const metaEl = { innerHTML: "" };
+  browser.window.Urban95CityPanelRender.populateHeader(
+    { heroEl, metaEl, eyebrowEl: null, escapeHtml: String },
+    { isStatus: true, metricLabel: "All indicators overview", cityStatus: "thriving" }
+  );
+  assert.match(heroEl.innerHTML, /Beer Sheva/);
+  assert.match(heroEl.innerHTML, /Thriving/);
+});
+
+test("Urban95 surface tooltips use exact categorical summary reasons", () => {
+  const tooltip = { style: {}, textContent: "" };
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
+  runBrowserScript("docs/js/ui/dashboards.js", browser);
+  browser.window.Urban95Dashboards.configure({
+    map: {},
+    fetchJsonWithGzipFallback() { return Promise.resolve({}); },
+    urls: {},
+    getScoreMode() { return "weighted"; },
+    getNeighborhoodsData() { return null; }, setNeighborhoodsData() {},
+    getNeighborhoodSurfaceData() { return null; }, setNeighborhoodSurfaceData() {},
+    getNeighborhoodChartsPayload() { return null; }, setNeighborhoodChartsPayload() {},
+    getCitywideStats() { return null; }, setCitywideStats() {},
+    getAmenityConfig() { return {}; },
+    getNeighborhoodSurfaceScorePropertyKey() { return "u95_status_environmental_quality"; },
+    formatMetricNumber() { return ""; }, getOrdinalSuffix() { return ""; }, tooltipEl: tooltip,
+  });
+  const base = { hex_id: "A", neighborhood_name: "Ramot", has_buildings: 1 };
+  const show = browser.window.Urban95Dashboards.showNeighborhoodAreaTooltip;
+  show({ x: 1, y: 2 }, { properties: { ...base } });
+  assert.match(tooltip.textContent, /Summary unavailable/);
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, u95_status_environmental_quality: "unknown",
+    u95_environmental_quality_support_count: 4,
+    u95_environmental_quality_summary_reason: "tie",
+  } });
+  assert.match(tooltip.textContent, /No unique most-common status/);
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, has_buildings: 0, u95_status_environmental_quality: "unknown",
+    u95_environmental_quality_support_count: 0,
+    u95_environmental_quality_summary_reason: "no_buildings",
+  } });
+  assert.match(tooltip.textContent, /^A in Ramot\nNo buildings$/);
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, u95_status_environmental_quality: "functioning",
+    u95_environmental_quality_support_count: 7,
+    u95_environmental_quality_summary_reason: "inferred_spatial",
+  } });
+  assert.equal(
+    tooltip.textContent,
+    "A in Ramot\nInferred from nearby buildings \u00b7 Functioning \u00b7 7 buildings"
+  );
+  const modeControllerSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "map", "modeController.js"),
+    "utf8"
+  );
+  const mapLayersSource = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "js", "map", "mapLayers.js"),
+    "utf8"
+  );
+  assert.doesNotMatch(modeControllerSource, /has_buildings[^\n]+1/);
+  assert.match(modeControllerSource, /moveLayer\("neighborhoods-surface", buildingsFillLayerId\)/);
+  assert.match(mapLayersSource, /"fill-opacity": 1/);
+  assert.match(mapLayersSource, /"fill-outline-color": "#f8fafc"/);
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, u95_status_environmental_quality: "unknown",
+    u95_environmental_quality_support_count: 4,
+    u95_environmental_quality_summary_reason: "predominantly_unknown",
+  } });
+  assert.match(tooltip.textContent, /Predominantly unknown · 4 buildings/);
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, u95_status_environmental_quality: "thriving",
+    u95_environmental_quality_support_count: 4,
+    u95_environmental_quality_summary_reason: "predominant",
+  } });
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, u95_status_environmental_quality: "thriving",
+    u95_environmental_quality_summary_reason: "predominant",
+  } });
+  assert.match(tooltip.textContent, /Summary unavailable/);
+  [null, "   ", false, -1, 1.5].forEach((support) => {
+    show({ x: 1, y: 2 }, { properties: {
+      ...base, u95_status_environmental_quality: "thriving",
+      u95_environmental_quality_support_count: support,
+      u95_environmental_quality_summary_reason: "predominant",
+    } });
+    assert.match(tooltip.textContent, /Summary unavailable/);
+  });
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, u95_status_environmental_quality: "thriving",
+    u95_environmental_quality_support_count: "4",
+    u95_environmental_quality_summary_reason: "predominant",
+  } });
+  assert.match(tooltip.textContent, /Thriving · 4 buildings/);
+  show({ x: 1, y: 2 }, { properties: {
+    ...base, u95_status_environmental_quality: "thriving",
+    u95_environmental_quality_support_count: 4,
+    u95_environmental_quality_summary_reason: "predominant",
+  } });
+  assert.match(tooltip.textContent, /Thriving · 4 buildings/);
 });

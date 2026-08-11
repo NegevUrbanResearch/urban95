@@ -135,6 +135,9 @@ var urban95RuntimeLoaders =
     });
 
 var Urban95ScoreModel = requireNamespace(window, "Urban95ScoreModel");
+var Urban95StatusScale = requireNamespace(window, "Urban95StatusScale");
+requireNamespaceMember(Urban95StatusScale, "Urban95StatusScale", "normalize", "function");
+requireNamespaceMember(Urban95StatusScale, "Urban95StatusScale", "matchExpression", "function");
 var AMENITY_TYPE_CONFIG = requireScoreModelMember(Urban95ScoreModel, "AMENITY_TYPE_CONFIG");
 var DEFAULT_CONFIG = requireScoreModelMember(Urban95ScoreModel, "DEFAULT_CONFIG");
 var WEIGHTED_CATEGORY_LABEL_BY_STEM = requireScoreModelMember(Urban95ScoreModel, "WEIGHTED_CATEGORY_LABEL_BY_STEM");
@@ -142,16 +145,10 @@ var getAmenityConfig = requireScoreModelMember(Urban95ScoreModel, "getAmenityCon
 var amenityTypeToBuildingStatKey =
   requireScoreModelMember(Urban95ScoreModel, "amenityTypeToBuildingStatKey");
 var percentileBreakpoints = requireScoreModelMember(Urban95ScoreModel, "percentileBreakpoints");
-var buildHistogramDistributionFromScores =
-  requireScoreModelMember(Urban95ScoreModel, "buildHistogramDistributionFromScores");
 var getColorForValue = requireScoreModelMember(Urban95ScoreModel, "getColorForValue");
 var bulkPercentileRanks = requireScoreModelMember(Urban95ScoreModel, "bulkPercentileRanks");
 var formatMetricNumber = requireScoreModelMember(Urban95ScoreModel, "formatMetricNumber");
 var formatScoreInteger = requireScoreModelMember(Urban95ScoreModel, "formatScoreInteger");
-var weightedCategoryHighlightsFromSource =
-  requireScoreModelMember(Urban95ScoreModel, "weightedCategoryHighlightsFromSource");
-var weightedSubcategoryComparisonRows =
-  requireScoreModelMember(Urban95ScoreModel, "weightedSubcategoryComparisonRows");
 var Urban95WeightedMetricShowRegistry = requireNamespace(window, "Urban95WeightedMetricShowRegistry");
 requireNamespaceMember(
   Urban95WeightedMetricShowRegistry,
@@ -193,7 +190,6 @@ var Urban95RenderState = requireNamespace(window, "Urban95RenderState");
 [
   "getWeightedNeighborhoodMetricValue",
   "hasWeightedNeighborhoodMetricData",
-  "getWeightedHistogramDistribution",
   "resolvePolygonAnalysisFilter",
 ].forEach(function (memberName) {
   requireNamespaceMember(Urban95RenderState, "Urban95RenderState", memberName, "function");
@@ -217,6 +213,13 @@ var createBuildingsSource =
     Urban95MapLayers,
     "Urban95MapLayers",
     "createBuildingsSource",
+    "function"
+  );
+var createBuildingFillColorExpression =
+  requireNamespaceMember(
+    Urban95MapLayers,
+    "Urban95MapLayers",
+    "createBuildingFillColorExpression",
     "function"
   );
 var createBuildingsFillLayer =
@@ -485,19 +488,17 @@ window.Urban95AppDependencies = {
   Urban95PointDataSources: Urban95PointDataSources,
   urban95RuntimeLoaders: urban95RuntimeLoaders,
   Urban95ScoreModel: Urban95ScoreModel,
+  Urban95StatusScale: Urban95StatusScale,
   AMENITY_TYPE_CONFIG: AMENITY_TYPE_CONFIG,
   DEFAULT_CONFIG: DEFAULT_CONFIG,
   WEIGHTED_CATEGORY_LABEL_BY_STEM: WEIGHTED_CATEGORY_LABEL_BY_STEM,
   getAmenityConfig: getAmenityConfig,
   amenityTypeToBuildingStatKey: amenityTypeToBuildingStatKey,
   percentileBreakpoints: percentileBreakpoints,
-  buildHistogramDistributionFromScores: buildHistogramDistributionFromScores,
   getColorForValue: getColorForValue,
   bulkPercentileRanks: bulkPercentileRanks,
   formatMetricNumber: formatMetricNumber,
   formatScoreInteger: formatScoreInteger,
-  weightedCategoryHighlightsFromSource: weightedCategoryHighlightsFromSource,
-  weightedSubcategoryComparisonRows: weightedSubcategoryComparisonRows,
   Urban95WeightedMetricShowRegistry: Urban95WeightedMetricShowRegistry,
   Urban95ScoreContext: Urban95ScoreContext,
   Urban95ScoreExplain: Urban95ScoreExplain,
@@ -512,6 +513,7 @@ window.Urban95AppDependencies = {
   Urban95NeighborhoodScores: Urban95NeighborhoodScores,
   Urban95RenderState: Urban95RenderState,
   resolveBuildingContracts: resolveBuildingContracts,
+  createBuildingFillColorExpression: createBuildingFillColorExpression,
   createPmtilesProtocol: createPmtilesProtocol,
   createBuildingsSource: createBuildingsSource,
   createBuildingsFillLayer: createBuildingsFillLayer,

@@ -51,3 +51,37 @@ def test_drop_stale_score_columns_removes_access_diagnostics_from_both_scorers()
         assert "access_school_10min" not in result.columns
         assert "score_weighted_10min" not in result.columns
         assert result["unrelated"].tolist() == ["kept"]
+
+
+def test_rescore_publishes_statuses_without_stale_weighted_fields(monkeypatch):
+    buildings = gpd.GeoDataFrame(
+        {
+            "building_id": [1],
+            "score_weighted_10min": [42.0],
+            "score_expanded_10min": [70.0],
+        },
+        geometry=[Point(0, 0)],
+        crs="EPSG:2039",
+    )
+    published = []
+
+    monkeypatch.setattr(rescore, "_ensure_shade_si_prepared", lambda: None)
+    monkeypatch.setattr(rescore, "_resolve_buildings_path", lambda: Path("buildings.geojson"))
+    monkeypatch.setattr(rescore, "load_layer", lambda *_args, **_kwargs: buildings.copy())
+
+    def append_statuses(frame, **_kwargs):
+        assert "score_weighted_10min" not in frame.columns
+        frame["u95_status_10min"] = "functioning"
+        return frame
+
+    monkeypatch.setattr(rescore, "append_urban95_statuses", append_statuses)
+    monkeypatch.setattr(rescore, "write_scored_buildings", lambda frame, _path: published.append(frame.copy()))
+    monkeypatch.setattr(rescore, "export_web", lambda frame: published.append(frame.copy()))
+    monkeypatch.setattr(rescore, "_log_status_distribution", lambda _frame: None)
+
+    rescore.rescore_urban95_statuses()
+
+    assert len(published) == 2
+    for frame in published:
+        assert "score_weighted_10min" not in frame.columns
+        assert frame.loc[0, "u95_status_10min"] == "functioning"

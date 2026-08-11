@@ -91,7 +91,7 @@ def test_run_score_forwards_explicit_scoring_overrides(monkeypatch):
     monkeypatch.setattr(urban95_scoring, "_drop_stale_score_columns", lambda frame: frame)
     monkeypatch.setattr(
         urban95_scoring,
-        "append_weighted_urban95_scores",
+        "append_urban95_statuses",
         lambda frame, *, shade_si_dir=None, workers=None, reused_layers=None: seen.append(reused_layers) or frame,
     )
     result = urban95_scoring.run_score(
@@ -233,7 +233,7 @@ def test_scoring_consumer_does_not_mutate_supplied_frames(monkeypatch):
 
     monkeypatch.setattr(urban95_scoring, "build_layers", fake_build_layers)
     buildings = gpd.GeoDataFrame(geometry=[Point(0, 0)], crs="EPSG:2039")
-    urban95_scoring.append_weighted_urban95_scores(
+    urban95_scoring.append_urban95_statuses(
         buildings,
         workers=1,
         reused_layers=overrides,

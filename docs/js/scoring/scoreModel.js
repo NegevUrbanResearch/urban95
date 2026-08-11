@@ -3,6 +3,10 @@
   if (!palette) {
     throw new Error("Urban95ScoreModel requires Urban95Palette (load js/core/palette.js first)");
   }
+  var statusScale = window.Urban95StatusScale;
+  if (!statusScale) {
+    throw new Error("Urban95ScoreModel requires Urban95StatusScale (load js/scoring/statusScale.js first)");
+  }
 
   var AMENITY_TYPE_CONFIG = {
     trees: { color: palette.sage, icon: "park-alt1", label: "Trees" },
@@ -59,11 +63,11 @@
   // Palette narrative: sky = ambient comfort · green = living places · coral = child play ·
   // amber = mobility/caution · purple = care institutions. Only nature owns green.
   var WEIGHTED_CATEGORY_COMPONENTS = [
-    { stem: "environmental_quality", label: "Environmental Quality", weight: 0.2, color: palette.sky },
-    { stem: "nature", label: "Nature", weight: 0.15, color: palette.sage },
-    { stem: "play", label: "Play", weight: 0.15, color: palette.coral },
-    { stem: "safety_mobility", label: "Safety & Mobility", weight: 0.25, color: palette.peach },
-    { stem: "family_services", label: "Family Services", weight: 0.25, color: palette.lavender },
+    { stem: "environmental_quality", label: "Environmental Quality", color: palette.sky },
+    { stem: "nature", label: "Nature", color: palette.sage },
+    { stem: "play", label: "Play", color: palette.coral },
+    { stem: "safety_mobility", label: "Safety & Mobility", color: palette.peach },
+    { stem: "family_services", label: "Family Services", color: palette.lavender },
   ];
 
   var WEIGHTED_CATEGORY_BY_STEM = WEIGHTED_CATEGORY_COMPONENTS.reduce(function (acc, comp) {
@@ -73,28 +77,34 @@
 
   var WEIGHTED_SUBCATEGORY_COMPONENTS = {
     environmental_quality: [
-      { stem: "shade", label: "Shade", weight: 0.4 },
-      { stem: "trees", label: "Trees", weight: 0.2 },
-      { stem: "roads", label: "Distance from fast roads", weight: 0.4 },
+      {
+        stem: "shade",
+        label: "Shade",
+        evidenceFields: [
+          { propertyKey: "summer_si", label: "Rounded summer SI", unit: "" },
+        ],
+      },
+      { stem: "trees", label: "Trees" },
+      { stem: "roads", label: "Distance from fast roads" },
     ],
     nature: [
-      { stem: "parks", label: "Parks", weight: 0.5 },
-      { stem: "urban_nature_areas", label: "Urban nature areas", weight: 0.5 },
+      { stem: "parks", label: "Parks" },
+      { stem: "urban_nature_areas", label: "Urban nature areas" },
     ],
     play: [
-      { stem: "playgrounds", label: "Playgrounds", weight: 1.0 },
+      { stem: "playgrounds", label: "Playgrounds" },
     ],
     safety_mobility: [
-      { stem: "street_lights", label: "Street lights", weight: 0.15 },
-      { stem: "bicycle_access", label: "Bicycle access", weight: 0.15 },
-      { stem: "bus_stops", label: "Bus stops", weight: 0.3 },
-      { stem: "shelters", label: "Shelters", weight: 0.4 },
+      { stem: "street_lights", label: "Street lights" },
+      { stem: "bicycle_access", label: "Bicycle access" },
+      { stem: "bus_stops", label: "Bus stops" },
+      { stem: "shelters", label: "Shelters" },
     ],
     family_services: [
-      { stem: "education", label: "Education", weight: 0.3 },
-      { stem: "community", label: "Community centers", weight: 0.2 },
-      { stem: "business", label: "Business centers", weight: 0.2 },
-      { stem: "health", label: "Health", weight: 0.3 },
+      { stem: "education", label: "Education" },
+      { stem: "community", label: "Community centers" },
+      { stem: "business", label: "Business centers" },
+      { stem: "health", label: "Health" },
     ],
   };
 
@@ -131,7 +141,7 @@
 
   var DEFAULT_SCORE_LEGEND_LABELS = ["0", "25", "50", "75", "100"];
   var SHADE_EXPLAIN_NOTE =
-    "Official SI interpretation bands: <0.10 severe lack; 0.10-<0.20 significant lack; 0.20-<0.40 needs improvement; 0.40-<0.60 good shade; >=0.60 excellent shade. Building summer_SI is the 300 m area-weighted summer_SI mean around the building footprint (near-edge buffer), rounded to 1 decimal with standard half-up ties before storage, display, and scoring (0.15 -> 0.2, 0.35 -> 0.4). Urban95 keeps a ternary building shade sub-score on that rounded summer_SI: <0.20 = 0, 0.20-<0.40 = 50, >=0.40 = 100.";
+    "Official SI interpretation bands: <0.10 severe lack; 0.10-<0.20 significant lack; 0.20-<0.40 needs improvement; 0.40-<0.60 good shade; >=0.60 excellent shade. Building summer_SI is the 300 m area-weighted summer_SI mean around the building footprint (near-edge buffer), rounded to 1 decimal with standard half-up ties before storage, display, and status classification (0.15 -> 0.2, 0.35 -> 0.4). Urban95 classifies that rounded summer_SI directly: <0.20 = Disappointing, 0.20-<0.40 = Functioning, >=0.40 = Thriving.";
   var WEIGHTED_METRIC_METADATA = {
     "u95.sub.environmental_quality.shade": {
       explainNote: SHADE_EXPLAIN_NOTE,
@@ -163,12 +173,12 @@
 
   function buildDefaultMetricLegendSpec(metric) {
     if (!metric) return null;
+    if (metric.scale === "status") {
+      return statusScale.legendSpec(metric.label);
+    }
     return {
       title: metric.label || "",
-      subtitle:
-        metric.scale === "percentile"
-          ? "Amenities Focus \u00b7 percentile rank"
-          : "Urban95 \u00b7 weighted score (0-100)",
+      subtitle: "Amenities Focus \u00b7 percentile rank",
       labels: DEFAULT_SCORE_LEGEND_LABELS.slice(),
     };
   }
@@ -180,6 +190,10 @@
     return {
       title: override.title || base.title || "",
       subtitle: override.subtitle || base.subtitle || "",
+      scale: override.scale || base.scale || metric.scale || "",
+      items: Array.isArray(override.items) && override.items.length
+        ? override.items.slice()
+        : (Array.isArray(base.items) ? base.items.slice() : []),
       labels: Array.isArray(override.labels) && override.labels.length
         ? override.labels.slice()
         : (base.labels || []).slice(),
@@ -204,6 +218,21 @@
     return metric;
   }
 
+  function statusMetricFields(prefix, suffix) {
+    var statusKey = prefix === "u95" ? "u95_status" : "u95_status_" + prefix.slice(4);
+    return {
+      buildingPropertyKey: prefix === "u95"
+        ? "u95_status" + suffix
+        : "u95_status_" + prefix.slice(4) + suffix,
+      surfacePropertyKey: statusKey,
+      statusCompositionPrefix: prefix,
+      areaStatusKey: statusKey,
+      areaSupportCountKey: prefix + "_support_count",
+      areaSummaryReasonKey: prefix + "_summary_reason",
+      neighborhoodAverageKey: null,
+    };
+  }
+
   function buildWeightedMetricRegistry() {
     if (weightedMetricRegistryCache) return weightedMetricRegistryCache;
 
@@ -212,13 +241,11 @@
       "u95.overall": {
         id: "u95.overall",
         kind: "weighted-overall",
-        label: "All",
-        scale: "weighted",
+        label: "All indicators overview",
+        scale: "status",
         selectedWeightedStem: null,
         selectedWeightedSubStem: null,
-        buildingPropertyKey: "score_weighted" + sfx,
-        surfacePropertyKey: "score_weighted",
-        neighborhoodAverageKey: "avg_score_weighted" + sfx,
+        ...statusMetricFields("u95", sfx),
       },
     };
 
@@ -228,12 +255,10 @@
         id: categoryId,
         kind: "weighted-category",
         label: category.label,
-        scale: "weighted",
+        scale: "status",
         selectedWeightedStem: category.stem,
         selectedWeightedSubStem: null,
-        buildingPropertyKey: "score_weighted_" + category.stem + sfx,
-        surfacePropertyKey: "score_weighted_" + category.stem,
-        neighborhoodAverageKey: "avg_score_weighted_" + category.stem + sfx,
+        ...statusMetricFields("u95_" + category.stem, sfx),
       };
 
       (WEIGHTED_SUBCATEGORY_COMPONENTS[category.stem] || []).forEach(function (sub) {
@@ -242,12 +267,10 @@
           id: subId,
           kind: "weighted-subcategory",
           label: sub.label,
-          scale: "weighted",
+          scale: "status",
           selectedWeightedStem: category.stem,
           selectedWeightedSubStem: sub.stem,
-          buildingPropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
-          surfacePropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem,
-          neighborhoodAverageKey: "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
+          ...statusMetricFields("u95_sub_" + category.stem + "_" + sub.stem, sfx),
         });
 
         (WEIGHTED_DETAIL_COMPONENTS[sub.stem] || []).forEach(function (detail) {
@@ -257,14 +280,16 @@
             id: detailId,
             kind: "diagnostic-access",
             label: detail.label,
-            scale: "weighted",
+            scale: "status",
             parentMetricId: subId,
             parentStem: category.stem,
-            buildingPropertyKey: detail.buildingKey,
-            surfacePropertyKey: detail.surfaceKey,
-            neighborhoodAverageKey: null,
             selectedWeightedStem: category.stem,
-            selectedWeightedSubStem: null,
+            selectedWeightedSubStem: sub.stem,
+            selectedWeightedDetailStem: detail.stem,
+            ...statusMetricFields(
+              "u95_detail_" + category.stem + "_" + sub.stem + "_" + detail.stem,
+              sfx
+            ),
           };
         });
       });
@@ -521,24 +546,6 @@
     return breakpoints;
   }
 
-  function buildHistogramDistributionFromScores(scores, step) {
-    var bucketStep = Number(step) > 0 ? Number(step) : 10;
-    var edges = [];
-    for (var value = 0; value <= 100; value += bucketStep) {
-      edges.push(value);
-    }
-    if (edges[edges.length - 1] !== 100) edges.push(100);
-    var counts = new Array(edges.length - 1).fill(0);
-    (scores || []).forEach(function (raw) {
-      var score = Math.max(0, Math.min(100, Number(raw) || 0));
-      var index = Math.floor(score / bucketStep);
-      if (index >= counts.length) index = counts.length - 1;
-      if (index < 0) index = 0;
-      counts[index] += 1;
-    });
-    return { edges: edges, counts: counts };
-  }
-
   function getColorForValue(value, breakpoints) {
     var stops = [
       [239, 68, 68],
@@ -574,20 +581,15 @@
 
     if (scoreMode === "weighted") {
       var metric =
-        config.activeMetric && config.activeMetric.kind && config.activeMetric.kind.indexOf("weighted") === 0
+        config.activeMetric && config.activeMetric.scale === "status"
           ? config.activeMetric
           : resolveWeightedMetric({
               activeHeatmapId: config.activeHeatmapId,
             });
       if (metric && metric.buildingPropertyKey) {
-        var metricValue = p[metric.buildingPropertyKey];
-        if (metricValue !== undefined && metricValue !== null && metricValue !== "") {
-          return Number(metricValue) || 0;
-        }
+        return statusScale.normalize(p[metric.buildingPropertyKey]);
       }
-      var weighted = p["score_weighted" + suffix];
-      if (weighted !== undefined && weighted !== null && weighted !== "") return Number(weighted) || 0;
-      return Number(p.score_weighted) || 0;
+      return statusScale.normalize(null);
     }
 
     var currentMode = config.currentMode;
@@ -669,125 +671,10 @@
     return Math.round(value).toLocaleString();
   }
 
-  function weightedCategoryHighlightsFromSource(source, suffix) {
-    return WEIGHTED_CATEGORY_COMPONENTS.map(function (component) {
-      var key = "avg_score_weighted_" + component.stem + suffix;
-      return {
-        stem: component.stem,
-        label: component.label,
-        weight: component.weight,
-        score: Number((source && source[key]) || 0),
-      };
-    });
-  }
-
   function getWeightedAverageValueFromSource(source, suffix, selectedStem) {
-    if (selectedStem) {
-      var categoryKey = "avg_score_weighted_" + selectedStem + suffix;
-      var categoryValue = Number(source && source[categoryKey]);
-      if (Number.isFinite(categoryValue)) return categoryValue;
-    }
-    var overallKey = "avg_score_weighted" + suffix;
-    var overallValue = Number(source && source[overallKey]);
-    return Number.isFinite(overallValue) ? overallValue : 0;
-  }
-
-  function weightedSubcategoryComparisonRows(neighborhoodProps, cityStats, suffix) {
-    var rows = [];
-    WEIGHTED_CATEGORY_COMPONENTS.forEach(function (category) {
-      var subs = WEIGHTED_SUBCATEGORY_COMPONENTS[category.stem] || [];
-      subs.forEach(function (sub) {
-        var nKey = "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + suffix;
-        var cKey = "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + suffix;
-        rows.push({
-          metricId: "u95.sub." + category.stem + "." + sub.stem,
-          categoryStem: category.stem,
-          subStem: sub.stem,
-          label: category.label + " · " + sub.label,
-          neighborhood: Number((neighborhoodProps && neighborhoodProps[nKey]) || 0),
-          city: Number((cityStats && cityStats[cKey]) || 0),
-          hasData:
-            !!(neighborhoodProps && Object.prototype.hasOwnProperty.call(neighborhoodProps, nKey)) &&
-            !!(cityStats && Object.prototype.hasOwnProperty.call(cityStats, cKey)),
-        });
-      });
-    });
-    return rows;
-  }
-
-  function weightedNeighborhoodRankingRows(stats, suffix, metricOrScoreKey) {
-    var rows = ((stats && stats.neighborhood_ranking_weighted) || []).slice();
     void suffix;
-    var scoreKey =
-      typeof metricOrScoreKey === "string"
-        ? metricOrScoreKey
-        : metricOrScoreKey && metricOrScoreKey.neighborhoodAverageKey
-          ? metricOrScoreKey.neighborhoodAverageKey
-          : null;
-    if (!scoreKey) {
-      return [];
-    }
-    rows.sort(function (a, b) {
-      return (Number(b[scoreKey]) || 0) - (Number(a[scoreKey]) || 0);
-    });
-    return rows;
-  }
-
-  function getCitywideWeightedAverageScore(stats, suffix, options) {
-    stats = stats || {};
-    var config = options || {};
-    var metric =
-      config.activeMetric && config.activeMetric.kind && config.activeMetric.kind.indexOf("weighted") === 0
-        ? config.activeMetric
-        : resolveWeightedMetric({
-            activeHeatmapId: config.activeHeatmapId,
-          });
-    var directKey = metric && metric.neighborhoodAverageKey
-      ? metric.neighborhoodAverageKey
-      : "avg_score_weighted" + suffix;
-    var direct = Number(stats[directKey]);
-    if (Number.isFinite(direct) && direct > 0) return direct;
-
-    var rankingValues = ((stats.neighborhood_ranking_weighted || []).map(function (row) {
-      return Number(row[directKey]);
-    })).filter(function (value) {
-      return Number.isFinite(value);
-    });
-    if (rankingValues.length > 0) {
-      var mean = rankingValues.reduce(function (sum, value) {
-        return sum + value;
-      }, 0) / rankingValues.length;
-      if (Number.isFinite(mean) && mean > 0) return mean;
-    }
-
-    var minutes = Number(String(suffix || "").replace(/[^0-9]/g, ""));
-    if (
-      Number.isFinite(minutes) &&
-      minutes > 0 &&
-      config.buildingsData &&
-      Array.isArray(config.buildingsData.features)
-    ) {
-      var values = config.buildingsData.features.map(function (feature) {
-        return getBuildingOverallScore(
-          (feature && feature.properties) || {},
-          minutes,
-          "weighted",
-          {
-            fixedMinutes: config.fixedMinutes,
-            activeMetric: metric,
-            activeHeatmapId: config.activeHeatmapId,
-          }
-        );
-      }).filter(function (value) {
-        return Number.isFinite(value);
-      });
-      if (values.length > 0) {
-        return values.reduce(function (sum, value) {
-          return sum + value;
-        }, 0) / values.length;
-      }
-    }
-    return Number.isFinite(direct) ? direct : 0;
+    var key = selectedStem ? "u95_" + selectedStem + "_status" : "u95_status";
+    return statusScale.normalize(source && source[key]);
   }
 
   function getPercentileSeriesCacheKey(minutes, options) {
@@ -826,15 +713,23 @@
 
   /**
    * Whether a neighborhood can enter an A↔B compare pair for the active score mode.
-   * Weighted uses fixed 10-min Urban95 average; expanded uses pct_overall_{minutes}min.
-   * A finite 0 is comparable.
+   * Urban95 statuses require an available aggregate and support; Amenities Focus
+   * retains its percentile eligibility rule.
    */
   function neighborhoodIsComparable(props, options) {
     props = props || {};
     options = options || {};
     var scoreMode = options.scoreMode;
     if (scoreMode === "weighted") {
-      return Number.isFinite(Number(props.avg_score_weighted_10min));
+      var metric = options.activeMetric;
+      if (!metric || metric.scale !== "status") return false;
+      return (
+        !!metric.areaStatusKey &&
+        Object.prototype.hasOwnProperty.call(props, metric.areaStatusKey) &&
+        Number.isFinite(Number(props[metric.areaSupportCountKey])) &&
+        Number(props[metric.areaSupportCountKey]) > 0 &&
+        props[metric.areaSummaryReasonKey] !== "summary_unavailable"
+      );
     }
     if (scoreMode === "expanded") {
       var minutes = options.minutes;
@@ -866,18 +761,13 @@
     getFilteredContributionForType: getFilteredContributionForType,
     percentileBreakpoints: percentileBreakpoints,
     collectBuildingScores: collectBuildingScores,
-    buildHistogramDistributionFromScores: buildHistogramDistributionFromScores,
     getColorForValue: getColorForValue,
     getBuildingOverallScore: getBuildingOverallScore,
     computePercentileRank: computePercentileRank,
     bulkPercentileRanks: bulkPercentileRanks,
     formatMetricNumber: formatMetricNumber,
     formatScoreInteger: formatScoreInteger,
-    weightedCategoryHighlightsFromSource: weightedCategoryHighlightsFromSource,
     getWeightedAverageValueFromSource: getWeightedAverageValueFromSource,
-    weightedSubcategoryComparisonRows: weightedSubcategoryComparisonRows,
-    weightedNeighborhoodRankingRows: weightedNeighborhoodRankingRows,
-    getCitywideWeightedAverageScore: getCitywideWeightedAverageScore,
     getPercentileSeriesCacheKey: getPercentileSeriesCacheKey,
     percentileForSeries: percentileForSeries,
     getBuildingAmenityStatKeysForMinutes: getBuildingAmenityStatKeysForMinutes,
@@ -887,6 +777,7 @@
     getWeightedMetric: getWeightedMetric,
     buildMetricLegendSpec: buildMetricLegendSpec,
     getMetricExplainNote: getMetricExplainNote,
+    normalizeStatus: statusScale.normalize,
     resolveExpandedMetric: resolveExpandedMetric,
     resolveActiveMetric: resolveActiveMetric,
   };

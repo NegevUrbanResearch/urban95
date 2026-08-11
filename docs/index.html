@@ -92,7 +92,7 @@
     <aside
       id="score-explain-sidebar"
       class="score-explain-sidebar"
-      aria-label="Score breakdown"
+      aria-label="Building details"
       aria-hidden="true"
     >
       <div class="score-explain-sidebar-inner">
@@ -101,7 +101,7 @@
             type="button"
             id="score-explain-sidebar-close"
             class="score-explain-sidebar-close"
-            aria-label="Close score breakdown"
+            aria-label="Close building details"
           >
             &times;
           </button>
@@ -120,7 +120,7 @@
         <p id="score-explain-sidebar-empty" class="score-explain-empty" hidden></p>
         <div id="score-explain-sidebar-body" class="score-explain-sidebar-body" tabindex="-1"></div>
       </div>
-      <button type="button" id="score-explain-backdrop" class="score-explain-backdrop" aria-label="Close score breakdown" hidden></button>
+      <button type="button" id="score-explain-backdrop" class="score-explain-backdrop" aria-label="Close building details" hidden></button>
     </aside>
 
     <aside
@@ -213,34 +213,44 @@
 
         <div class="modal-scroll">
           <div class="modal-tab-content active" id="tab-howto" role="tabpanel" aria-labelledby="modal-tab-howto">
-            <p class="modal-lead">
-              Pick a scale, set walking time, and choose a score model. Colors show a <strong>0-100 accessibility scale</strong>.
-              Urban95 colors map directly to weighted score values, and Amenities Focus colors map to citywide percentile rank.
-            </p>
+            <div class="explainer-intro">
+              <div><span class="explainer-kicker">Your map, at a glance</span><p class="modal-lead">
+                Pick a scale and a map measure. Urban95 reads like a traffic light; Amenities Focus shows citywide percentile rank.
+                Show gaps is available in Amenities Focus.
+              </p></div>
+              <div class="status-stoplight status-stoplight--explainer" aria-label="Red Disappointing, amber Functioning, green Thriving"><span class="status-stoplight-lamp status-stoplight-lamp--red"></span><span class="status-stoplight-lamp status-stoplight-lamp--amber"></span><span class="status-stoplight-lamp status-stoplight-lamp--green"></span></div>
+            </div>
             <ul class="howto-list">
               <li>
-                <strong>Building, Neighborhood, or City</strong>
+                <strong class="howto-card-title howto-card-title--sky">Building, Neighborhood, or City</strong>
                 <p>
-                  <em>Building</em> — Tap or click the map to snap to the nearest home. 
+                  <em>Building</em> — Tap or click the map to snap to the nearest home. Actual building footprints show
+                  their own status; the categorical surface behind them is inferred from nearby buildings where a direct
+                  building sample is absent.
                 </p>
                 <p>
                   <em>Neighborhood</em> — Click a neighborhood for charts and stats.
                 </p>
                 <p>
-                  <em>City</em> — Opens a city sidebar with citywide KPIs, score distribution, and neighborhood ranking. Click a neighborhood on the map or ranking to focus it; use Open neighborhood for details. Optional Show gaps modes: Off, Below map avg, or Large weak places (building mass) — highlights weak areas on the map’s 0–100 choropleth scale (Urban95 scores / Amenities Focus map percentiles).
+                  <em>City</em> — Opens a city sidebar with citywide KPIs and neighborhood comparison. Click a
+                  neighborhood on the map or Amenities Focus ranking to focus it; use Open neighborhood for details.
+                  Amenities Focus also offers score distribution and optional Show gaps modes for its percentiles.
+                  Urban95 remains grouped by named status.
                 </p>
               </li>
               <li>
-                <strong>Walking time &amp; filter</strong>
+                <strong class="howto-card-title howto-card-title--gold">Walking time &amp; filter</strong>
                 <p>
                   Choose <em>5</em>, <em>10</em>, or <em>15</em> minutes in <em>Amenities Focus</em>.
                   In <em>Urban95</em>, walking-time and amenity filtering controls are hidden because Urban95 uses a fixed methodology.
                 </p>
               </li>
               <li>
-                <strong>Building score: Urban95 vs Amenities Focus</strong>
+                <strong class="howto-card-title howto-card-title--mint">Urban95 and Amenities Focus score</strong>
                 <p>
-                  <em>Urban95</em> uses the five-category weighted index (Environmental Quality, Nature, Play, Safety &amp; Mobility, Family Services), each with documented subcategory weights and largely fixed spatial logic. <em>Amenities Focus</em> uses a wider set of amenity types with a simpler POI-based index.
+                  <em>Urban95</em> summarizes Environmental Quality, Nature, Play, Safety &amp; Mobility, and Family
+                  Services as named statuses. <em>Amenities Focus</em> uses a wider set of amenity types with a simpler
+                  POI-based index, making it useful when you want to compare a chosen walking time or amenity filter.
                 </p>
               </li>
             </ul>
@@ -250,31 +260,29 @@
             <p>
               A collaboration between <strong>Urban95</strong> and <strong>NUR</strong> under the “Cities for Children” initiative — exploring how reachable everyday services and child-relevant features are from homes across Beer Sheva.
             </p>
-            <div class="about-section">
+            <div class="about-section about-section--status">
               <strong>Map colors</strong>
               <p>
-                Color scheme: red = lower access, green = higher. In Urban95 mode this maps directly to weighted score values (0-100). In Amenities Focus mode this maps to percentile rank among all homes for the selected walk time.
+                Urban95: red = Disappointing, amber = Functioning, green = Thriving, and gray = Unknown. These are
+                named statuses. Amenities Focus uses percentile rank among all homes for the selected walk time.
               </p>
-              <div class="modal-legend-preview" aria-hidden="true">
-                <div class="modal-legend-bar"></div>
-                <div class="modal-legend-ticks">
-                  <span>0</span>
-                  <span>25</span>
-                  <span>50</span>
-                  <span>75</span>
-                  <span>100</span>
-                </div>
-              </div>
+              <div class="modal-status-key"><div class="status-stoplight" aria-hidden="true"><span class="status-stoplight-lamp status-stoplight-lamp--red"></span><span class="status-stoplight-lamp status-stoplight-lamp--amber"></span><span class="status-stoplight-lamp status-stoplight-lamp--green"></span></div><div class="modal-status-labels"><span><strong>Disappointing</strong><small>needs attention</small></span><span><strong>Functioning</strong><small>meeting some needs</small></span><span><strong>Thriving</strong><small>strong access</small></span></div><div class="modal-status-unknown"><i></i><span><strong>Unknown</strong><small>not enough evidence</small></span></div></div>
             </div>
             <div class="about-section">
-              <strong>Score models</strong>
+              <strong>Status methodologies</strong>
               <p>
                 <strong>1. Urban95:</strong>
-                Uses the Urban95 methodology: five weighted categories, each built from weighted subcategories. Building-level values are shown on a 0-100 weighted score scale.
+                Each direct indicator is classified as Disappointing, Functioning, Thriving, or Unknown. Categories and
+                the five-category overview use equal arithmetic means of direct child attainment values, never averages
+                of status labels. The resulting means are classified as follows: below 0.25 is Disappointing; 0.25 through
+                below 0.75 is Functioning; and 0.75 or higher is Thriving. Unknown propagates strictly: an Unknown required
+                child makes its category Unknown, and an Unknown category makes the overview Unknown. The overview remains
+                categorical. In Building mode, actual building footprints sit over a categorical surface inferred from
+                nearby buildings where direct samples are absent.
               </p>
               <p>
                 <strong>Shade (Environmental Quality):</strong>
-                Uses Beer Sheva BDAR <strong>summer_SI</strong> from the Derech Tzel Spatial Shade Index (SI, not SAI; values are not recalculated). Each building gets a <strong>300 m area-weighted mean summer_SI</strong> around the building centroid, then stored/displayed <strong>summer_si</strong> is <strong>rounded to 1 decimal place with standard half-up ties before scoring and output</strong> (<strong>0.15 → 0.2</strong>, <strong>0.35 → 0.4</strong>). The shade map layer shows continuous 0–1 SI with the official interpretation bands: <strong>&lt;0.10 severe lack</strong>, <strong>0.10–&lt;0.20 significant lack</strong>, <strong>0.20–&lt;0.40 needs improvement</strong>, <strong>0.40–&lt;0.60 good shade</strong>, and <strong>≥0.60 excellent shade</strong>. The Urban95 shade sub-score keeps a project-specific ternary mapping on that <strong>rounded</strong> building SI: <strong>&lt;0.20 → 0</strong>, <strong>0.20–&lt;0.40 → 50</strong>, <strong>≥0.40 → 100</strong>.
+                Uses Beer Sheva BDAR <strong>summer_SI</strong> from the Derech Tzel Spatial Shade Index (SI, not SAI; values are not recalculated). Each building gets a <strong>300 m area-weighted mean summer_SI</strong> around the building footprint (near-edge buffer), then stored/displayed <strong>summer_si</strong> is <strong>rounded to 1 decimal place with standard half-up ties before status classification and output</strong> (<strong>0.15 → 0.2</strong>, <strong>0.35 → 0.4</strong>). The shade map layer shows continuous 0–1 SI with the official interpretation bands: <strong>&lt;0.10 severe lack</strong>, <strong>0.10–&lt;0.20 significant lack</strong>, <strong>0.20–&lt;0.40 needs improvement</strong>, <strong>0.40–&lt;0.60 good shade</strong>, and <strong>≥0.60 excellent shade</strong>. The Urban95 shade indicator uses project-defined direct status thresholds on that <strong>rounded</strong> building SI: <strong>&lt;0.20 = Disappointing</strong>, <strong>0.20–&lt;0.40 = Functioning</strong>, <strong>≥0.40 = Thriving</strong>.
                 <a href="https://tzel.org.il/wp-content/uploads/2025/08/Shade-Indicators_eng-2.6.pdf" target="_blank" rel="noopener noreferrer">Derech Tzel shading metrics guide (PDF)</a>.
               </p>
 
@@ -308,6 +316,7 @@
     <script src="./js/core/appStartupBridge.js"></script>
     <script src="./js/core/perfPanel.js"></script>
     <script src="./js/core/appState.js"></script>
+    <script src="./js/scoring/statusScale.js"></script>
     <script src="./js/scoring/scoreModel.js"></script>
     <script src="./js/scoring/scoreContext.js"></script>
     <script src="./js/scoring/weightedIndicatorIcons.js"></script>

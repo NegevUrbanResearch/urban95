@@ -80,7 +80,7 @@ def test_run_score_output_write_phase_surrounds_writer_only_when_enabled(monkeyp
     buildings = gpd.GeoDataFrame({"building_id": [1]}, geometry=[Point(0, 0)], crs="EPSG:2039")
     monkeypatch.setattr(
         urban95_scoring,
-        "append_weighted_urban95_scores",
+        "append_urban95_statuses",
         lambda frame, **_: frame,
     )
     writes = []
@@ -118,6 +118,10 @@ def test_run_score_output_write_phase_surrounds_writer_only_when_enabled(monkeyp
     else:
         assert events == []
     assert len(writes) == int(write_output)
+
+
+def test_status_attachment_has_no_weighted_compatibility_alias():
+    assert not hasattr(urban95_scoring, "append_weighted_urban95_scores")
 
 
 def test_run_all_passes_isochrones_to_export(monkeypatch):

@@ -190,18 +190,51 @@
     var hexId = props.hex_id || "Hex";
     var neighborhoodName = props.neighborhood_name || "Unknown neighborhood";
     var hasBuildings = Number(props.has_buildings) === 1;
-    if (!hasBuildings) {
+    var scoreKey = d.getNeighborhoodSurfaceScorePropertyKey() || "score";
+    if (d.getScoreMode() === "weighted") {
+        var prefix = String(scoreKey).replace(/^u95_status(?=_|$)/, "u95");
+        var reasonKey = prefix + "_summary_reason";
+        var supportKey = prefix + "_support_count";
+        var reason = props[reasonKey];
+        var rawSupport = props[supportKey];
+        var hasRawNumericSupport =
+          (typeof rawSupport === "number" || (typeof rawSupport === "string" && rawSupport.trim() !== "")) &&
+          Number.isFinite(Number(rawSupport));
+        var support = hasRawNumericSupport ? Number(rawSupport) : NaN;
+        var hasFiniteSupport = hasRawNumericSupport && support >= 0 && Number.isInteger(support);
+        var supportLabel = Number.isFinite(support) ? " · " + support + " buildings" : "";
+        var status = window.Urban95StatusScale && window.Urban95StatusScale.normalize
+          ? window.Urban95StatusScale.normalize(props[scoreKey])
+          : "unknown";
+        var definitions = (window.Urban95StatusScale && window.Urban95StatusScale.definitions) || [];
+        var definition = definitions.filter(function (item) { return item.token === status; })[0];
+        var label = definition ? definition.label : "Unknown";
+        var summary;
+        if (reason === "no_buildings") {
+          summary = "No buildings";
+        } else if (!Object.prototype.hasOwnProperty.call(props, scoreKey) || !reason) {
+          summary = "Summary unavailable";
+        } else if (reason === "tie") {
+          summary = "No unique most-common status";
+        } else if (reason === "inferred_spatial") {
+          summary = hasFiniteSupport
+            ? "Inferred from nearby buildings \u00b7 " + label + " \u00b7 " + support + " buildings"
+            : "Summary unavailable";
+        } else if (reason === "predominantly_unknown") {
+          summary = hasFiniteSupport ? "Predominantly unknown" + supportLabel : "Summary unavailable";
+        } else if (reason === "predominant") {
+          summary = hasFiniteSupport ? label + supportLabel : "Summary unavailable";
+        } else {
+          summary = "Summary unavailable";
+        }
+        tooltip.textContent = hexId + " in " + neighborhoodName + "\n" + summary;
+    } else if (!hasBuildings) {
       tooltip.textContent = "Hexagon " + hexId + " in " + neighborhoodName + "\nNo residential buildings";
     } else {
-      var scoreKey = d.getNeighborhoodSurfaceScorePropertyKey() || "score";
-      var score = Math.max(0, Math.min(100, Number(props[scoreKey]) || 0));
-      if (d.getScoreMode() === "weighted") {
-        tooltip.textContent = hexId + " in " + neighborhoodName + "\nArea score " + d.formatMetricNumber(score) + "/100";
-      } else {
+        var score = Math.max(0, Math.min(100, Number(props[scoreKey]) || 0));
         var pct = Math.round(score);
         tooltip.textContent =
           hexId + " in " + neighborhoodName + "\nArea score " + pct + d.getOrdinalSuffix(pct) + " percentile";
-      }
     }
     tooltip.style.display = "block";
     tooltip.style.left = point.x + 12 + "px";

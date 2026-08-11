@@ -53,6 +53,7 @@
         return;
       }
       var metric = scoreModel.buildWeightedMetricRegistry()[activeHeatmapId];
+      if (metric && metric.scale !== "status") metric = null;
       if (metric) {
         if (metric.selectedWeightedStem) expandedCategoryStems.add(metric.selectedWeightedStem);
         if (metric.parentMetricId) expandedDetailParentIds.add(metric.parentMetricId);

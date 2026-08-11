@@ -352,45 +352,6 @@
       return row && row.valueLabel ? String(row.valueLabel).replace(/\s*pts\s*$/i, "").trim() : "";
     }
 
-    function renderWeightedSubcategoryComparisonList(container, rows) {
-      if (!container) return;
-      var ordered = (rows || []).slice().sort(function (left, right) {
-        return right.neighborhood - left.neighborhood;
-      });
-      if (ordered.length === 0) {
-        container.innerHTML = '<p class="score-explain-empty">Subcategory comparison data unavailable.</p>';
-        return;
-      }
-      var html =
-        '<div class="u95-compare-legend"><span class="u95-compare-legend-bar">Neighborhood</span><span class="u95-compare-legend-line">City avg</span></div>';
-      html += '<div class="u95-compare-list">';
-      ordered.forEach(function (row) {
-        var neighborhood = Math.max(0, Math.min(100, Number(row.neighborhood) || 0));
-        var city = Math.max(0, Math.min(100, Number(row.city) || 0));
-        var color = neighborhood >= 70 ? "#22c55e" : neighborhood >= 40 ? palette.gold : "#ef4444";
-        html += '<div class="u95-compare-item">';
-        html += '<div class="u95-compare-name">' + escapeHtml(row.label) + "</div>";
-        html += '<div class="u95-compare-bar-wrap">';
-        html += '<div class="u95-compare-city-marker" style="left:' + city + '%"></div>';
-        html +=
-          '<div class="u95-compare-bar" style="width:' +
-          neighborhood +
-          "%;background:" +
-          color +
-          '"></div>';
-        html += "</div>";
-        html +=
-          '<div class="u95-compare-score"><strong>' +
-          scoreModel.formatMetricNumber(neighborhood) +
-          "</strong><span>city avg " +
-          scoreModel.formatMetricNumber(city) +
-          "</span></div>";
-        html += "</div>";
-      });
-      html += "</div>";
-      container.innerHTML = html;
-    }
-
     function getPercentileSeriesForMinutes(minutes) {
       var cacheKey = state.getPercentileSeriesCacheKey(minutes);
       if (state.hasPercentileSeries(cacheKey)) {
@@ -511,42 +472,83 @@
       var isClean = state.getScoreMode() === "clean";
 
       if (isWeighted) {
+        var statusScale = window.Urban95StatusScale;
+        if (!statusScale) {
+          throw new Error("Urban95ScoreExplain requires Urban95StatusScale for Urban95 status details");
+        }
+        function statusDetail(value) {
+          var token = statusScale.normalize(value);
+          var definition = (statusScale.definitions || []).find(function (item) {
+            return item.token === token;
+          }) || { token: "unknown", label: "Unknown", color: "#9ca3af" };
+          return { token: definition.token, label: definition.label, color: definition.color };
+        }
+        function evidenceRows(fields) {
+          return (fields || []).reduce(function (rows, field) {
+            var value = props[field.propertyKey];
+            if (value === undefined || value === null || value === "") return rows;
+            rows.push({
+              label: field.label,
+              value: value,
+              unit: field.unit || "",
+            });
+            return rows;
+          }, []);
+        }
         var weightedCategories = [];
         (scoreModel.WEIGHTED_CATEGORY_COMPONENTS || []).forEach(function (component) {
-          var column = "score_weighted_" + component.stem + suffix;
-          var value = Number(props[column]) || 0;
+          var categoryStatus = statusDetail(props["u95_status_" + component.stem + suffix]);
           var group = {
             stem: component.stem,
             label: component.label,
-            weight: component.weight,
-            value: value,
-            valueLabel: scoreModel.formatMetricNumber(value) + " / 100",
             color: component.color,
+            status: categoryStatus,
             subrows: [],
           };
           (scoreModel.WEIGHTED_SUBCATEGORY_COMPONENTS[component.stem] || []).forEach(function (sub) {
-            var subColumn = "score_weighted_sub_" + component.stem + "_" + sub.stem + suffix;
-            var raw = props[subColumn];
-            var hasValue = raw !== undefined && raw !== null && raw !== "";
-            var subValue = hasValue ? Number(raw) || 0 : null;
+            var detailRows = (scoreModel.WEIGHTED_DETAIL_COMPONENTS[sub.stem] || []).map(function (detail) {
+              var detailEvidence = [];
+              var detailValue = props[detail.buildingKey];
+              if (detailValue !== undefined && detailValue !== null && detailValue !== "") {
+                detailEvidence.push({ label: "Observed access", value: detailValue, unit: "" });
+              }
+              return {
+                stem: detail.stem,
+                label: detail.label,
+                status: statusDetail(
+                  props[
+                    "u95_status_detail_" +
+                      component.stem +
+                      "_" +
+                      sub.stem +
+                      "_" +
+                      detail.stem +
+                      suffix
+                  ]
+                ),
+                rawEvidence: detailEvidence,
+              };
+            });
             group.subrows.push({
               stem: sub.stem,
               label: sub.label,
-              weight: sub.weight,
-              totalWeight: sub.weight * component.weight,
-              value: subValue,
-              valueLabel:
-                subValue != null
-                  ? scoreModel.formatMetricNumber(subValue) + " / 100"
-                  : "Missing (re-run preprocess)",
+              status: statusDetail(
+                props["u95_status_sub_" + component.stem + "_" + sub.stem + suffix]
+              ),
+              rawEvidence: evidenceRows(sub.evidenceFields),
+              details: detailRows,
             });
           });
           weightedCategories.push(group);
         });
         return {
-          formulaLine:
-            "Urban95 score = (0.20×Environmental Quality) + (0.15×Nature) + (0.15×Play) + (0.25×Safety & Mobility) + (0.25×Family Services).",
-          overallScoreLabel: scoreModel.formatMetricNumber(overallScore),
+          overallStatus: statusDetail(props["u95_status" + suffix]),
+          activeStatus: (function () {
+            var metric = typeof validated.getActiveMetric === "function" ? validated.getActiveMetric() : null;
+            return metric && metric.buildingPropertyKey
+              ? statusDetail(props[metric.buildingPropertyKey])
+              : null;
+          })(),
           overallPercentile: null,
           rows: [],
           weightedCategories: weightedCategories,
@@ -714,7 +716,6 @@
       getOrdinalSuffix: getOrdinalSuffix,
       buildExplainScoreBreakdown: buildExplainScoreBreakdown,
       buildPercentileMetrics: buildPercentileMetrics,
-      renderWeightedSubcategoryComparisonList: renderWeightedSubcategoryComparisonList,
       scoreExplainIconNeutral: iconNeutral,
     };
   }

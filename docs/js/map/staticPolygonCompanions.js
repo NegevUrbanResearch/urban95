@@ -5,7 +5,7 @@
   };
 
   var SHADE_HEATMAP_METRIC_ID = "u95.sub.environmental_quality.shade";
-  var BUILDING_WEIGHTED_LAYER_LABEL = "Building weighted average";
+  var BUILDING_WEIGHTED_LAYER_LABEL = "300 m area-weighted shade value";
 
   var SI_COLOR_STOPS = [
     { si: 0, color: "#e81014" },

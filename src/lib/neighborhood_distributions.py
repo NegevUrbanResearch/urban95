@@ -1,7 +1,6 @@
-"""Per-neighborhood building-score histograms with shared bin edges.
+"""Per-neighborhood Amenities Focus histograms with shared bin edges.
 
-Publishes into ``neighborhood_charts.json`` as ``distributions_weighted`` /
-``distributions_expanded``.
+Publishes into ``neighborhood_charts.json`` as ``distributions_expanded``.
 
 Histogram policy vs citywide (``stages/neighborhoods.py`` citywide_stats):
 citywide score distributions use ``fillna(0)`` before ``np.histogram``. For
@@ -18,10 +17,7 @@ import numpy as np
 import pandas as pd
 
 WALK_MINUTES = (5, 10, 15)
-_MODES = (
-    ("distributions_weighted", "score_weighted"),
-    ("distributions_expanded", "score_expanded"),
-)
+_MODES = (("distributions_expanded", "score_expanded"),)
 
 
 def _finite_numeric(series: pd.Series) -> np.ndarray:
@@ -36,14 +32,11 @@ def build_per_neighborhood_distributions(
     neighborhood_col: str = "neighborhood",
     bins: int = 20,
 ) -> dict:
-    """Build shared-edge per-neighborhood histograms for weighted/expanded scores.
+    """Build shared-edge per-neighborhood histograms for Amenities Focus scores.
 
     Returns::
 
         {
-          "distributions_weighted": {
-            name: {"5min"|"10min"|"15min": {"counts": [...], "edges": [...]}},
-          },
           "distributions_expanded": { ... },
         }
 
@@ -51,10 +44,7 @@ def build_per_neighborhood_distributions(
     Neighborhoods with zero finite buildings for a column are omitted for that
     minutes key.
     """
-    out: dict = {
-        "distributions_weighted": {},
-        "distributions_expanded": {},
-    }
+    out: dict = {"distributions_expanded": {}}
     if buildings is None or len(buildings) == 0 or neighborhood_col not in buildings.columns:
         return out
 

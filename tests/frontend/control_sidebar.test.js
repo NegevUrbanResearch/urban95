@@ -1,8 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { createBrowserContext, runBrowserScript } = require("./helpers/loadBrowserScript");
 
 function loadControlSidebarModules(browser) {
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
   runBrowserScript("docs/js/scoring/weightedIndicatorIcons.js", browser);
   runBrowserScript("docs/js/ui/controlSidebarMarkup.js", browser);
@@ -115,6 +118,32 @@ function createMockIndicatorsHarness(browser, options) {
 
   return { elements, indicators, indicatorsList, state, auxHosts, showController };
 }
+
+test("Urban95 controls present a categorical overview legend", () => {
+  const browser = createBrowserContext();
+  loadControlSidebarModules(browser);
+
+  const metric = browser.window.Urban95ScoreModel.getWeightedMetric("u95.overall");
+  const html = browser.window.Urban95ControlSidebarMarkup.renderLegendHtml(metric);
+
+  assert.match(html, /All indicators overview/);
+  assert.match(html, /Disappointing[\s\S]*Functioning[\s\S]*Thriving/);
+  assert.doesNotMatch(html, /Unknown/);
+  assert.equal((html.match(/class="legend-status-item"/g) || []).length, 3);
+  assert.equal((html.match(/--status-lamp:/g) || []).length, 3);
+  assert.equal((html.match(/class="legend-status-swatch"/g) || []).length, 0);
+  assert.doesNotMatch(html, /legend-gradient/);
+  assert.doesNotMatch(html, />0<|>25<|>50<|>75<|>100</);
+
+  const css = fs.readFileSync(path.resolve(__dirname, "..", "..", "docs", "style.css"), "utf8");
+  assert.match(css, /\.legend-status-items\s*\{[^}]*display:\s*(?:flex|grid)/);
+  assert.match(css, /\.legend-status-item\s*\{[^}]*display:\s*(?:flex|grid)/);
+  assert.match(html, /status-signal status-signal--legend/);
+  assert.match(css, /\.status-signal--legend\s*\{[^}]*width:\s*100%[^}]*height:\s*54px/);
+  assert.match(css, /\.status-signal--legend \.status-signal-lamp\s*\{[^}]*width:\s*32px[^}]*height:\s*32px/);
+  assert.match(css, /\.status-signal--hero\s*\{[^}]*width:\s*128px[^}]*height:\s*52px/);
+  assert.match(css, /\.status-signal--row\s*\{[^}]*width:\s*53px[^}]*height:\s*25px/);
+});
 
 function createDetailCollapseTarget(parentMetricId) {
   const row = {

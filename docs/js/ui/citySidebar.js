@@ -27,8 +27,6 @@
     onOpenNeighborhood: "function",
     getNeighborhoodAverageKey: "function",
     bulkPercentileRanks: "function",
-    getWeightedNeighborhoodMetricValue: "function",
-    hasWeightedNeighborhoodMetricData: "function",
     renderDeps: "object",
     sidebarEl: "object",
     heroEl: "object",
@@ -73,11 +71,12 @@
     return deps.sidebarEl.getBoundingClientRect().width || 400;
   }
 
-  function getGapState() {
+  function getGapState(activeMetric) {
     var mode = Urban95CityGapModes.normalizeMode(gapMode);
+    var supported = Urban95CityGapModes.supportsMetric(activeMetric);
     return {
-      mode: mode,
-      enabled: mode !== Urban95CityGapModes.MODE_OFF,
+      mode: supported ? mode : Urban95CityGapModes.MODE_OFF,
+      enabled: supported && mode !== Urban95CityGapModes.MODE_OFF,
     };
   }
 
@@ -174,21 +173,14 @@
     return "Amenities Focus";
   }
 
-  function buildChoroplethEntries(sfx, isWeighted, activeMetric) {
+  function buildChoroplethEntries(sfx) {
     var avgKey = deps.getNeighborhoodAverageKey(sfx);
     var neighborhoodsData = deps.getNeighborhoodsData();
     var feats = (neighborhoodsData && neighborhoodsData.features) || [];
     var entries = [];
 
     if (!avgKey || feats.length === 0) {
-      return { avgKey: avgKey, entries: entries, unavailable: isWeighted };
-    }
-
-    if (isWeighted) {
-      var sampleProps = (feats[0] && feats[0].properties) || {};
-      if (!deps.hasWeightedNeighborhoodMetricData(activeMetric, sampleProps)) {
-        return { avgKey: avgKey, entries: entries, unavailable: true };
-      }
+      return { avgKey: avgKey, entries: entries, unavailable: false };
     }
 
     var rawAverages = feats.map(function (feature) {
@@ -197,34 +189,24 @@
     });
 
     // AF: finite raw avgs only for bulkPercentileRanks (parity with map paint).
-    var ranks = null;
-    if (!isWeighted) {
-      var rankInputs = [];
-      var rankFeatIndices = [];
-      rawAverages.forEach(function (raw, index) {
-        if (!Number.isFinite(raw)) return;
-        rankFeatIndices.push(index);
-        rankInputs.push(raw);
-      });
-      var finiteRanks = deps.bulkPercentileRanks(rankInputs);
-      ranks = new Array(rawAverages.length);
-      rankFeatIndices.forEach(function (featIndex, rankIndex) {
-        ranks[featIndex] = finiteRanks[rankIndex];
-      });
-    }
+    var rankInputs = [];
+    var rankFeatIndices = [];
+    rawAverages.forEach(function (raw, index) {
+      if (!Number.isFinite(raw)) return;
+      rankFeatIndices.push(index);
+      rankInputs.push(raw);
+    });
+    var finiteRanks = deps.bulkPercentileRanks(rankInputs);
+    var ranks = new Array(rawAverages.length);
+    rankFeatIndices.forEach(function (featIndex, rankIndex) {
+      ranks[featIndex] = finiteRanks[rankIndex];
+    });
 
     feats.forEach(function (feature, index) {
       var props = (feature && feature.properties) || {};
       var name = props.Name || "Unknown";
       var rawAvg = rawAverages[index];
-      var choroplethValue;
-      if (isWeighted) {
-        choroplethValue = Number.isFinite(rawAvg)
-          ? Math.max(0, Math.min(100, rawAvg))
-          : NaN;
-      } else {
-        choroplethValue = ranks[index] != null ? ranks[index] : NaN;
-      }
+      var choroplethValue = ranks[index] != null ? ranks[index] : NaN;
       entries.push({
         name: name,
         feature: feature,
@@ -237,7 +219,7 @@
     return { avgKey: avgKey, entries: entries, unavailable: false };
   }
 
-  function buildRankingRows(entries, gap, selectedName, isWeighted, renderCtx) {
+  function buildRankingRows(entries, gap, selectedName, renderCtx) {
     // Same eligibility as countInGap / map city_gap_eligible: finite rawAvg.
     // Missing AF avgs are excluded from bulkPercentileRanks (map + sidebar parity).
     var rows = entries
@@ -250,14 +232,10 @@
           choroplethValue: entry.choroplethValue,
           scoreValue: entry.scoreValue,
           isActive: !!(selectedName && entry.name === selectedName),
-          valueDisplay: isWeighted
-            ? formatDisplay(renderCtx, entry.choroplethValue)
-            : String(Math.round(entry.choroplethValue)) + "%",
-          secondaryDisplay: isWeighted
-            ? null
-            : Number.isFinite(entry.scoreValue)
-              ? formatDisplay(renderCtx, entry.scoreValue) + " index"
-              : null,
+          valueDisplay: String(Math.round(entry.choroplethValue)) + "%",
+          secondaryDisplay: Number.isFinite(entry.scoreValue)
+            ? formatDisplay(renderCtx, entry.scoreValue) + " index"
+            : null,
           barWidth: entry.choroplethValue,
         };
       });
@@ -295,7 +273,7 @@
     };
   }
 
-  function buildSelectionModel(selection, entries, sfx, isWeighted, gap, renderCtx, cityAverage, cuts) {
+  function buildSelectionModel(selection, entries, sfx, gap, renderCtx, cityAverage, cuts) {
     if (!selection || !selection.properties) return null;
     var name = selection.properties.Name || "Unknown";
     var entry = null;
@@ -327,7 +305,6 @@
     var percentileValue = null;
     // AF: finite-only rank inputs (missing → NaN choroplethValue), matching mapRenderers.
     if (
-      !isWeighted &&
       entry &&
       Number.isFinite(entry.choroplethValue) &&
       Number.isFinite(entry.scoreValue)
@@ -339,22 +316,6 @@
           : "";
       percentileValue = pct;
       percentileDisplay = pct + suffix + " map percentile";
-    } else if (isWeighted && entry && Number.isFinite(entry.choroplethValue)) {
-      // Published percentile only — do not invent ranks.
-      var pctKey = null;
-      if (renderCtx && typeof renderCtx.getNeighborhoodPercentileKey === "function") {
-        pctKey = renderCtx.getNeighborhoodPercentileKey(sfx);
-      }
-      var publishedPct = pctKey != null ? Number(selection.properties[pctKey]) : NaN;
-      if (Number.isFinite(publishedPct)) {
-        var u95Pct = Math.round(publishedPct);
-        var u95Suffix =
-          renderCtx && typeof renderCtx.getOrdinalSuffix === "function"
-            ? renderCtx.getOrdinalSuffix(u95Pct)
-            : "";
-        percentileValue = u95Pct;
-        percentileDisplay = u95Pct + u95Suffix + " percentile";
-      }
     }
 
     return {
@@ -367,33 +328,13 @@
       percentileDisplay: percentileDisplay,
       percentileValue: percentileValue,
       showGapBadge: showGapBadge,
-      sparkScale: isWeighted ? "absolute100" : "maxRelative",
+      sparkScale: "maxRelative",
     };
   }
 
-  function resolveHistogram(stats, sfx, isWeighted, activeMetric, renderCtx) {
+  function resolveHistogram(stats, sfx, renderCtx) {
     var dist = null;
-    if (isWeighted) {
-      if (renderCtx && typeof renderCtx.getWeightedHistogramDistribution === "function") {
-        dist = renderCtx.getWeightedHistogramDistribution(
-          stats,
-          sfx,
-          activeMetric,
-          function () {
-            if (
-              typeof renderCtx.buildHistogramDistributionFromScores === "function" &&
-              typeof renderCtx.collectBuildingScores === "function"
-            ) {
-              return renderCtx.buildHistogramDistributionFromScores(
-                renderCtx.collectBuildingScores(),
-                10
-              );
-            }
-            return null;
-          }
-        );
-      }
-    } else if (stats["distribution_expanded" + sfx]) {
+    if (stats["distribution_expanded" + sfx]) {
       dist = stats["distribution_expanded" + sfx];
     } else {
       dist = stats["distribution" + sfx];
@@ -407,16 +348,14 @@
       renderCtx && typeof renderCtx.collectBuildingScores === "function"
         ? renderCtx.collectBuildingScores()
         : [];
-    var breakpoints = isWeighted
-      ? [0, 25, 50, 75, 100]
-      : renderCtx && typeof renderCtx.percentileBreakpoints === "function"
-        ? renderCtx.percentileBreakpoints(buildingScores)
-        : [0, 25, 50, 75, 100];
+    var breakpoints = renderCtx && typeof renderCtx.percentileBreakpoints === "function"
+      ? renderCtx.percentileBreakpoints(buildingScores)
+      : [0, 25, 50, 75, 100];
 
     return {
       available: true,
       chartOptions: {
-        isWeighted: isWeighted,
+        isWeighted: false,
         edges: dist.edges,
         counts: dist.counts,
         breakpoints: breakpoints,
@@ -436,46 +375,87 @@
     var scoreMinutes = deps.getScoreMinutes();
     var sfx = "_" + scoreMinutes + "min";
     var isWeighted = deps.getScoreMode() === "weighted";
-    var gap = getGapState();
     var selection = deps.getCitySelection();
     var selectedName = selection && selection.properties ? selection.properties.Name : null;
     var activeMetric =
       renderCtx && typeof renderCtx.getActiveMetric === "function"
         ? renderCtx.getActiveMetric()
         : null;
+    var gap = getGapState(activeMetric);
     var label = metricLabelForMode(renderCtx, isWeighted);
 
+    if (isWeighted) {
+      var registry = window.Urban95ScoreModel && window.Urban95ScoreModel.buildWeightedMetricRegistry
+        ? window.Urban95ScoreModel.buildWeightedMetricRegistry()
+        : {};
+      activeMetric = activeMetric || registry["u95.overall"];
+      var categories = Object.keys(registry).map(function (id) { return registry[id]; }).filter(function (metric) {
+        return metric && metric.kind === "weighted-category";
+      });
+      var normalize = window.Urban95StatusScale && window.Urban95StatusScale.normalize;
+      var statusSummaryLabel = Urban95NeighborhoodPanelRender.statusSummaryLabel;
+      var citySummaryLabel = typeof statusSummaryLabel === "function"
+        ? statusSummaryLabel(stats, activeMetric)
+        : null;
+      var cityStatus = citySummaryLabel && normalize
+        ? normalize(stats[activeMetric.areaStatusKey])
+        : null;
+      var groups = {};
+      ((deps.getNeighborhoodsData() || {}).features || []).forEach(function (feature) {
+        var props = feature.properties || {};
+        var neighborhoodStatusLabel = typeof statusSummaryLabel === "function"
+          ? statusSummaryLabel(props, activeMetric)
+          : null;
+        var token = neighborhoodStatusLabel && normalize ? normalize(props[activeMetric.areaStatusKey]) : "unavailable";
+        if (!groups[token]) groups[token] = [];
+        groups[token].push({ name: props.Name || "Unknown", feature: feature });
+      });
+      Object.keys(groups).forEach(function (token) {
+        groups[token].sort(function (a, b) { return a.name.localeCompare(b.name); });
+      });
+      var selectedProps = selection && selection.properties;
+      return {
+        isStatus: true,
+        stats: stats,
+        totalBuildings: stats.total_buildings || 0,
+        activeMetric: activeMetric,
+        categoryMetrics: categories,
+        neighborhoodGroups: groups,
+        cityStatus: cityStatus,
+        selection: selectedProps ? {
+          name: selectedProps.Name || "Unknown",
+          status: typeof statusSummaryLabel === "function" && statusSummaryLabel(selectedProps, activeMetric)
+            ? (normalize ? normalize(selectedProps[activeMetric.areaStatusKey]) : "unknown")
+            : null,
+        } : null,
+        metricLabel: label,
+        scoreMinutes: scoreMinutes,
+        isExpanded: false,
+        chartOptions: null,
+      };
+    }
+
     // TODO: share choropleth eligibility with updateNeighborhoodColors when extracting a helper.
-    var choropleth = buildChoroplethEntries(sfx, isWeighted, activeMetric);
+    var choropleth = buildChoroplethEntries(sfx);
     var rankingAvailable =
       !choropleth.unavailable && hasFiniteChoroplethEntries(choropleth.entries);
     var unavailable = !rankingAvailable;
 
-    var cityAverage = null;
-    if (isWeighted) {
-      cityAverage = deps.getWeightedNeighborhoodMetricValue(
-        stats,
-        sfx,
-        activeMetric,
-        stats && stats.neighborhood_ranking_weighted
+    var cityAverage = Number(stats["avg_overall" + sfx]);
+    if (!Number.isFinite(cityAverage)) {
+      var ranking = stats.neighborhood_ranking || [];
+      cityAverage = meanFinite(
+        ranking.map(function (row) {
+          return row && row["avg_overall" + sfx];
+        })
       );
-    } else {
-      cityAverage = Number(stats["avg_overall" + sfx]);
-      if (!Number.isFinite(cityAverage)) {
-        var ranking = stats.neighborhood_ranking || [];
-        cityAverage = meanFinite(
-          ranking.map(function (row) {
-            return row && row["avg_overall" + sfx];
-          })
-        );
-      }
     }
 
     var gapCuts = rankingAvailable
       ? collectChoroplethCuts(choropleth.entries)
       : { mean: NaN, largeWeakNames: {} };
     var rankingRows = rankingAvailable
-      ? buildRankingRows(choropleth.entries, gap, selectedName, isWeighted, renderCtx)
+      ? buildRankingRows(choropleth.entries, gap, selectedName, renderCtx)
       : [];
     var gapCounts = rankingAvailable
       ? countInGap(choropleth.entries, gap, gapCuts)
@@ -488,14 +468,12 @@
 
     var hist = unavailable
       ? { available: false, chartOptions: null }
-      : resolveHistogram(stats, sfx, isWeighted, activeMetric, renderCtx);
+      : resolveHistogram(stats, sfx, renderCtx);
 
     var coverage = null;
-    if (!isWeighted) {
-      var coverageValue = stats["coverage_" + scoreMinutes + "min"];
-      if (coverageValue != null && coverageValue !== "") {
-        coverage = coverageValue;
-      }
+    var coverageValue = stats["coverage_" + scoreMinutes + "min"];
+    if (coverageValue != null && coverageValue !== "") {
+      coverage = coverageValue;
     }
 
     // Keep selection strip whenever city selection is set (name + Open CTA);
@@ -504,7 +482,6 @@
       selection,
       choropleth.entries,
       sfx,
-      isWeighted,
       gap,
       renderCtx,
       cityAverage,
@@ -522,9 +499,7 @@
       unavailable: unavailable,
       histogramAvailable: !unavailable && hist.available,
       distributionTitle: "Building score distribution – " + label,
-      distributionHint: isWeighted
-        ? "Citywide distribution"
-        : scoreMinutes + "-min walk • Matches " + label + " in Building mode",
+      distributionHint: scoreMinutes + "-min walk • Matches " + label + " in Building mode",
       gap: {
         mode: gap.mode,
         enabled: gap.enabled,
@@ -535,14 +510,12 @@
       },
       selection: selectionModel,
       rankingAvailable: rankingAvailable,
-      rankingTitle: isWeighted
-        ? "Average " + label + " score by neighborhood"
-        : "Neighborhood ranking",
+      rankingTitle: "Neighborhood ranking",
       rankingRows: rankingRows,
       chartOptions: hist.chartOptions,
       metricLabel: label,
       scoreMinutes: scoreMinutes,
-      isExpanded: !isWeighted,
+      isExpanded: true,
     };
   }
 
@@ -680,6 +653,8 @@
         eyebrowEl: deps.eyebrowEl,
         getScoreMode: deps.getScoreMode,
         getScoreMinutes: deps.getScoreMinutes,
+        renderStatusComposition: Urban95NeighborhoodPanelRender.renderStatusComposition,
+        statusSummaryLabel: Urban95NeighborhoodPanelRender.statusSummaryLabel,
       },
       deps.renderDeps
     );
@@ -699,6 +674,8 @@
           metricLabel: model.metricLabel,
           scoreMinutes: model.scoreMinutes,
           isExpanded: model.isExpanded,
+          isStatus: model.isStatus,
+          cityStatus: model.cityStatus,
           selection: model.selection || null,
         });
         deps.bodyEl.innerHTML = Urban95CityPanelRender.buildBodyHTML(renderCtx, model);
@@ -782,6 +759,11 @@
     getSelection: getSelection,
     setGapMode: setGapMode,
     setGapState: setGapState,
-    getGapState: getGapState,
+    getGapState: function () {
+      var activeMetric = deps && deps.renderDeps && typeof deps.renderDeps.getActiveMetric === "function"
+        ? deps.renderDeps.getActiveMetric()
+        : null;
+      return getGapState(activeMetric);
+    },
   };
 })();

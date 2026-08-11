@@ -141,6 +141,19 @@ test("buildGapCuts attaches mean and largeWeakNames", () => {
   assert.deepEqual(Object.keys(cuts.largeWeakNames).sort(), ["A"]);
 });
 
+test("status metrics disable numeric city-gap thresholds", () => {
+  const browser = createBrowserContext();
+  runBrowserScript("docs/js/ui/cityGapThresholds.js", browser);
+  const G = browser.window.Urban95CityGapModes;
+
+  const statusMetric = { id: "u95.overall", scale: "status" };
+  assert.equal(G.supportsMetric(statusMetric), false);
+  assert.equal(G.cutForMode("below_city_avg", { mean: 50 }, statusMetric), null);
+  assert.equal(G.isInGap(0, "below_city_avg", { mean: 50 }, "Ramot", statusMetric), false);
+
+  assert.equal(G.supportsMetric({ id: "expanded.overall", scale: "percentile" }), true);
+});
+
 // AF city_gap_eligible (map paint): see docs/js/map/mapRenderers.js —
 // Number.isFinite(raw avg); missing AF avgs excluded from bulkPercentileRanks (not coerced to 0).
 // Ineligible neighborhoods paint #9ca3af (Neighborhood surface missing grey).

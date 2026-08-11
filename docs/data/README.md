@@ -1,23 +1,25 @@
 # `docs/data/` publication contract
 
-These GeoJSON and JSON files are the browser-facing payloads loaded by `docs/app.js`. Filenames and optional gzip fallback behavior are unchanged; the building lookup and neighborhood-surface schemas include the diagnostic access fields documented below. Each generated file has one stage owner:
+These GeoJSON and JSON files are browser-facing payloads loaded by `docs/app.js`. Filenames and gzip fallback behavior are stable. One stage owns each generated artifact:
 
 | Owner | Files |
 | --- | --- |
 | `export_web` | `buildings_accessibility.geojson` + `.gz`; `buildings_lookup.json` + `.gz`; `amenities_new.geojson`; `street_lights.geojson` + `.gz`; `amenities_all.geojson` + `.gz`; `trees.geojson` + `.gz`; `parks.geojson`; `isochrones.geojson` + `.gz` |
 | `shade` | `shade_si.geojson` + `.gz` |
-| `neighborhoods` | `neighborhoods.geojson`, `neighborhood_surface.geojson`, `neighborhood_charts.json` (includes `distributions_weighted` / `distributions_expanded` shared-edge per-hood histograms), `citywide_stats.json` |
+| `neighborhoods` | `neighborhoods.geojson`, `neighborhood_surface.geojson`, `neighborhood_charts.json`, `citywide_stats.json` |
 | `survey` | `survey_results.geojson` |
 | checked-in/manual companion | `education.geojson` |
 
-`run all` carries prepared amenity, scoring, and isochrone frames through the stages before publication. Standalone stages retain disk-backed fallbacks. Neighborhoods intentionally reads the rounded published building geometry from this directory (plain or gzip) so its aggregates match the data served to the map.
+`run all` carries prepared amenity, scoring, and isochrone frames through publication. Standalone stages retain disk-backed fallbacks. Neighborhoods intentionally reads the rounded published building geometry (plain or gzip) so its aggregates match the browser payload. Do not change filenames or add companions without updating writers and `docs/app.js` URL constants.
 
-Do not change a filename or add a new companion without updating the corresponding writer and the URL constants in `docs/app.js`.
+## Urban95 status contract
 
-`amenities_new.geojson` persists `amenity_subtype` for every Education and Health record. Its exact vocabulary is `school`, `kindergarten`, `clinic`, and `tipat_halav`: Education uses `school` (94) and `kindergarten` (412); Health uses `clinic` (45) and `tipat_halav` (14). Migration provenance: Health classifications were transferred once from the historical `fdac95d:new-data/new-data/health.geojson` `ID` values (`0`/`2` = `clinic`, `1` = `tipat_halav`) and then persisted in the clean manifest. Pipeline validation requires all four tokens and never reconstructs them from coordinates or row order.
+Building and lookup records publish canonical status tokens: `disappointing`, `functioning`, `thriving`, and `unknown`. The overview is `u95_status_5min`, `u95_status_10min`, and `u95_status_15min`; categories use `u95_status_<category>_<minutes>`; scored indicators use `u95_status_sub_<category>_<indicator>_<minutes>`; diagnostics use `u95_status_detail_<category>_<parent>_<child>_<minutes>`. The browser uses `_10min`.
 
-`buildings_accessibility.geojson` and `buildings_lookup.json` publish the diagnostic fields `access_school_10min`, `access_kindergarten_10min`, `access_clinic_10min`, and `access_tipat_halav_10min`. `neighborhood_surface.geojson` publishes their unsuffixed surface equivalents: `access_school`, `access_kindergarten`, `access_clinic`, and `access_tipat_halav`.
+The equivalent neighborhood-surface fields omit the minute suffix: `u95_status`, `u95_status_<category>`, `u95_status_sub_<category>_<indicator>`, and `u95_status_detail_<category>_<parent>_<child>`. Building, lookup, and surface artifacts never publish a numeric Urban95 total or `score_weighted*` field. They retain raw measurements needed for explanation and all existing `score_expanded*` Amenities Focus fields.
 
-These are diagnostic, non-weighted fixed-rule access fields. V1 publishes no `avg_access_*` neighborhood fields.
+Urban95 has five equally influential overview categories: Environmental Quality, Nature, Play, Safety & Mobility, and Family Services. Direct scored children contribute equally within each category. School/Kindergarten and Clinic/Tipat Halav are diagnostic statuses only, excluded from category and overview means. Direct low/middle/high attainment remains internal; means classify as Disappointing below `0.25`, Functioning from `0.25` to below `0.75`, and Thriving from `0.75` through `1.00`. Any required Unknown makes the parent Unknown; Unknown is never dropped or converted to zero.
 
-`survey_results.geojson` is a standalone public derivative that combines the four survey prompt exports and omits `submission_id`. It does not feed scoring.
+Neighborhood and city summaries publish four counts and percentages for every selectable Urban95 prefix: `<prefix>_count_disappointing`, `_functioning`, `_thriving`, `_unknown`, and matching `_pct_*` fields. Prefixes are `u95`, `u95_<category>`, `u95_sub_<category>_<indicator>`, and `u95_detail_<category>_<parent>_<child>`. Area headline fields use the matching `<prefix>_status`, `<prefix>_support_count`, and `<prefix>_summary_reason`. A headline is a unique unweighted predominant status; otherwise it is Unknown. Reasons are `predominant`, `predominantly_unknown`, `tie`, or `no_buildings`. Unknown stays in the count denominator. Surface cells publish the status, support count, and reason; compositions remain in neighborhood/city summaries.
+
+`amenities_new.geojson` persists `amenity_subtype` for Education and Health records: `school`, `kindergarten`, `clinic`, and `tipat_halav`. Pipeline validation requires all four tokens and does not reconstruct them from coordinates or row order. `survey_results.geojson` is a standalone public derivative that combines four survey prompt exports and omits `submission_id`; it does not feed scoring.

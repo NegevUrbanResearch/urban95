@@ -45,19 +45,17 @@ const {
   Urban95PointDataSources,
   urban95RuntimeLoaders,
   Urban95ScoreModel,
+  Urban95StatusScale,
   AMENITY_TYPE_CONFIG,
   DEFAULT_CONFIG,
   WEIGHTED_CATEGORY_LABEL_BY_STEM,
   getAmenityConfig,
   amenityTypeToBuildingStatKey,
   percentileBreakpoints,
-  buildHistogramDistributionFromScores,
   getColorForValue,
   bulkPercentileRanks,
   formatMetricNumber,
   formatScoreInteger,
-  weightedCategoryHighlightsFromSource,
-  weightedSubcategoryComparisonRows,
   Urban95WeightedMetricShowRegistry,
   Urban95ScoreContext,
   Urban95ScoreExplain,
@@ -70,6 +68,7 @@ const {
   Urban95NeighborhoodScores,
   Urban95RenderState,
   resolveBuildingContracts,
+  createBuildingFillColorExpression,
   createPmtilesProtocol,
   createBuildingsSource,
   createBuildingsFillLayer,
@@ -134,8 +133,10 @@ const BUILDINGS_FILL_LAYER_ID = BUILDING_LAYER_CONTRACTS.fillLayerId;
 const BUILDINGS_SELECTED_LAYER_ID = BUILDING_LAYER_CONTRACTS.selectedLayerId;
 const BUILDINGS_VECTOR_LAYER_ID = BUILDING_LAYER_CONTRACTS.vectorLayerId;
 const BUILDINGS_SYM_PCT_STATE_KEY = BUILDING_LAYER_CONTRACTS.symPctStateKey;
+const BUILDINGS_STATUS_STATE_KEY = BUILDING_LAYER_CONTRACTS.statusStateKey;
 const BUILDINGS_SELECTED_STATE_KEY = BUILDING_LAYER_CONTRACTS.selectedStateKey;
-const BUILDINGS_CHOROPLETH_FILL_COLOR_EXPR = BUILDING_LAYER_CONTRACTS.fillColorExpression;
+const DEFAULT_URBAN95_METRIC = Urban95ScoreModel.getWeightedMetric("u95.overall");
+const BUILDINGS_CHOROPLETH_FILL_COLOR_EXPR = createBuildingFillColorExpression(DEFAULT_URBAN95_METRIC);
 const _urban95BuildingsSource = createBuildingsSource({
   artifacts: GENERATED_ARTIFACTS,
   buildingsPmtilesPath: BUILDINGS_PMTILES_URL,
@@ -237,8 +238,6 @@ const getWeightedNeighborhoodMetricValue =
   Urban95RenderState.getWeightedNeighborhoodMetricValue;
 const hasWeightedNeighborhoodMetricData =
   Urban95RenderState.hasWeightedNeighborhoodMetricData;
-const getWeightedHistogramDistribution =
-  Urban95RenderState.getWeightedHistogramDistribution;
 const scoreContext = Urban95ScoreContext.create({
   scoreModel: Urban95ScoreModel,
   state: {
@@ -495,11 +494,15 @@ Urban95MapRenderers.configure({
   collectBuildingScores: collectBuildingScores,
   bulkPercentileRanks: bulkPercentileRanks,
   symPctKey: SYM_PCT_KEY,
+  normalizeStatus: Urban95StatusScale.normalize,
+  statusMatchExpression: Urban95StatusScale.matchExpression,
   buildingsMapSourceId: BUILDINGS_MAP_SOURCE_ID,
   buildingsVectorLayerId: BUILDINGS_VECTOR_LAYER_ID,
   buildingsSymPctStateKey: BUILDINGS_SYM_PCT_STATE_KEY,
+  buildingsStatusStateKey: BUILDINGS_STATUS_STATE_KEY,
   buildingsFillLayerId: BUILDINGS_FILL_LAYER_ID,
   buildingsChoroplethFillColorExpr: BUILDINGS_CHOROPLETH_FILL_COLOR_EXPR,
+  createBuildingFillColorExpression: createBuildingFillColorExpression,
   getNeighborhoodSurfaceData: function () {
     return neighborhoodSurfaceData;
   },
@@ -783,6 +786,7 @@ const neighborhoodSelection = Urban95NeighborhoodSelection.create({
     return Urban95ScoreModel.neighborhoodIsComparable(feature && feature.properties, {
       scoreMode: getScoreModeState(),
       minutes: getScoreMinutes(),
+      activeMetric: getActiveMetricState(),
     });
   },
 });
@@ -830,12 +834,6 @@ Urban95NeighborhoodSidebar.configure({
   renderDeps: {
     pieSlicesFromInventoryCounts: Urban95Dashboards.pieSlicesFromInventoryCounts,
     getActiveMetric: getActiveMetricState,
-    getWeightedHistogramDistribution: getWeightedHistogramDistribution,
-    weightedCategoryHighlightsFromSource: weightedCategoryHighlightsFromSource,
-    weightedSubcategoryComparisonRows: weightedSubcategoryComparisonRows,
-    renderWeightedSubcategoryComparisonList: scoreExplain.renderWeightedSubcategoryComparisonList,
-    buildHistogramDistributionFromScores: buildHistogramDistributionFromScores,
-    collectBuildingScores: collectBuildingScores,
     getColorForValue: getColorForValue,
     getNeighborhoodPercentileKey: getNeighborhoodPercentileKey,
     getOrdinalSuffix: scoreExplain.getOrdinalSuffix,
@@ -890,9 +888,7 @@ Urban95CitySidebar.configure({
     getScoreModeLabel: getScoreModeLabel,
     getOrdinalSuffix: scoreExplain.getOrdinalSuffix,
     heroPercentileMeterFillStyle: scoreExplain.heroPercentileMeterFillStyle,
-    getWeightedHistogramDistribution: getWeightedHistogramDistribution,
     getNeighborhoodPercentileKey: getNeighborhoodPercentileKey,
-    buildHistogramDistributionFromScores: buildHistogramDistributionFromScores,
     collectBuildingScores: collectBuildingScores,
     percentileBreakpoints: percentileBreakpoints,
     getColorForValue: getColorForValue,

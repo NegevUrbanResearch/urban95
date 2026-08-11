@@ -1,4 +1,5 @@
 import logging
+import math
 import warnings
 from pathlib import Path
 
@@ -8,48 +9,23 @@ from shapely import make_valid
 from shapely.geometry import Point
 
 from core.paths import layer
-from lib.amenity_layers import validate_clean_amenity_subtypes
 from lib.shade_si import load_prepared_si_layers, round_building_summer_si, summer_si_to_subscore
+from lib.urban95_status import (
+    INDICATOR_SOURCE_REQUIREMENTS,
+    SOURCE_AVAILABILITY_KEY,
+    STATUS_DIAGNOSTICS,
+    STATUS_HIERARCHY,
+    SourceAvailability,
+    aggregate_status,
+    attainment_from_score,
+    equal_mean,
+    source_is_available,
+    status_from_attainment,
+)
 
 # ==========================================
-# הגדרות ומשקלים
+# Direct-indicator geometry rules
 # ==========================================
-
-CATEGORY_WEIGHTS = {
-    "Environmental Quality": 0.20,
-    "Nature": 0.15,
-    "Play": 0.15,
-    "Safety & Mobility": 0.25,
-    "Family Services": 0.25
-}
-
-CATEGORY_SUBCATEGORY_WEIGHTS = {
-    "Environmental Quality": {
-        "shade": 0.4,
-        "trees": 0.2,
-        "roads": 0.4,
-    },
-    "Nature": {
-        "parks": 0.5,
-        "urban_nature_areas": 0.5,
-    },
-    "Play": {
-        "playgrounds": 1.0,
-    },
-    "Safety & Mobility": {
-        "street_lights": 0.15,
-        "bicycle_access": 0.15,
-        "bus_stops": 0.3,
-        "shelters": 0.4,
-    },
-    "Family Services": {
-        "education": 0.3,
-        "community": 0.2,
-        "business": 0.2,
-        "health": 0.3,
-    },
-}
-
 
 STREET_SI_FILENAME = "street_summer_si.geojson"
 OPEN_SPACE_SI_FILENAME = "open_space_summer_si.geojson"
@@ -82,7 +58,16 @@ def discrete_layer_kwargs(layers: dict) -> dict:
         "community": layers.get("community"),
         "business": layers.get("business"),
         "health": layers.get("health"),
+        "source_availability": layers.get(SOURCE_AVAILABILITY_KEY),
     }
+
+
+def _equal_category_score(category: str, details: dict) -> float | None:
+    attainment = equal_mean(
+        attainment_from_score(details.get(child))
+        for child in STATUS_HIERARCHY[category]
+    )
+    return None if attainment is None else attainment * 100.0
 
 
 def _sanitize_layer(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -131,57 +116,69 @@ def calc_environmental_quality(
     """
     buffer_20m = building.buffer(20)
 
-    # 1. צל (Shade) - משקל 0.4
-    summer_si = round_building_summer_si(precomputed_summer_si)
-    shade_score = summer_si_to_subscore(summer_si) / 100.0
+    # 1. צל (Shade)
+    try:
+        summer_si = round_building_summer_si(precomputed_summer_si)
+        shade_score = summer_si_to_subscore(summer_si) / 100.0
+    except Exception as exc:
+        logging.warning("Urban95 shade calculation failed: %s", exc)
+        summer_si = None
+        shade_score = None
 
-    # 2. עצים (Trees) - משקל 0.2
+    # 2. עצים (Trees)
     trees_score = 0.0
-    if "trees" in layers and not layers["trees"].empty:
-        trees_in_buffer = _features_intersecting(layers["trees"], buffer_20m)
-        trees_count = len(trees_in_buffer)
-        
-        if trees_count >= 3:
-            trees_score = 1.0
-        elif 1 <= trees_count <= 2:
-            trees_score = 0.5
+    try:
+        if "trees" in layers and not layers["trees"].empty:
+            trees_in_buffer = _features_intersecting(layers["trees"], buffer_20m)
+            trees_count = len(trees_in_buffer)
 
-    # 3. כבישים (Roads) - משקל 0.4
-    roads_score = 1.0 # ברירת מחדל: 1 (אין כביש מהיר קרוב)
-    if "roads" in layers and not layers["roads"].empty:
-        roads_df = layers["roads"]
-        speed_col = None
-        for candidate in ("maxspeed", "max_speed", "speed_limit"):
-            if candidate in roads_df.columns:
-                speed_col = candidate
-                break
+            if trees_count >= 3:
+                trees_score = 1.0
+            elif 1 <= trees_count <= 2:
+                trees_score = 0.5
+    except Exception as exc:
+        logging.warning("Urban95 trees calculation failed: %s", exc)
+        trees_score = None
 
-        if speed_col is not None:
-            numeric_speed = pd.to_numeric(roads_df[speed_col], errors="coerce")
-            fast_roads = roads_df[numeric_speed > 50]
-        else:
-            fast_roads = roads_df.iloc[0:0]
-        
-        # מרחק לכביש המהיר הקרוב ביותר (לקצה המבנה)
-        if not fast_roads.empty:
-            distances = fast_roads.geometry.distance(building)
-            min_dist = distances.min()
-            
-            if min_dist <= 100:
-                roads_score = 0.0
-            elif 100 < min_dist <= 300:
-                roads_score = 0.5
+    # 3. כבישים (Roads)
+    roads_score = 1.0
+    try:
+        if "roads" in layers and not layers["roads"].empty:
+            roads_df = layers["roads"]
+            speed_col = next(
+                (
+                    candidate
+                    for candidate in ("maxspeed", "max_speed", "speed_limit")
+                    if candidate in roads_df.columns
+                ),
+                None,
+            )
+            fast_roads = (
+                roads_df[pd.to_numeric(roads_df[speed_col], errors="coerce") > 50]
+                if speed_col is not None
+                else roads_df.iloc[0:0]
+            )
+            if not fast_roads.empty:
+                min_dist = fast_roads.geometry.distance(building).min()
+                if min_dist <= 100:
+                    roads_score = 0.0
+                elif min_dist <= 300:
+                    roads_score = 0.5
+    except Exception as exc:
+        logging.warning("Urban95 roads calculation failed: %s", exc)
+        roads_score = None
 
     # חישוב סופי לקטגוריה
-    final_score = ((shade_score * 0.4) + (trees_score * 0.2) + (roads_score * 0.4)) * 100
+    details = {
+        "shade": None if shade_score is None else shade_score * 100,
+        "summer_si": summer_si,
+        "trees": None if trees_score is None else trees_score * 100,
+        "roads": None if roads_score is None else roads_score * 100,
+    }
+    final_score = _equal_category_score("environmental_quality", details)
     if not include_details:
         return final_score
-    return final_score, {
-        "shade": shade_score * 100,
-        "summer_si": summer_si,
-        "trees": trees_score * 100,
-        "roads": roads_score * 100,
-    }
+    return final_score, details
 
 
 def _load_geojson(path: Path, target_epsg: int = 2039) -> gpd.GeoDataFrame:
@@ -199,17 +196,66 @@ def _load_geojson(path: Path, target_epsg: int = 2039) -> gpd.GeoDataFrame:
     return _sanitize_layer(out)
 
 
+def _mark_availability(
+    frame: gpd.GeoDataFrame,
+    available: bool,
+    reason: str,
+) -> gpd.GeoDataFrame:
+    frame.attrs[SOURCE_AVAILABILITY_KEY] = SourceAvailability(available, reason)
+    return frame
+
+
+def _frame_availability(value: object, *, required_columns: tuple[str, ...] = ()) -> SourceAvailability:
+    if value is None:
+        return SourceAvailability(False, "missing")
+    if not isinstance(value, gpd.GeoDataFrame):
+        return SourceAvailability(False, "schema_invalid")
+    geometry_name = getattr(value, "_geometry_column_name", None)
+    if not geometry_name or geometry_name not in value.columns:
+        return SourceAvailability(False, "schema_invalid")
+    if any(column not in value.columns for column in required_columns):
+        return SourceAvailability(False, "schema_invalid")
+    return SourceAvailability(True, "available")
+
+
+def _source_frame_availability(source_key: str, value: object) -> SourceAvailability:
+    availability = _frame_availability(value)
+    if availability.available and source_key == "roads" and not any(
+        column in value.columns
+        for column in ("maxspeed", "max_speed", "speed_limit")
+    ):
+        return SourceAvailability(False, "schema_invalid")
+    return availability
+
+
 def _load_optional_raw(layer_id: str, target_epsg: int) -> gpd.GeoDataFrame:
     L = layer(layer_id)
     if not L.path.is_file():
         logging.info("metric omitted: %s", layer_id)
-        return gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
-    return _load_geojson(L.path, target_epsg)
+        return _mark_availability(
+            gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}"),
+            False,
+            "missing",
+        )
+    try:
+        frame = _load_geojson(L.path, target_epsg)
+    except Exception as exc:
+        logging.warning("Urban95 source %s unavailable: %s", layer_id, exc)
+        return _mark_availability(
+            gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}"),
+            False,
+            "unreadable",
+        )
+    return _mark_availability(frame, True, "available")
 
 
 def _explicit_override_frame(value, target_epsg: int) -> gpd.GeoDataFrame:
     if value is None:
-        return gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+        return _mark_availability(
+            gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}"),
+            False,
+            "missing",
+        )
     return value
 
 
@@ -223,6 +269,7 @@ def build_layers_from_raw(
 ) -> dict:
     """Load scoring layers from data/raw and map them to model layer names."""
     layers = {}
+    availability: dict[str, SourceAvailability] = {}
     for layer_id in OPTIONAL_RAW_LAYER_IDS:
         if layer_id == "trees" and trees is not _LAYER_OVERRIDE_UNSET:
             layers[layer_id] = _explicit_override_frame(trees, target_epsg)
@@ -232,6 +279,19 @@ def build_layers_from_raw(
             layers[layer_id] = _explicit_override_frame(street_lights, target_epsg)
         else:
             layers[layer_id] = _load_optional_raw(layer_id, target_epsg)
+        availability[layer_id] = layers[layer_id].attrs.get(
+            SOURCE_AVAILABILITY_KEY,
+            _frame_availability(layers[layer_id]),
+        )
+        if (
+            layer_id == "roads"
+            and availability[layer_id].available
+            and not any(
+                column in layers[layer_id].columns
+                for column in ("maxspeed", "max_speed", "speed_limit")
+            )
+        ):
+            availability[layer_id] = SourceAvailability(False, "schema_invalid")
 
     amenity_type_map = {
         "playgrounds": "playgrounds",
@@ -245,18 +305,45 @@ def build_layers_from_raw(
 
     if amenities_clean is not _LAYER_OVERRIDE_UNSET:
         amenities_clean_frame = _explicit_override_frame(amenities_clean, target_epsg)
-        has_amenity_type = "amenity_type" in amenities_clean_frame.columns
-        validate_clean_amenity_subtypes(amenities_clean_frame)
+        amenity_availability = _frame_availability(
+            amenities_clean,
+            required_columns=("amenity_type",),
+        )
     else:
         amenities_clean_path = layer("amenities_clean").path
         if not amenities_clean_path.is_file():
             logging.info("metric omitted: amenities_clean")
             amenities_clean_frame = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
-            has_amenity_type = False
+            amenity_availability = SourceAvailability(False, "missing")
         else:
-            amenities_clean_frame = _load_geojson(amenities_clean_path, target_epsg)
-            has_amenity_type = "amenity_type" in amenities_clean_frame.columns
-            validate_clean_amenity_subtypes(amenities_clean_frame)
+            try:
+                amenities_clean_frame = _load_geojson(amenities_clean_path, target_epsg)
+                amenity_availability = _frame_availability(
+                    amenities_clean_frame,
+                    required_columns=("amenity_type",),
+                )
+            except Exception as exc:
+                logging.warning("Urban95 source amenities_clean unavailable: %s", exc)
+                amenities_clean_frame = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+                amenity_availability = SourceAvailability(False, "unreadable")
+
+    has_amenity_type = amenity_availability.available
+    if has_amenity_type and "amenity_subtype" in amenities_clean_frame.columns:
+        parent = amenities_clean_frame["amenity_type"].astype(str).str.strip().str.lower()
+        subtype = amenities_clean_frame["amenity_subtype"].fillna("").astype(str)
+        allowed = {
+            "education": {"", "school", "kindergarten"},
+            "health": {"", "clinic", "tipat_halav"},
+        }
+        invalid = [
+            value
+            for parent_name, allowed_values in allowed.items()
+            for value in subtype[parent == parent_name]
+            if value not in allowed_values
+        ]
+        if invalid:
+            amenity_availability = SourceAvailability(False, "schema_invalid")
+            has_amenity_type = False
 
     for target_name, source_type in amenity_type_map.items():
         if has_amenity_type:
@@ -266,6 +353,10 @@ def build_layers_from_raw(
             layers[target_name] = _sanitize_layer(subset)
         else:
             layers[target_name] = amenities_clean_frame.iloc[0:0].copy()
+
+        availability[target_name] = amenity_availability
+
+    layers[SOURCE_AVAILABILITY_KEY] = availability
 
     return layers
 
@@ -294,7 +385,31 @@ def build_layers(
     else:
         street_path = layer("shade_si_street").path
         open_space_path = layer("shade_si_open").path
-    streets, open_spaces = load_prepared_si_layers(street_path, open_space_path)
+    availability = layers[SOURCE_AVAILABILITY_KEY]
+    street_exists = street_path.is_file()
+    open_space_exists = open_space_path.is_file()
+    if street_exists and open_space_exists:
+        try:
+            streets, open_spaces = load_prepared_si_layers(street_path, open_space_path)
+            availability["shade_streets"] = SourceAvailability(True, "available")
+            availability["shade_open_spaces"] = SourceAvailability(True, "available")
+        except Exception as exc:
+            logging.warning("Urban95 shade sources unavailable: %s", exc)
+            streets = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+            open_spaces = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+            availability["shade_streets"] = SourceAvailability(False, "unreadable")
+            availability["shade_open_spaces"] = SourceAvailability(False, "unreadable")
+    else:
+        streets = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+        open_spaces = gpd.GeoDataFrame(geometry=[], crs=f"EPSG:{target_epsg}")
+        availability["shade_streets"] = SourceAvailability(
+            False,
+            "paired_source_missing" if street_exists else "missing",
+        )
+        availability["shade_open_spaces"] = SourceAvailability(
+            False,
+            "paired_source_missing" if open_space_exists else "missing",
+        )
     layers["shade_streets"] = streets
     layers["shade_open_spaces"] = open_spaces
     return layers
@@ -307,34 +422,38 @@ def calc_nature(building, layers: dict, include_details: bool = False):
     buffer_300m = building.buffer(300)
     parks_score = 0.0
     urban_nature_score = 0.0
-    nature_weights = CATEGORY_SUBCATEGORY_WEIGHTS["Nature"]
 
-    if "parks" in layers and not layers["parks"].empty:
-        parks_in_buffer = _features_intersecting(layers["parks"], buffer_300m)
+    try:
+        if "parks" in layers and not layers["parks"].empty:
+            parks_in_buffer = _features_intersecting(layers["parks"], buffer_300m)
+            if not parks_in_buffer.empty:
+                parks_score = 1.0 if any(parks_in_buffer.geometry.area >= 3000) else 0.5
+    except Exception as exc:
+        logging.warning("Urban95 parks calculation failed: %s", exc)
+        parks_score = None
 
-        if not parks_in_buffer.empty:
-            # בודק אם יש לפחות פארק אחד גדול מ-3 דונם (3000 מ"ר)
-            has_large_park = any(parks_in_buffer.geometry.area >= 3000)
-            if has_large_park:
-                parks_score = 1.0
-            else:
-                parks_score = 0.5  # יש פארק אבל קטן מ-3 דונם
+    try:
+        if "urban_nature_areas" in layers and not layers["urban_nature_areas"].empty:
+            urban_nature_in_buffer = _features_intersecting(
+                layers["urban_nature_areas"],
+                buffer_300m,
+            )
+            if not urban_nature_in_buffer.empty:
+                urban_nature_score = 1.0
+    except Exception as exc:
+        logging.warning("Urban95 urban-nature calculation failed: %s", exc)
+        urban_nature_score = None
 
-    if "urban_nature_areas" in layers and not layers["urban_nature_areas"].empty:
-        urban_nature_in_buffer = _features_intersecting(layers["urban_nature_areas"], buffer_300m)
-        if not urban_nature_in_buffer.empty:
-            urban_nature_score = 1.0
-
-    final_score = (
-        (parks_score * nature_weights["parks"])
-        + (urban_nature_score * nature_weights["urban_nature_areas"])
-    ) * 100
+    details = {
+        "parks": None if parks_score is None else parks_score * 100,
+        "urban_nature_areas": (
+            None if urban_nature_score is None else urban_nature_score * 100
+        ),
+    }
+    final_score = _equal_category_score("nature", details)
     if not include_details:
         return final_score
-    return final_score, {
-        "parks": parks_score * 100,
-        "urban_nature_areas": urban_nature_score * 100,
-    }
+    return final_score, details
 
 
 def calc_play(building, layers: dict, include_details: bool = False):
@@ -343,16 +462,26 @@ def calc_play(building, layers: dict, include_details: bool = False):
     """
     buffer_300m = building.buffer(300)
     playgrounds_score = 0.0
-    
-    if "playgrounds" in layers and not layers["playgrounds"].empty:
-        playgrounds_in_buffer = _features_intersecting(layers["playgrounds"], buffer_300m)
-        if not playgrounds_in_buffer.empty:
-            playgrounds_score = 1.0
-            
-    final_score = playgrounds_score * 100
+
+    try:
+        if "playgrounds" in layers and not layers["playgrounds"].empty:
+            playgrounds_in_buffer = _features_intersecting(
+                layers["playgrounds"],
+                buffer_300m,
+            )
+            if not playgrounds_in_buffer.empty:
+                playgrounds_score = 1.0
+    except Exception as exc:
+        logging.warning("Urban95 playgrounds calculation failed: %s", exc)
+        playgrounds_score = None
+
+    details = {
+        "playgrounds": None if playgrounds_score is None else playgrounds_score * 100
+    }
+    final_score = _equal_category_score("play", details)
     if not include_details:
         return final_score
-    return final_score, {"playgrounds": playgrounds_score * 100}
+    return final_score, details
 
 
 def calc_streetlight_subscore(building, street_lights: gpd.GeoDataFrame | None) -> float:
@@ -391,39 +520,59 @@ def calc_safety_and_mobility(building, layers: dict, include_details: bool = Fal
     buffer_300m = building.buffer(300)
     buffer_50m = building.buffer(50)
 
-    # 1. תאורת רחוב - משקל 0.15
-    lights_score = calc_streetlight_subscore(building, layers.get("street_lights")) / 100.0
+    # 1. תאורת רחוב
+    try:
+        lights_score = calc_streetlight_subscore(
+            building,
+            layers.get("street_lights"),
+        ) / 100.0
+    except Exception as exc:
+        logging.warning("Urban95 street-light calculation failed: %s", exc)
+        lights_score = None
 
-    # 2. אופניים - משקל 0.15
+    # 2. אופניים
     bike_score = 0.0
-    if "bikes" in layers and not layers["bikes"].empty:
-        if not _features_intersecting(layers["bikes"], buffer_300m).empty:
-            bike_score = 1.0
+    try:
+        if "bikes" in layers and not layers["bikes"].empty:
+            if not _features_intersecting(layers["bikes"], buffer_300m).empty:
+                bike_score = 1.0
+    except Exception as exc:
+        logging.warning("Urban95 bicycle calculation failed: %s", exc)
+        bike_score = None
             
-    # 3. תחנות אוטובוס - משקל 0.3
+    # 3. תחנות אוטובוס
     bus_score = 0.0
-    if "bus_stops" in layers and not layers["bus_stops"].empty:
-        bus_count = len(_features_intersecting(layers["bus_stops"], buffer_300m))
-        if bus_count >= 3:
-            bus_score = 1.0
-        elif 1 <= bus_count <= 2:
-            bus_score = 0.5
+    try:
+        if "bus_stops" in layers and not layers["bus_stops"].empty:
+            bus_count = len(_features_intersecting(layers["bus_stops"], buffer_300m))
+            if bus_count >= 3:
+                bus_score = 1.0
+            elif 1 <= bus_count <= 2:
+                bus_score = 0.5
+    except Exception as exc:
+        logging.warning("Urban95 bus-stop calculation failed: %s", exc)
+        bus_score = None
 
-    # 4. מקלטים - משקל 0.4
+    # 4. מקלטים
     shelters_score = 0.0
-    if "shelters" in layers and not layers["shelters"].empty:
-        if not _features_intersecting(layers["shelters"], buffer_50m).empty:
-            shelters_score = 1.0
+    try:
+        if "shelters" in layers and not layers["shelters"].empty:
+            if not _features_intersecting(layers["shelters"], buffer_50m).empty:
+                shelters_score = 1.0
+    except Exception as exc:
+        logging.warning("Urban95 shelter calculation failed: %s", exc)
+        shelters_score = None
 
-    final_score = ((lights_score * 0.15) + (bike_score * 0.15) + (bus_score * 0.3) + (shelters_score * 0.4)) * 100
+    details = {
+        "street_lights": None if lights_score is None else lights_score * 100,
+        "bicycle_access": None if bike_score is None else bike_score * 100,
+        "bus_stops": None if bus_score is None else bus_score * 100,
+        "shelters": None if shelters_score is None else shelters_score * 100,
+    }
+    final_score = _equal_category_score("safety_mobility", details)
     if not include_details:
         return final_score
-    return final_score, {
-        "street_lights": lights_score * 100,
-        "bicycle_access": bike_score * 100,
-        "bus_stops": bus_score * 100,
-        "shelters": shelters_score * 100,
-    }
+    return final_score, details
 
 
 def calc_family_services(building, layers: dict, include_details: bool = False):
@@ -443,36 +592,53 @@ def calc_family_services(building, layers: dict, include_details: bool = False):
                     return features_in_300m.geometry.distance(building).min()
         return None
 
-    # 1. חינוך - משקל 0.3
+    # 1. חינוך
     education_score = 0.0
-    edu_dist = get_min_distance("education")
-    if edu_dist is not None:
-        if edu_dist <= 150:
-            education_score = 1.0
-        elif 150 < edu_dist <= 300:
-            education_score = 0.5
+    try:
+        edu_dist = get_min_distance("education")
+        if edu_dist is not None:
+            if edu_dist <= 150:
+                education_score = 1.0
+            elif edu_dist <= 300:
+                education_score = 0.5
+    except Exception as exc:
+        logging.warning("Urban95 education calculation failed: %s", exc)
+        education_score = None
 
-    # 2. מרכז קהילתי - משקל 0.2
-    community_score = 1.0 if get_min_distance("community") is not None else 0.0
+    # 2. מרכז קהילתי
+    try:
+        community_score = 1.0 if get_min_distance("community") is not None else 0.0
+    except Exception as exc:
+        logging.warning("Urban95 community calculation failed: %s", exc)
+        community_score = None
     
-    # 3. בתי עסק - משקל 0.2
-    business_score = 1.0 if get_min_distance("business") is not None else 0.0
+    # 3. בתי עסק
+    try:
+        business_score = 1.0 if get_min_distance("business") is not None else 0.0
+    except Exception as exc:
+        logging.warning("Urban95 business calculation failed: %s", exc)
+        business_score = None
     
-    # 4. בריאות - משקל 0.3
-    health_score = 1.0 if get_min_distance("health") is not None else 0.0
+    # 4. בריאות
+    try:
+        health_score = 1.0 if get_min_distance("health") is not None else 0.0
+    except Exception as exc:
+        logging.warning("Urban95 health calculation failed: %s", exc)
+        health_score = None
 
-    final_score = ((education_score * 0.3) + (community_score * 0.2) + (business_score * 0.2) + (health_score * 0.3)) * 100
+    details = {
+        "education": None if education_score is None else education_score * 100,
+        "community": None if community_score is None else community_score * 100,
+        "business": None if business_score is None else business_score * 100,
+        "health": None if health_score is None else health_score * 100,
+    }
+    final_score = _equal_category_score("family_services", details)
     if not include_details:
         return final_score
-    return final_score, {
-        "education": education_score * 100,
-        "community": community_score * 100,
-        "business": business_score * 100,
-        "health": health_score * 100,
-    }
+    return final_score, details
 
 # ==========================================
-# פונקציית ה-MAIN ליצירת האינדקס
+# Scalar status assembly
 # ==========================================
 
 def calculate_master_index(
@@ -493,42 +659,96 @@ def calculate_master_index(
     summer_si = precomputed.get("summer_si")
 
     # 1. שליחת הגיאומטריה והשכבות לכל קטגוריה וקבלת ציונים
-    env_score, env_sub = calc_environmental_quality(
-        building,
-        layers,
-        include_details=True,
-        precomputed_summer_si=summer_si,
-    )
-    nature_score, nature_sub = calc_nature(building, layers, include_details=True)
-    play_score, play_sub = calc_play(building, layers, include_details=True)
-    safety_score, safety_sub = calc_safety_and_mobility(building, layers, include_details=True)
-    family_score, family_sub = calc_family_services(building, layers, include_details=True)
-
-    category_scores = {
-        "Environmental Quality": env_score,
-        "Nature": nature_score,
-        "Play": play_score,
-        "Safety & Mobility": safety_score,
-        "Family Services": family_score,
+    calculators = {
+        "environmental_quality": lambda: calc_environmental_quality(
+            building,
+            layers,
+            include_details=True,
+            precomputed_summer_si=summer_si,
+        ),
+        "nature": lambda: calc_nature(building, layers, include_details=True),
+        "play": lambda: calc_play(building, layers, include_details=True),
+        "safety_mobility": lambda: calc_safety_and_mobility(building, layers, include_details=True),
+        "family_services": lambda: calc_family_services(building, layers, include_details=True),
     }
-    subcategory_scores = {
-        "Environmental Quality": env_sub,
-        "Nature": nature_sub,
-        "Play": play_sub,
-        "Safety & Mobility": safety_sub,
-        "Family Services": family_sub,
-    }
+    direct_scores: dict[str, dict[str, object]] = {}
+    for category, children in STATUS_HIERARCHY.items():
+        try:
+            _, details = calculators[category]()
+        except Exception as exc:
+            logging.warning("Urban95 %s calculation failed: %s", category, exc)
+            details = {child: None for child in children}
+        direct_scores[category] = details
     
-    # 2. חישוב האינדקס הכללי לפי המשקלים
-    total_index = 0.0
-    for cat_name, score in category_scores.items():
-        total_index += score * CATEGORY_WEIGHTS[cat_name]
-        
-    total_index = round(total_index, 1)
+    # 2. Assemble equal-mean category and overview statuses.
+    records = layers.get(SOURCE_AVAILABILITY_KEY)
+
+    def source_available(source_key: str) -> bool:
+        if source_key in ("shade_streets", "shade_open_spaces") and "summer_si" in precomputed:
+            try:
+                return math.isfinite(float(precomputed["summer_si"]))
+            except Exception:
+                return False
+        inferred = _source_frame_availability(source_key, layers.get(source_key))
+        if isinstance(records, dict):
+            return source_is_available(records, source_key) and inferred.available
+        return inferred.available
+
+    for (category, indicator), requirements in INDICATOR_SOURCE_REQUIREMENTS.items():
+        if not all(source_available(source_key) for source_key in requirements):
+            direct_scores[category][indicator] = None
+
+    category_attainments = {
+        category: equal_mean(
+            attainment_from_score(direct_scores[category].get(child))
+            for child in children
+        )
+        for category, children in STATUS_HIERARCHY.items()
+    }
+    subcategory_statuses = {
+        category: {
+            child: status_from_attainment(
+                attainment_from_score(direct_scores[category].get(child))
+            )
+            for child in children
+        }
+        for category, children in STATUS_HIERARCHY.items()
+    }
+
+    diagnostic_statuses: dict[str, dict[str, dict[str, str]]] = {}
+    for (category, parent), children in STATUS_DIAGNOSTICS.items():
+        parent_available = all(
+            source_available(source_key)
+            for source_key in INDICATOR_SOURCE_REQUIREMENTS[(category, parent)]
+        )
+        parent_layer = layers.get(parent)
+        diagnostic_statuses.setdefault(category, {}).setdefault(parent, {})
+        for child in children:
+            if not parent_available or not isinstance(parent_layer, gpd.GeoDataFrame):
+                score = None
+            else:
+                try:
+                    if "amenity_subtype" in parent_layer.columns:
+                        child_layer = parent_layer.loc[parent_layer["amenity_subtype"] == child].copy()
+                    else:
+                        child_layer = parent_layer.iloc[0:0].copy()
+                    child_layers = dict(layers)
+                    child_layers[parent] = child_layer
+                    _, family_details = calc_family_services(building, child_layers, include_details=True)
+                    score = family_details[parent]
+                except Exception as exc:
+                    logging.warning("Urban95 diagnostic %s calculation failed: %s", child, exc)
+                    score = None
+            diagnostic_statuses[category][parent][child] = status_from_attainment(
+                attainment_from_score(score)
+            )
 
     return {
-        "final_index": total_index,
-        "category_scores": category_scores,
-        "subcategory_scores": subcategory_scores,
-        "subcategory_weights": CATEGORY_SUBCATEGORY_WEIGHTS,
+        "overview_status": aggregate_status(category_attainments.values()),
+        "category_statuses": {
+            name: status_from_attainment(value)
+            for name, value in category_attainments.items()
+        },
+        "subcategory_statuses": subcategory_statuses,
+        "diagnostic_statuses": diagnostic_statuses,
     }

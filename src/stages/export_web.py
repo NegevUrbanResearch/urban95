@@ -43,7 +43,7 @@ ISOCHRONES_WEB_PATH = DOCS_DATA_DIR / "isochrones.geojson"
 
 # Refuse to publish centroid-only / unscored buildings (wipes the live map indicators).
 REQUIRED_BUILDING_SCORE_COLUMNS = (
-    "score_weighted_10min",
+    "u95_status_10min",
     "score_expanded_10min",
 )
 
@@ -58,6 +58,16 @@ def assert_buildings_have_scores(buildings: gpd.GeoDataFrame) -> None:
             "artifacts) before export_web — a centroid-only layer will "
             "wipe buildings_lookup indicators."
         )
+
+
+def _drop_stale_weighted_columns(buildings: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    stale_columns = [
+        column for column in buildings.columns if column.startswith("score_weighted")
+    ]
+    if stale_columns:
+        logging.info("Dropped %d stale weighted columns before publication.", len(stale_columns))
+        return buildings.drop(columns=stale_columns)
+    return buildings
 
 
 def _sync_raw_layer_to_docs(
@@ -187,6 +197,7 @@ def export_web(
         buildings = load_scored_buildings(SCORED_BUILDINGS)
 
     assert_buildings_have_scores(buildings)
+    buildings = _drop_stale_weighted_columns(buildings)
 
     DOCS_DATA_DIR.mkdir(parents=True, exist_ok=True)
 

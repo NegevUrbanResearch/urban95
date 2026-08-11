@@ -43,7 +43,8 @@
 
   function getWeightedMetric(scoreModel, metricId) {
     if (!scoreModel || typeof scoreModel.buildWeightedMetricRegistry !== "function") return null;
-    return scoreModel.buildWeightedMetricRegistry()[metricId] || null;
+    var metric = scoreModel.buildWeightedMetricRegistry()[metricId] || null;
+    return metric && metric.scale === "status" ? metric : null;
   }
 
   function getSubcategoryMetricIds(scoreModel, categoryStem) {

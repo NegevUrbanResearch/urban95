@@ -56,9 +56,19 @@
     var meta = renderCtx && renderCtx.metaEl;
 
     if (hero) {
+      var cityStatus = opts.isStatus ? opts.cityStatus : null;
+      var definitions = (window.Urban95StatusScale && window.Urban95StatusScale.definitions) || [];
+      var definition = definitions.filter(function (item) {
+        return item.token === cityStatus;
+      })[0];
+      var statusLabel = cityStatus ? (definition ? definition.label : "Unknown") : "Summary unavailable";
+      var kicker = opts.isStatus ? (opts.metricLabel || "All indicators overview") : "";
       hero.innerHTML =
         '<div class="percentile-summary score-explain-sidebar-hero-compact">' +
-        '<div class="percentile-value">Beer Sheva</div>' +
+        (kicker ? '<p class="score-explain-hero-kicker">' + escape(renderCtx, kicker) + "</p>" : "") +
+        '<div class="percentile-value">Beer Sheva' +
+        (opts.isStatus ? ' <span class="city-status-headline">' + escape(renderCtx, statusLabel) + "</span>" : "") +
+        "</div>" +
         "</div>";
     }
 
@@ -87,6 +97,22 @@
 
     var name = selection.name || "Unknown";
     var isExpanded = !!opts.isExpanded;
+
+    if (opts.isStatus) {
+      var status = selection.status;
+      var definition = ((window.Urban95StatusScale && window.Urban95StatusScale.definitions) || []).filter(function (item) {
+        return item.token === status;
+      })[0];
+      hero.innerHTML =
+        '<div class="percentile-summary score-explain-sidebar-hero-compact"><p class="score-explain-hero-kicker">' +
+        escape(renderCtx, opts.metricLabel || "All indicators overview") +
+        '</p><div class="percentile-value">' + escape(renderCtx, status ? (definition ? definition.label : "Unknown") : "Summary unavailable") +
+        "</div></div>";
+      meta.innerHTML =
+        '<div class="score-explain-building-ctx"><div class="building-ctx-text"><span class="building-ctx-id" dir="rtl" lang="he">' +
+        escape(renderCtx, name) + "</span></div></div>";
+      return;
+    }
 
     if (isExpanded) {
       var pctRaw =
@@ -213,6 +239,46 @@
     }
 
     populateHeaderBriefing(renderCtx, opts);
+  }
+
+  function buildStatusBodyHTML(renderCtx, model) {
+    var renderComposition = renderCtx && renderCtx.renderStatusComposition;
+    if (typeof renderComposition !== "function") {
+      return '<div class="cw-section"><p class="sidebar-section-hint">Summary unavailable</p></div>';
+    }
+    var html = '<div class="cw-summary"><div class="cw-stat-card"><div class="cw-stat-value">' +
+      escape(renderCtx, String(model.totalBuildings || 0)) +
+      '</div><div class="cw-stat-label">Buildings</div></div></div>';
+    html += '<div class="cw-section"><div class="cw-section-title">Status composition</div>' +
+      renderComposition(renderCtx, model.stats, model.activeMetric) + "</div>";
+    if (model.activeMetric && model.activeMetric.kind === "weighted-overall") {
+      html += '<div class="cw-section"><div class="cw-section-title">Category status compositions</div>';
+      (model.categoryMetrics || []).forEach(function (metric) {
+        html += '<div class="u95-status-category"><strong>' + escape(renderCtx, metric.label) + "</strong>" +
+          renderComposition(renderCtx, model.stats, metric) + "</div>";
+      });
+      html += "</div>";
+    }
+    html += '<div class="cw-section"><div class="cw-section-title">Neighborhoods by status</div>';
+    ((window.Urban95StatusScale && window.Urban95StatusScale.definitions) || []).forEach(function (definition) {
+      var rows = (model.neighborhoodGroups && model.neighborhoodGroups[definition.token]) || [];
+      html += '<div class="u95-status-neighborhood-group"><strong>' + escape(renderCtx, definition.label) + "</strong>";
+      rows.forEach(function (row) {
+        html += '<button type="button" class="city-ranking-row" data-neighborhood-name="' +
+          escape(renderCtx, row.name) + '" dir="rtl" lang="he">' + escape(renderCtx, row.name) + "</button>";
+      });
+      html += "</div>";
+    });
+    var unavailableRows = (model.neighborhoodGroups && model.neighborhoodGroups.unavailable) || [];
+    if (unavailableRows.length > 0) {
+      html += '<div class="u95-status-neighborhood-group"><strong>Summary unavailable</strong>';
+      unavailableRows.forEach(function (row) {
+        html += '<button type="button" class="city-ranking-row" data-neighborhood-name="' +
+          escape(renderCtx, row.name) + '" dir="rtl" lang="he">' + escape(renderCtx, row.name) + "</button>";
+      });
+      html += "</div>";
+    }
+    return html + "</div>";
   }
 
   function buildKpiHTML(renderCtx, model) {
@@ -524,6 +590,7 @@
 
   function buildBodyHTML(renderCtx, model) {
     var m = model || {};
+    if (m.isStatus) return buildStatusBodyHTML(renderCtx, m);
     var html = "";
     // Locked §8.1 order: KPIs → distribution → gap → selection strip → ranking
     html += buildKpiHTML(renderCtx, m);

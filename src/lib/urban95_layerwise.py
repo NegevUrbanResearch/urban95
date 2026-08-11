@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-import re
+import logging
 import warnings
 
 import geopandas as gpd
@@ -22,6 +22,19 @@ from shapely import make_valid as shapely_make_valid
 
 from lib.spatial_pairs import count_pairs_by_group, iter_query_pairs
 from core.perf import logged_phase
+from lib.urban95_status import (
+    INDICATOR_SOURCE_REQUIREMENTS,
+    STATUS_DIAGNOSTICS,
+    STATUS_HIERARCHY,
+    SourceAvailability,
+    attainment_from_score,
+    category_status_field,
+    diagnostic_status_field,
+    equal_mean,
+    indicator_status_field,
+    source_is_available,
+    status_from_attainment,
+)
 
 
 _EMPTY_CRS = "EPSG:2039"
@@ -67,6 +80,7 @@ class PreparedUrban95Layers:
     kindergartens: gpd.GeoDataFrame
     clinics: gpd.GeoDataFrame
     tipat_halav: gpd.GeoDataFrame
+    source_availability: dict[str, SourceAvailability]
 
 
 def _empty_layer(crs: object = _EMPTY_CRS) -> gpd.GeoDataFrame:
@@ -81,7 +95,7 @@ def _sanitized(source: gpd.GeoDataFrame | None, target_crs: object = _EMPTY_CRS)
         source = gpd.GeoDataFrame(source)
     geometry_name = getattr(source, "_geometry_column_name", "geometry")
     if geometry_name not in source.columns:
-        return _empty_layer(source.crs if source.crs is not None else target_crs)
+        return _empty_layer(target_crs)
     crs = source.crs if source.crs is not None else target_crs
     out = source.copy(deep=True)
     if out.geometry.name != "geometry":
@@ -166,11 +180,57 @@ def prepare_urban95_layers(
     community: gpd.GeoDataFrame | None = None,
     business: gpd.GeoDataFrame | None = None,
     health: gpd.GeoDataFrame | None = None,
+    source_availability: dict[str, SourceAvailability] | None = None,
     target_crs: object = _EMPTY_CRS,
 ) -> PreparedUrban95Layers:
     """Prepare every discrete source once, preserving source-row semantics."""
-    candidates = (trees, roads, parks, urban_nature_areas, playgrounds, bikes, bus_stops, shelters, education, community, business, health)
-    source_crs = next((frame.crs for frame in candidates if isinstance(frame, gpd.GeoDataFrame) and frame.crs is not None), target_crs)
+    raw_sources = {
+        "trees": trees,
+        "roads": roads,
+        "parks": parks,
+        "urban_nature_areas": urban_nature_areas,
+        "playgrounds": playgrounds,
+        "bikes": bikes,
+        "bus_stops": bus_stops,
+        "shelters": shelters,
+        "education": education,
+        "community": community,
+        "business": business,
+        "health": health,
+    }
+    availability = dict(source_availability or {})
+    for source_key, source in raw_sources.items():
+        geometry_name = getattr(source, "_geometry_column_name", None)
+        available = (
+            isinstance(source, gpd.GeoDataFrame)
+            and geometry_name is not None
+            and geometry_name in source.columns
+        )
+        if available and source_key == "roads":
+            available = any(
+                column in source.columns
+                for column in ("maxspeed", "max_speed", "speed_limit")
+            )
+        if available and source_key in {
+            "playgrounds", "bikes", "shelters", "education",
+            "community", "business", "health",
+        }:
+            available = "amenity_type" in source.columns
+        if source_key not in availability:
+            availability[source_key] = SourceAvailability(
+                available,
+                "available" if available else ("missing" if source is None else "schema_invalid"),
+            )
+        elif source_is_available(availability, source_key) and not available:
+            availability[source_key] = SourceAvailability(False, "schema_invalid")
+    source_crs = next(
+        (
+            source.crs
+            for source_key, source in raw_sources.items()
+            if source_is_available(availability, source_key) and source.crs is not None
+        ),
+        target_crs,
+    )
     education_parent = _amenity_layer(education, "education", source_crs)
     health_parent = _amenity_layer(health, "health", source_crs)
     return PreparedUrban95Layers(
@@ -190,6 +250,7 @@ def prepare_urban95_layers(
         kindergartens=_amenity_subtype_layer(education_parent, "kindergarten"),
         clinics=_amenity_subtype_layer(health_parent, "clinic"),
         tipat_halav=_amenity_subtype_layer(health_parent, "tipat_halav"),
+        source_availability=availability,
     )
 
 
@@ -270,7 +331,7 @@ def _square_envelope(geometries: gpd.GeoSeries, radius: float) -> gpd.GeoSeries:
     )
 
 
-def score_discrete_components(
+def _score_discrete_components_legacy(
     buildings_metric: gpd.GeoDataFrame,
     prepared: PreparedUrban95Layers,
     chunk_size: int,
@@ -369,6 +430,220 @@ def score_discrete_components(
             q, s = _pairs(buffer_300, layer, chunk_size)
             values[name][start:stop] = _presence(q, s, len(layer), count) * 100.0
 
+    result = pd.DataFrame(values, index=buildings_metric.index)
+    for (_category, indicator), requirements in INDICATOR_SOURCE_REQUIREMENTS.items():
+        if indicator in result and not all(
+            source_is_available(prepared.source_availability, key) for key in requirements
+        ):
+            result[indicator] = np.nan
+    for (category, parent), children in STATUS_DIAGNOSTICS.items():
+        requirements = INDICATOR_SOURCE_REQUIREMENTS[(category, parent)]
+        if not all(source_is_available(prepared.source_availability, key) for key in requirements):
+            for child in children:
+                result[child] = np.nan
+    return result
+
+
+def score_discrete_components(
+    buildings_metric: gpd.GeoDataFrame,
+    prepared: PreparedUrban95Layers,
+    chunk_size: int,
+) -> pd.DataFrame:
+    """Return direct 0/50/100 attainments with isolated failure boundaries."""
+    if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+    if not isinstance(prepared, PreparedUrban95Layers):
+        raise TypeError("prepared must be PreparedUrban95Layers")
+
+    full_geometries = buildings_metric.geometry.reset_index(drop=True)
+    full_buffers: dict[float, gpd.GeoSeries] = {}
+    buffer_failures: dict[float, np.ndarray] = {}
+
+    def shared_buffer(radius: float) -> gpd.GeoSeries:
+        if radius in full_buffers:
+            return full_buffers[radius]
+
+        failures = np.zeros(len(full_geometries), dtype=bool)
+        try:
+            result = _buffer(full_geometries, radius)
+        except Exception as exc:
+            logging.warning(
+                "Urban95 %sm batch buffer failed; retrying per building: %s",
+                radius,
+                exc,
+            )
+            buffered_geometries = []
+            for position in range(len(full_geometries)):
+                try:
+                    single = _buffer(full_geometries.iloc[[position]].reset_index(drop=True), radius)
+                    buffered_geometries.append(single.iloc[0])
+                except Exception as single_exc:
+                    logging.warning(
+                        "Urban95 %sm buffer failed for building %d: %s",
+                        radius,
+                        position,
+                        single_exc,
+                    )
+                    buffered_geometries.append(None)
+                    failures[position] = True
+            result = gpd.GeoSeries(
+                buffered_geometries,
+                index=full_geometries.index,
+                crs=full_geometries.crs,
+            )
+
+        full_buffers[radius] = result
+        buffer_failures[radius] = failures
+        return result
+
+    def available(requirements: tuple[str, ...]) -> bool:
+        return all(
+            source_is_available(prepared.source_availability, source_key)
+            for source_key in requirements
+        )
+
+    def run_isolated(
+        label: str,
+        requirements: tuple[str, ...],
+        scorer,
+        buffer_radius: float | None,
+    ) -> np.ndarray:
+        values = np.full(len(buildings_metric), np.nan, dtype=np.float64)
+        if not available(requirements):
+            return values
+        try:
+            result = np.asarray(scorer(buildings_metric), dtype=np.float64)
+            if buffer_radius is not None:
+                result = result.copy()
+                result[buffer_failures[buffer_radius]] = np.nan
+            return result
+        except Exception as exc:
+            logging.warning("Urban95 %s batch calculation failed; retrying per building: %s", label, exc)
+        for position in range(len(buildings_metric)):
+            try:
+                single = np.asarray(scorer(buildings_metric.iloc[[position]]), dtype=np.float64)
+                values[position] = single[0]
+            except Exception as exc:
+                logging.warning(
+                    "Urban95 %s calculation failed for building %d: %s",
+                    label,
+                    position,
+                    exc,
+                )
+        return values
+
+    def geometries(frame: gpd.GeoDataFrame) -> gpd.GeoSeries:
+        return frame.geometry.reset_index(drop=True)
+
+    def buffered(frame: gpd.GeoDataFrame, radius: float) -> gpd.GeoSeries:
+        if frame is buildings_metric:
+            return shared_buffer(radius)
+        return _buffer(geometries(frame), radius)
+
+    def presence(frame: gpd.GeoDataFrame, source: gpd.GeoDataFrame, radius: float) -> np.ndarray:
+        query = buffered(frame, radius)
+        query_positions, source_positions = _pairs(query, source, chunk_size)
+        return _presence(query_positions, source_positions, len(source), len(frame)) * 100.0
+
+    def nearest_tiers(frame: gpd.GeoDataFrame, source: gpd.GeoDataFrame) -> np.ndarray:
+        building_geometries = geometries(frame)
+        query = buffered(frame, 300)
+        query_positions, source_positions = _pairs(query, source, chunk_size)
+        minimum = _nearest(building_geometries, query_positions, source_positions, source)
+        return np.where(
+            np.isfinite(minimum) & (minimum <= 150),
+            100.0,
+            np.where(np.isfinite(minimum) & (minimum <= 300), 50.0, 0.0),
+        )
+
+    def score_trees(frame: gpd.GeoDataFrame) -> np.ndarray:
+        query = buffered(frame, 20)
+        query_positions, source_positions = _pairs(query, prepared.trees, chunk_size)
+        counts = _counts(query_positions, source_positions, len(prepared.trees), len(frame))
+        return np.where(counts >= 3, 100.0, np.where(counts >= 1, 50.0, 0.0))
+
+    def score_roads(frame: gpd.GeoDataFrame) -> np.ndarray:
+        building_geometries = geometries(frame)
+        query = _square_envelope(building_geometries, 300)
+        query_positions, source_positions = _pairs(query, prepared.fast_roads, chunk_size)
+        minimum = _nearest(
+            building_geometries,
+            query_positions,
+            source_positions,
+            prepared.fast_roads,
+        )
+        return np.where(
+            np.isfinite(minimum) & (minimum <= 100),
+            0.0,
+            np.where(np.isfinite(minimum) & (minimum <= 300), 50.0, 100.0),
+        )
+
+    def score_parks(frame: gpd.GeoDataFrame) -> np.ndarray:
+        query = buffered(frame, 300)
+        query_positions, source_positions = _pairs(query, prepared.parks, chunk_size)
+        counts = _counts(query_positions, source_positions, len(prepared.parks), len(frame))
+        large_counts = np.zeros(len(frame), dtype=np.int64)
+        if len(query_positions):
+            large = prepared.parks["_source_area_m2"].to_numpy(dtype=float)[source_positions] >= 3000.0
+            large_counts = np.bincount(query_positions[large], minlength=len(frame))
+        return np.where(large_counts > 0, 100.0, np.where(counts > 0, 50.0, 0.0))
+
+    def score_bus_stops(frame: gpd.GeoDataFrame) -> np.ndarray:
+        query = buffered(frame, 300)
+        query_positions, source_positions = _pairs(query, prepared.bus_stops, chunk_size)
+        counts = _counts(query_positions, source_positions, len(prepared.bus_stops), len(frame))
+        return np.where(counts >= 3, 100.0, np.where(counts >= 1, 50.0, 0.0))
+
+    component_specs = {
+        "trees": (("trees",), score_trees, 20),
+        "roads": (("roads",), score_roads, None),
+        "parks": (("parks",), score_parks, 300),
+        "urban_nature_areas": (
+            ("urban_nature_areas",),
+            lambda frame: presence(frame, prepared.urban_nature_areas, 300),
+            300,
+        ),
+        "playgrounds": (
+            ("playgrounds",),
+            lambda frame: presence(frame, prepared.playgrounds, 300),
+            300,
+        ),
+        "bicycle_access": (("bikes",), lambda frame: presence(frame, prepared.bikes, 300), 300),
+        "bus_stops": (("bus_stops",), score_bus_stops, 300),
+        "shelters": (("shelters",), lambda frame: presence(frame, prepared.shelters, 50), 50),
+        "education": (
+            ("education",),
+            lambda frame: nearest_tiers(frame, prepared.education),
+            300,
+        ),
+        "community": (
+            ("community",),
+            lambda frame: presence(frame, prepared.community, 300),
+            300,
+        ),
+        "business": (
+            ("business",),
+            lambda frame: presence(frame, prepared.business, 300),
+            300,
+        ),
+        "health": (("health",), lambda frame: presence(frame, prepared.health, 300), 300),
+        "school": (("education",), lambda frame: nearest_tiers(frame, prepared.schools), 300),
+        "kindergarten": (
+            ("education",),
+            lambda frame: nearest_tiers(frame, prepared.kindergartens),
+            300,
+        ),
+        "clinic": (("health",), lambda frame: presence(frame, prepared.clinics, 300), 300),
+        "tipat_halav": (
+            ("health",),
+            lambda frame: presence(frame, prepared.tipat_halav, 300),
+            300,
+        ),
+    }
+    values = {
+        label: run_isolated(label, requirements, scorer, buffer_radius)
+        for label, (requirements, scorer, buffer_radius) in component_specs.items()
+    }
     return pd.DataFrame(values, index=buildings_metric.index)
 
 
@@ -495,17 +770,22 @@ def score_shade_overlay(
                 if buffer_geometry is None or buffer_geometry.is_empty:
                     progress.update(1)
                     continue
-                total_area = 0.0
-                weighted_sum = 0.0
-                for source_position in source_positions.tolist():
-                    intersection_area = buffer_geometry.intersection(shade_geometries[source_position]).area
-                    if intersection_area <= 0:
-                        continue
-                    total_area += intersection_area
-                    weighted_sum += intersection_area * shade_scores[source_position]
-                raw_value = weighted_sum / total_area if total_area > 0 else 0.0
-                values[position] = round_building_summer_si(raw_value)
-                progress.update(1)
+                try:
+                    total_area = 0.0
+                    weighted_sum = 0.0
+                    for source_position in source_positions.tolist():
+                        intersection_area = buffer_geometry.intersection(shade_geometries[source_position]).area
+                        if intersection_area <= 0:
+                            continue
+                        total_area += intersection_area
+                        weighted_sum += intersection_area * shade_scores[source_position]
+                    raw_value = weighted_sum / total_area if total_area > 0 else 0.0
+                    values[position] = round_building_summer_si(raw_value)
+                except Exception as exc:
+                    logging.warning("Urban95 shade calculation failed for building %d: %s", position, exc)
+                    values[position] = np.nan
+                finally:
+                    progress.update(1)
     finally:
         progress.close()
     return pd.Series(values, index=buildings_metric.index, dtype=float)
@@ -595,25 +875,28 @@ def score_streetlight_overlay(
             start, stop = bounds
             chunk_values = np.zeros(stop - start, dtype=np.float64)
             for offset, position in enumerate(range(start, stop)):
-                building_buffer = buffer_300.iloc[position]
-                source_positions = ordered_candidates[position]
-                if building_buffer is None or building_buffer.is_empty or not source_positions.size:
+                try:
+                    building_buffer = buffer_300.iloc[position]
+                    source_positions = ordered_candidates[position]
+                    if building_buffer is None or building_buffer.is_empty or not source_positions.size:
+                        continue
+                    local_buffers = [source_buffers[int(source_position)] for source_position in source_positions.tolist()]
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        unified_lights = gpd.GeoSeries(local_buffers, crs=buildings.crs).union_all()
+                        if unified_lights is None or unified_lights.is_empty:
+                            illuminated_area = 0.0
+                        else:
+                            union_geometry = unified_lights if unified_lights.is_valid else shapely_make_valid(unified_lights)
+                            illuminated_area = 0.0 if union_geometry.is_empty else union_geometry.intersection(building_buffer).area
+                    percent = (illuminated_area / building_buffer.area) * 100 if building_buffer.area else 0.0
+                    chunk_values[offset] = _streetlight_percent_to_subscore(percent)
+                except Exception as exc:
+                    logging.warning("Urban95 street-light calculation failed for building %d: %s", position, exc)
+                    chunk_values[offset] = np.nan
+                finally:
                     if update_each:
                         progress.update(1)
-                    continue
-                local_buffers = [source_buffers[int(source_position)] for source_position in source_positions.tolist()]
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    unified_lights = gpd.GeoSeries(local_buffers, crs=buildings.crs).union_all()
-                    if unified_lights is None or unified_lights.is_empty:
-                        illuminated_area = 0.0
-                    else:
-                        union_geometry = unified_lights if unified_lights.is_valid else shapely_make_valid(unified_lights)
-                        illuminated_area = 0.0 if union_geometry.is_empty else union_geometry.intersection(building_buffer).area
-                percent = (illuminated_area / building_buffer.area) * 100 if building_buffer.area else 0.0
-                chunk_values[offset] = _streetlight_percent_to_subscore(percent)
-                if update_each:
-                    progress.update(1)
             return start, chunk_values
 
         with logged_phase("score.lights.unions"):
@@ -644,22 +927,54 @@ def score_urban95_layerwise(
     chunk_size: int,
     workers: int = 1,
 ) -> pd.DataFrame:
-    """Assemble every published Urban95 score column from exact component arrays."""
+    """Assemble every published Urban95 status column from exact component arrays."""
     from core.geo_io import WALK_MINUTES
     from lib.shade_si import summer_si_to_subscore
-    from lib.urban95_weights import CATEGORY_SUBCATEGORY_WEIGHTS, CATEGORY_WEIGHTS
 
+    n_rows = len(buildings_metric)
     with logged_phase("score.discrete.compute"):
-        discrete = score_discrete_components(buildings_metric, prepared_discrete, chunk_size=chunk_size)
-    summer_si = score_shade_overlay(buildings_metric, prepared_shade, chunk_size=chunk_size)
-    light_scores = score_streetlight_overlay(
-        buildings_metric,
-        prepared_lights,
-        chunk_size=chunk_size,
-        workers=workers,
+        discrete = score_discrete_components(
+            buildings_metric,
+            prepared_discrete,
+            chunk_size=chunk_size,
+        )
+
+    records = prepared_discrete.source_availability
+    shade_keys_present = any(key in records for key in ("shade_streets", "shade_open_spaces"))
+    shade_available = (
+        all(source_is_available(records, key) for key in ("shade_streets", "shade_open_spaces"))
+        if shade_keys_present
+        else isinstance(prepared_shade, gpd.GeoDataFrame)
     )
+    lights_available = (
+        source_is_available(records, "street_lights")
+        if "street_lights" in records
+        else isinstance(prepared_lights, gpd.GeoDataFrame)
+    )
+    if shade_available:
+        try:
+            summer_si = score_shade_overlay(buildings_metric, prepared_shade, chunk_size=chunk_size)
+        except Exception as exc:
+            logging.warning("Urban95 shade calculation failed: %s", exc)
+            summer_si = pd.Series(np.nan, index=buildings_metric.index, dtype=float)
+    else:
+        summer_si = pd.Series(np.nan, index=buildings_metric.index, dtype=float)
+
+    if lights_available:
+        try:
+            light_scores = score_streetlight_overlay(
+                buildings_metric,
+                prepared_lights,
+                chunk_size=chunk_size,
+                workers=workers,
+            )
+        except Exception as exc:
+            logging.warning("Urban95 street-light calculation failed: %s", exc)
+            light_scores = pd.Series(np.nan, index=buildings_metric.index, dtype=float)
+    else:
+        light_scores = pd.Series(np.nan, index=buildings_metric.index, dtype=float)
+
     with logged_phase("score.assembly"):
-        n_rows = len(buildings_metric)
         subcategory_values: dict[tuple[str, str], np.ndarray] = {
             ("environmental_quality", "shade"): np.asarray(
                 [float(summer_si_to_subscore(value)) for value in summer_si], dtype=np.float64
@@ -678,44 +993,59 @@ def score_urban95_layerwise(
             ("family_services", "business"): discrete["business"].to_numpy(dtype=np.float64),
             ("family_services", "health"): discrete["health"].to_numpy(dtype=np.float64),
         }
-        category_stems = {
-            "Environmental Quality": "environmental_quality",
-            "Nature": "nature",
-            "Play": "play",
-            "Safety & Mobility": "safety_mobility",
-            "Family Services": "family_services",
+        if summer_si.isna().any():
+            subcategory_values[("environmental_quality", "shade")][summer_si.isna().to_numpy()] = np.nan
+
+        diagnostic_values = {
+            ("family_services", "education", "school"): discrete["school"].to_numpy(dtype=np.float64),
+            ("family_services", "education", "kindergarten"): discrete["kindergarten"].to_numpy(dtype=np.float64),
+            ("family_services", "health", "clinic"): discrete["clinic"].to_numpy(dtype=np.float64),
+            ("family_services", "health", "tipat_halav"): discrete["tipat_halav"].to_numpy(dtype=np.float64),
         }
-        category_scores = {stem: np.zeros(n_rows, dtype=np.float64) for stem in category_stems.values()}
-        weighted_scores = np.zeros(n_rows, dtype=np.float64)
-        for row_position in range(n_rows):
-            category_by_name: dict[str, float] = {}
-            for category_name, sub_weights in CATEGORY_SUBCATEGORY_WEIGHTS.items():
-                category_stem = category_stems[category_name]
-                category_value = 0.0
-                for sub_name, weight in sub_weights.items():
-                    sub_stem = re.sub(r"[^a-z0-9]+", "_", str(sub_name).strip().lower().replace("&", "and")).strip("_")
-                    component = float(subcategory_values[(category_stem, sub_stem)][row_position])
-                    category_value += (component / 100.0) * weight
-                category_score = category_value * 100.0
-                category_by_name[category_name] = category_score
-                category_scores[category_stem][row_position] = category_score
-            weighted_scores[row_position] = round(
-                sum(category_by_name[name] * CATEGORY_WEIGHTS[name] for name in CATEGORY_WEIGHTS),
-                1,
+
+        category_attainments = {
+            category: np.asarray(
+                [
+                    equal_mean(
+                        attainment_from_score(subcategory_values[(category, child)][row])
+                        for child in children
+                    )
+                    for row in range(n_rows)
+                ],
+                dtype=object,
             )
+            for category, children in STATUS_HIERARCHY.items()
+        }
+        overview_attainment = np.asarray(
+            [
+                equal_mean(category_attainments[category][row] for category in STATUS_HIERARCHY)
+                for row in range(n_rows)
+            ],
+            dtype=object,
+        )
 
         output: dict[str, np.ndarray] = {"summer_si": summer_si.to_numpy(dtype=np.float64)}
         for minutes in WALK_MINUTES:
             suffix = f"_{minutes}min"
-            output[f"score_weighted{suffix}"] = weighted_scores.copy()
-            for stem in category_stems.values():
-                output[f"score_weighted_{stem}{suffix}"] = category_scores[stem].copy()
-            for (category_stem, sub_stem), values in subcategory_values.items():
-                output[f"score_weighted_sub_{category_stem}_{sub_stem}{suffix}"] = values.copy()
-        output["access_school_10min"] = discrete["school"].to_numpy(dtype=np.float64)
-        output["access_kindergarten_10min"] = discrete["kindergarten"].to_numpy(dtype=np.float64)
-        output["access_clinic_10min"] = discrete["clinic"].to_numpy(dtype=np.float64)
-        output["access_tipat_halav_10min"] = discrete["tipat_halav"].to_numpy(dtype=np.float64)
+            output[f"u95_status{suffix}"] = np.asarray(
+                [status_from_attainment(value) for value in overview_attainment],
+                dtype=object,
+            )
+            for category, values in category_attainments.items():
+                output[category_status_field(category, suffix)] = np.asarray(
+                    [status_from_attainment(value) for value in values],
+                    dtype=object,
+                )
+            for (category, indicator), values in subcategory_values.items():
+                output[indicator_status_field(category, indicator, suffix)] = np.asarray(
+                    [status_from_attainment(attainment_from_score(value)) for value in values],
+                    dtype=object,
+                )
+            for (category, parent, child), values in diagnostic_values.items():
+                output[diagnostic_status_field(category, parent, child, suffix)] = np.asarray(
+                    [status_from_attainment(attainment_from_score(value)) for value in values],
+                    dtype=object,
+                )
         return pd.DataFrame(output, index=buildings_metric.index)
 
 

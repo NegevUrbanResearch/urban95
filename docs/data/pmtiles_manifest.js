@@ -9,7 +9,7 @@ window.URBAN95_GENERATED_ARTIFACTS = {
     "output": "./data/buildings_lookup.json",
     "source_layer": "buildings_lookup",
     "gzip_output": "./data/buildings_lookup.json.gz",
-    "gzip_bytes": 3830788
+    "gzip_bytes": 4862634
   },
   "isochrones_lookup": {
     "status": "built",
@@ -28,7 +28,7 @@ window.URBAN95_GENERATED_ARTIFACTS = {
     "output": "./data/points_lookup.json",
     "source_layer": "points_lookup",
     "gzip_output": "./data/points_lookup.json.gz",
-    "gzip_bytes": 676253
+    "gzip_bytes": 706717
   },
   "street_lights": {
     "status": "built",

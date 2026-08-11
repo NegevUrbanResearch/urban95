@@ -97,11 +97,27 @@ def test_missing_text_is_omitted_while_numeric_zero_and_nonfinite_stay_numeric(t
     assert features[1]["properties"]["numeric"] == 0.0
 
 
+def test_export_web_requires_overview_status_even_with_legacy_weighted_score():
+    buildings = gpd.GeoDataFrame(
+        {
+            "building_id": [1],
+            "score_weighted_10min": [42.0],
+            "score_expanded_10min": [70.0],
+        },
+        geometry=[Point(34.5, 31.2)],
+        crs="EPSG:4326",
+    )
+
+    with pytest.raises(ValueError, match="u95_status_10min"):
+        export_web_stage.assert_buildings_have_scores(buildings)
+
+
 def test_building_lookup_collector_uses_exact_rounded_feature_coordinates(tmp_path):
     frame = gpd.GeoDataFrame(
         {
             "building_id": [42],
-            "score_weighted_10min": [80.0],
+            "u95_status_10min": ["functioning"],
+            "score_weighted_10min": [42.0],
             "access_school_10min": [100.0],
             "access_kindergarten_10min": [50.0],
             "access_clinic_10min": [0.0],
@@ -126,7 +142,7 @@ def test_building_lookup_collector_uses_exact_rounded_feature_coordinates(tmp_pa
         "features": [
             {
                 "building_id": 42,
-                "score_weighted_10min": 80.0,
+                "u95_status_10min": "functioning",
                 "access_school_10min": 100.0,
                 "access_kindergarten_10min": 50.0,
                 "access_clinic_10min": 0.0,
@@ -145,7 +161,7 @@ def test_building_lookup_collector_streams_without_retaining_records(tmp_path):
     collector = BuildingLookupCollector(output, input_path=tmp_path / "buildings.geojson")
     feature = {
         "type": "Feature",
-        "properties": {"building_id": 1, "score_weighted_10min": 80.0},
+        "properties": {"building_id": 1, "u95_status_10min": "functioning", "score_weighted_10min": 42.0},
         "geometry": {"type": "Point", "coordinates": [34.5, 31.2]},
     }
 
@@ -162,7 +178,7 @@ def test_legacy_buildings_lookup_helper_preserves_manifest_and_bytes(tmp_path):
     source = tmp_path / "buildings.geojson"
     output = tmp_path / "buildings_lookup.json"
     frame = gpd.GeoDataFrame(
-        {"building_id": [7], "score_weighted_10min": [60.0]},
+        {"building_id": [7], "u95_status_10min": ["functioning"], "score_weighted_10min": [42.0]},
         geometry=[Point(34.5, 31.2)],
         crs="EPSG:4326",
     )
@@ -181,7 +197,7 @@ def test_legacy_buildings_lookup_helper_preserves_manifest_and_bytes(tmp_path):
         "features": [
             {
                 "building_id": 7,
-                "score_weighted_10min": 60.0,
+                "u95_status_10min": "functioning",
                 "centroid_lng": 34.5,
                 "centroid_lat": 31.2,
             }
@@ -612,7 +628,7 @@ def test_export_web_four_file_commit_failure_preserves_inventory(monkeypatch, tm
     monkeypatch.setattr(export_web_stage, "_resolve_trees", lambda *a, **k: None)
     monkeypatch.setattr(export_web_stage, "_resolve_parks", lambda *a, **k: None)
     monkeypatch.setattr(export_web_stage, "get_building_isochrones", lambda *a, **k: {})
-    props = {"building_id": [1], "score_weighted_10min": [50.0], "score_expanded_10min": [40.0]}
+    props = {"building_id": [1], "u95_status_10min": ["functioning"], "score_weighted_10min": [42.0], "score_expanded_10min": [40.0]}
     buildings = gpd.GeoDataFrame(props, geometry=[Point(34.7, 31.2)], crs="EPSG:4326")
 
     real_replace = os.replace
@@ -712,7 +728,8 @@ def test_export_web_integrates_streaming_lookup_gzip_policy_and_isochrone_crs(
     buildings = gpd.GeoDataFrame(
         {
             "building_id": [42],
-            "score_weighted_10min": [80.0],
+            "u95_status_10min": ["functioning"],
+            "score_weighted_10min": [42.0],
             "score_expanded_10min": [70.0],
         },
         geometry=[_metric_polygon(180_000, 570_000)],
@@ -765,6 +782,10 @@ def test_export_web_integrates_streaming_lookup_gzip_policy_and_isochrone_crs(
         (docs_data / "buildings_lookup.json").read_text(encoding="utf-8")
     )["features"][0]
     expected_lng, expected_lat = extract_centroid(building_feature)
+    assert "score_weighted_10min" not in building_feature["properties"]
+    assert building_feature["properties"]["u95_status_10min"] == "functioning"
     assert lookup_record["building_id"] == 42
+    assert "score_weighted_10min" not in lookup_record
+    assert lookup_record["u95_status_10min"] == "functioning"
     assert lookup_record["centroid_lng"] == expected_lng
     assert lookup_record["centroid_lat"] == expected_lat

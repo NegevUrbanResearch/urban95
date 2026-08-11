@@ -29,6 +29,7 @@
       "getPercentileSeriesCacheKey",
       "getBuildingAmenityStatKeysForMinutes",
       "resolveActiveMetric",
+      "normalizeStatus",
     ].forEach(function (memberName) {
       requireFunction(scoreModel[memberName], "deps.scoreModel." + memberName);
     });
@@ -88,12 +89,9 @@
     function getCurrentBuildingOverallScore(props, minutes) {
       if (state.getScoreMode() === "weighted") {
         var metric = getActiveMetric();
-        if (!metric || !metric.buildingPropertyKey) return 0;
-        var value = props && props[metric.buildingPropertyKey];
-        if (value !== undefined && value !== null && value !== "") {
-          return Number(value) || 0;
-        }
-        return 0;
+        return scoreModel.normalizeStatus(
+          metric && metric.buildingPropertyKey && props && props[metric.buildingPropertyKey]
+        );
       }
       return scoreModel.getBuildingOverallScore(
         props,
@@ -110,13 +108,14 @@
       }
       var metric = getActiveMetric();
       if (!metric) return [];
-      if (metric.scale === "weighted") {
+      if (state.getScoreMode() === "weighted" && metric.id && metric.id.indexOf("u95.") === 0) {
         if (!metric.buildingPropertyKey) return [];
         return buildingsData.features
           .map(function (feature) {
-            return Number(feature && feature.properties && feature.properties[metric.buildingPropertyKey]) || 0;
-          })
-          .filter(Number.isFinite);
+            return scoreModel.normalizeStatus(
+              feature && feature.properties && feature.properties[metric.buildingPropertyKey]
+            );
+          });
       }
       if (state.getSelectedAmenityTypes().size === 0 || state.getAllFilterTypes().length === 0) {
         return [];

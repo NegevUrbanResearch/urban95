@@ -5,12 +5,16 @@ const { createBrowserContext, runBrowserScript } = require("./helpers/loadBrowse
 function loadScoreModel() {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/core/config.js", browser);
+  runBrowserScript("docs/js/scoring/statusScale.js", browser);
   runBrowserScript("docs/js/scoring/scoreModel.js", browser);
-  return browser.window.Urban95ScoreModel;
+  return {
+    scoreModel: browser.window.Urban95ScoreModel,
+    statusScale: browser.window.Urban95StatusScale,
+  };
 }
 
 test("clean filtered score uses selected clean_pts contribution", () => {
-  const scoreModel = loadScoreModel();
+  const { scoreModel } = loadScoreModel();
   const props = {
     amen_school_5min: 2,
     amen_playground_5min: 1,
@@ -23,7 +27,7 @@ test("clean filtered score uses selected clean_pts contribution", () => {
 });
 
 test("expanded partial score preserves raw selected sum above 100", () => {
-  const scoreModel = loadScoreModel();
+  const { scoreModel } = loadScoreModel();
   const props = {
     amen_healthcare_5min: 80,
     amen_education_5min: 40,
@@ -39,7 +43,7 @@ test("expanded partial score preserves raw selected sum above 100", () => {
 });
 
 test("expanded overall score returns 0 when no filters are selected in house mode", () => {
-  const scoreModel = loadScoreModel();
+  const { scoreModel } = loadScoreModel();
   const score = scoreModel.getBuildingOverallScore(
     { score_expanded_5min: 55 },
     5,
@@ -55,7 +59,7 @@ test("expanded overall score returns 0 when no filters are selected in house mod
 });
 
 test("clean filtered score returns 0 when no types are selected in house mode", () => {
-  const scoreModel = loadScoreModel();
+  const { scoreModel } = loadScoreModel();
   const score = scoreModel.getBuildingCleanFilteredScore(
     { score_clean_5min: 55 },
     5,
@@ -67,20 +71,20 @@ test("clean filtered score returns 0 when no types are selected in house mode", 
   assert.equal(score, 0);
 });
 
-test("weighted overall score prefers fixed Urban95 score in weighted mode", () => {
-  const scoreModel = loadScoreModel();
-  const props = {
-    score_weighted: 72.4,
-    score_expanded_10min: 33,
-  };
+test("Urban95 status registry uses the canonical overview field", () => {
+  const { scoreModel, statusScale } = loadScoreModel();
 
-  assert.equal(scoreModel.getBuildingOverallScore(props, 10, "weighted"), 72.4);
-  assert.equal(
-    scoreModel.getBuildingOverallScore(props, 10, "expanded", {
-      currentMode: "house",
-      selectedAmenityTypes: ["education", "healthcare"],
-      allFilterTypes: ["education", "healthcare"],
-    }),
-    33
-  );
+  assert.equal(statusScale.normalize("thriving"), "thriving");
+  assert.equal(statusScale.normalize("bad-token"), "unknown");
+  assert.deepEqual(Array.from(statusScale.labels()), ["Disappointing", "Functioning", "Thriving", "Unknown"]);
+
+  const overall = scoreModel.getWeightedMetric("u95.overall");
+  assert.equal(overall.scale, "status");
+  assert.equal(overall.label, "All indicators overview");
+  assert.equal(overall.buildingPropertyKey, "u95_status_10min");
+
+  const environmentalQuality = scoreModel.getWeightedMetric("u95.cat.environmental_quality");
+  assert.equal(environmentalQuality.surfacePropertyKey, "u95_status_environmental_quality");
+  assert.equal(environmentalQuality.statusCompositionPrefix, "u95_environmental_quality");
+  assert.equal(environmentalQuality.areaStatusKey, "u95_status_environmental_quality");
 });

@@ -28,6 +28,7 @@ from lib.urban95_weights import (
     calc_safety_and_mobility,
     calculate_master_index,
 )
+from lib.urban95_status import STATUS_HIERARCHY, SourceAvailability
 
 
 def _gdf(geometries, **columns):
@@ -138,14 +139,63 @@ def test_child_access_diagnostics_preserve_parent_education_and_health_scores():
     assert discrete["clinic"].tolist() == [100, 100, 0, 0, 0, 0]
     assert discrete["tipat_halav"].tolist() == [0, 0, 0, 100, 100, 0]
 
-    assert result["access_school_10min"].tolist() == [100, 50, 0, 0, 0, 0]
-    assert result["access_kindergarten_10min"].tolist() == [0, 0, 0, 100, 50, 0]
-    assert result["access_clinic_10min"].tolist() == [100, 100, 0, 0, 0, 0]
-    assert result["access_tipat_halav_10min"].tolist() == [0, 0, 0, 100, 100, 0]
+    assert result["u95_status_detail_family_services_education_school_10min"].tolist() == [
+        "thriving", "functioning", "disappointing", "disappointing", "disappointing", "disappointing"
+    ]
+    assert result["u95_status_detail_family_services_education_kindergarten_10min"].tolist() == [
+        "disappointing", "disappointing", "disappointing", "thriving", "functioning", "disappointing"
+    ]
+    assert result["u95_status_detail_family_services_health_clinic_10min"].tolist() == [
+        "thriving", "thriving", "disappointing", "disappointing", "disappointing", "disappointing"
+    ]
+    assert result["u95_status_detail_family_services_health_tipat_halav_10min"].tolist() == [
+        "disappointing", "disappointing", "disappointing", "thriving", "thriving", "disappointing"
+    ]
 
     # Parent score still uses the complete union.
-    assert result["score_weighted_sub_family_services_education_10min"].tolist() == [100, 50, 0, 100, 50, 0]
-    assert result["score_weighted_sub_family_services_health_10min"].tolist() == [100, 100, 0, 100, 100, 0]
+    assert result["u95_status_sub_family_services_education_10min"].tolist() == [
+        "thriving", "functioning", "disappointing", "thriving", "functioning", "disappointing"
+    ]
+    assert result["u95_status_sub_family_services_health_10min"].tolist() == [
+        "thriving", "thriving", "disappointing", "thriving", "thriving", "disappointing"
+    ]
+
+
+def test_diagnostic_subtypes_cannot_change_parent_category_or_overview(scoring_fixture):
+    buildings, layers = scoring_fixture
+    first = dict(layers)
+    second = dict(layers)
+    second["education"] = layers["education"].assign(amenity_subtype="kindergarten")
+    second["health"] = layers["health"].assign(amenity_subtype="tipat_halav")
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    lights = _gdf([Point(0, 0)])
+
+    first_result = score_urban95_layerwise(
+        buildings,
+        prepare_urban95_layers(**first),
+        shade,
+        lights,
+        chunk_size=2,
+    )
+    second_result = score_urban95_layerwise(
+        buildings,
+        prepare_urban95_layers(**second),
+        shade,
+        lights,
+        chunk_size=2,
+    )
+
+    for field in (
+        "u95_status_sub_family_services_education_10min",
+        "u95_status_sub_family_services_health_10min",
+        "u95_status_family_services_10min",
+        "u95_status_10min",
+    ):
+        assert first_result[field].tolist() == second_result[field].tolist()
+    assert (
+        first_result["u95_status_detail_family_services_education_school_10min"].tolist()
+        != second_result["u95_status_detail_family_services_education_school_10min"].tolist()
+    )
 
 
 def test_near_edge_tree_buffer_counts_trees_outside_centroid_radius():
@@ -162,7 +212,7 @@ def test_near_edge_tree_buffer_counts_trees_outside_centroid_radius():
     actual = score_discrete_components(buildings, prepared, chunk_size=1)
 
     assert float(expected.loc[0, "trees"]) == 100.0
-    pd.testing.assert_frame_equal(actual[expected.columns], expected, check_dtype=False)
+    assert actual.loc[0, "trees"] == expected.loc[0, "trees"]
     # Centroid-only semantics would have missed these trees.
     _, centroid_details = calc_environmental_quality(
         building.centroid,
@@ -236,8 +286,8 @@ def test_null_only_sources_keep_defaults_and_output_contract():
     ]
     assert actual.dtypes.tolist() == [pd.api.types.pandas_dtype("float64")] * 16
     assert actual["trees"].tolist() == [0.0, 0.0]
-    assert actual["roads"].tolist() == [100.0, 100.0]
-    assert (actual[["school", "kindergarten", "clinic", "tipat_halav"]] == 0.0).all().all()
+    assert actual["roads"].isna().all()
+    assert actual[["school", "kindergarten", "clinic", "tipat_halav"]].isna().all().all()
 
 
 def test_discrete_boundaries_and_defaults_are_exact():
@@ -292,7 +342,29 @@ def test_discrete_scorer_constructs_only_task3_buffers(monkeypatch):
         prepare_urban95_layers(),
         chunk_size=1,
     )
-    assert distances == [20, 50, 300]
+    assert distances == []
+
+    valid_empty = _gdf([])
+    valid_empty_amenities = _gdf([], amenity_type=[])
+    score_discrete_components(
+        _gdf([Point(0, 0)]),
+        prepare_urban95_layers(
+            trees=valid_empty,
+            roads=_gdf([], maxspeed=[]),
+            parks=valid_empty,
+            urban_nature_areas=valid_empty,
+            playgrounds=valid_empty_amenities,
+            bikes=valid_empty_amenities,
+            bus_stops=valid_empty,
+            shelters=valid_empty_amenities,
+            education=valid_empty_amenities,
+            community=valid_empty_amenities,
+            business=valid_empty_amenities,
+            health=valid_empty_amenities,
+        ),
+        chunk_size=1,
+    )
+    assert sorted(distances) == [20, 50, 300]
 
 
 def test_pairs_passes_the_requested_chunk_size(monkeypatch):
@@ -353,16 +425,6 @@ def test_stage_uses_one_layerwise_score_call_without_scalar_overlay_helpers(monk
     monkeypatch.setattr(urban95_scoring, "build_layers", lambda **_: layers)
 
     monkeypatch.setattr(
-        urban95_scoring,
-        "attach_summer_si_to_buildings",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("scalar shade helper should not run")),
-    )
-    monkeypatch.setattr(
-        urban95_scoring,
-        "calculate_master_index",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("scalar scorer should not run")),
-    )
-    monkeypatch.setattr(
         "lib.urban95_weights.calc_environmental_quality",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("full environmental scorer should not run")),
     )
@@ -370,9 +432,9 @@ def test_stage_uses_one_layerwise_score_call_without_scalar_overlay_helpers(monk
         "lib.urban95_weights.calc_safety_and_mobility",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("full safety scorer should not run")),
     )
-    result = urban95_scoring.append_weighted_urban95_scores(buildings, workers=1)
-    assert result.loc[0, "score_weighted_sub_environmental_quality_trees_5min"] == 50.0
-    assert result.loc[0, "score_weighted_sub_environmental_quality_shade_5min"] == 0.0
+    result = urban95_scoring.append_urban95_statuses(buildings, workers=1)
+    assert result.loc[0, "u95_status_sub_environmental_quality_trees_5min"] == "functioning"
+    assert result.loc[0, "u95_status_sub_environmental_quality_shade_5min"] == "unknown"
 
 
 def _shade_gdf(geometries, scores):
@@ -436,9 +498,9 @@ def test_full_layerwise_score_has_current_columns_and_preserves_index(scoring_fi
     )
     assert result.index.tolist() == buildings.index.tolist()
     assert result.columns[0] == "summer_si"
-    assert "score_weighted_5min" in result.columns
-    assert "score_weighted_sub_safety_mobility_street_lights_15min" in result.columns
-    assert all(pd.api.types.is_float_dtype(result[column]) for column in result.columns)
+    assert "u95_status_5min" in result.columns
+    assert "u95_status_sub_safety_mobility_street_lights_15min" in result.columns
+    assert not any(column.startswith("score_weighted") for column in result.columns)
     scalar_layers = dict(layers, street_lights=_gdf([Point(0, 0)]))
     for position, point in enumerate(buildings.geometry):
         scalar = calculate_master_index(
@@ -449,17 +511,267 @@ def test_full_layerwise_score_has_current_columns_and_preserves_index(scoring_fi
         )
         for minutes in (5, 10, 15):
             suffix = f"_{minutes}min"
-            assert result.iloc[position][f"score_weighted{suffix}"] == scalar["final_index"]
-            for category_name, category_stem in urban95_scoring_stems().items():
-                assert result.iloc[position][f"score_weighted_{category_stem}{suffix}"] == scalar["category_scores"][category_name]
-            for category_name, subcategories in scalar["subcategory_scores"].items():
-                for subcategory_name, value in subcategories.items():
-                    if subcategory_name == "summer_si":
-                        continue
-                    category_stem = category_name.lower().replace(" & ", "_").replace(" ", "_")
-                    subcategory_stem = subcategory_name.lower().replace(" & ", "_").replace(" ", "_")
-                    column = f"score_weighted_sub_{category_stem}_{subcategory_stem}{suffix}"
-                    assert result.iloc[position][column] == value
+            assert result.iloc[position][f"u95_status{suffix}"] == scalar["overview_status"]
+            for category_stem in STATUS_HIERARCHY:
+                assert result.iloc[position][f"u95_status_{category_stem}{suffix}"] == scalar["category_statuses"][category_stem]
+                for indicator in STATUS_HIERARCHY[category_stem]:
+                    column = f"u95_status_sub_{category_stem}_{indicator}{suffix}"
+                    assert result.iloc[position][column] == scalar["subcategory_statuses"][category_stem][indicator]
+
+
+def test_unavailable_roads_are_unknown_but_valid_empty_roads_are_thriving():
+    buildings = _gdf([Point(0, 0)])
+    unavailable = prepare_urban95_layers(roads=None)
+    valid_empty = prepare_urban95_layers(roads=_gdf([], maxspeed=[]))
+
+    unavailable_result = score_urban95_layerwise(buildings, unavailable, _shade_gdf([], []), _gdf([]), chunk_size=1)
+    available_result = score_urban95_layerwise(buildings, valid_empty, _shade_gdf([], []), _gdf([]), chunk_size=1)
+
+    assert unavailable_result.loc[0, "u95_status_sub_environmental_quality_roads_10min"] == "unknown"
+    assert available_result.loc[0, "u95_status_sub_environmental_quality_roads_10min"] == "thriving"
+    assert unavailable_result.loc[0, "u95_status_environmental_quality_10min"] == "unknown"
+
+
+def test_layerwise_malformed_source_without_active_geometry_is_unknown_with_scalar_parity(
+    scoring_fixture,
+):
+    buildings, layers = scoring_fixture
+    malformed_parks = gpd.GeoDataFrame({"not_geometry": ["broken"]})
+    layers = dict(layers, parks=malformed_parks)
+
+    prepared = prepare_urban95_layers(**layers)
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    lights = _gdf([Point(0, 0)])
+    result = score_urban95_layerwise(buildings, prepared, shade, lights, chunk_size=3)
+
+    assert prepared.source_availability["parks"] == SourceAvailability(False, "schema_invalid")
+    assert result["u95_status_sub_nature_parks_10min"].eq("unknown").all()
+    assert not result["u95_status_play_10min"].eq("unknown").any()
+    scalar_layers = dict(layers, street_lights=lights)
+    for position, building in enumerate(buildings.geometry):
+        scalar = calculate_master_index(
+            float(building.x),
+            float(building.y),
+            scalar_layers,
+            precomputed={"summer_si": 0.4},
+        )
+        assert result.iloc[position]["u95_status_10min"] == scalar["overview_status"]
+        for category, children in STATUS_HIERARCHY.items():
+            assert (
+                result.iloc[position][f"u95_status_{category}_10min"]
+                == scalar["category_statuses"][category]
+            )
+            for indicator in children:
+                assert (
+                    result.iloc[position][f"u95_status_sub_{category}_{indicator}_10min"]
+                    == scalar["subcategory_statuses"][category][indicator]
+                )
+
+
+def test_malformed_roads_without_speed_schema_are_unknown_with_scalar_parity(scoring_fixture):
+    buildings, layers = scoring_fixture
+    malformed_roads = _gdf([LineString([(0, -10), (0, 10)])])
+    layers = dict(layers, roads=malformed_roads)
+
+    prepared = prepare_urban95_layers(**layers)
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    lights = _gdf([Point(0, 0)])
+    result = score_urban95_layerwise(buildings, prepared, shade, lights, chunk_size=3)
+
+    assert prepared.source_availability["roads"] == SourceAvailability(False, "schema_invalid")
+    assert result["u95_status_sub_environmental_quality_roads_10min"].eq("unknown").all()
+    assert result["u95_status_environmental_quality_10min"].eq("unknown").all()
+    assert not result["u95_status_nature_10min"].eq("unknown").any()
+    scalar_layers = dict(layers, street_lights=lights)
+    for position, building in enumerate(buildings.geometry):
+        scalar = calculate_master_index(
+            float(building.x),
+            float(building.y),
+            scalar_layers,
+            precomputed={"summer_si": 0.4},
+        )
+        assert scalar["subcategory_statuses"]["environmental_quality"]["roads"] == "unknown"
+        assert result.iloc[position]["u95_status_10min"] == scalar["overview_status"]
+        for category, children in STATUS_HIERARCHY.items():
+            assert (
+                result.iloc[position][f"u95_status_{category}_10min"]
+                == scalar["category_statuses"][category]
+            )
+            for indicator in children:
+                assert (
+                    result.iloc[position][f"u95_status_sub_{category}_{indicator}_10min"]
+                    == scalar["subcategory_statuses"][category][indicator]
+                )
+
+
+@pytest.mark.parametrize("reason", ["missing", "unreadable", "schema_invalid"])
+def test_unavailable_source_reasons_all_produce_unknown(reason):
+    buildings = _gdf([Point(0, 0)])
+    prepared = prepare_urban95_layers(
+        roads=_gdf([], maxspeed=[]),
+        source_availability={"roads": SourceAvailability(False, reason)},
+    )
+
+    result = score_urban95_layerwise(buildings, prepared, _shade_gdf([], []), _gdf([]), chunk_size=1)
+
+    assert result.loc[0, "u95_status_sub_environmental_quality_roads_10min"] == "unknown"
+
+
+def test_valid_parent_with_absent_subtype_applies_normal_rule():
+    buildings = _gdf([Point(0, 0)])
+    parent = _gdf([Point(1000, 0)], amenity_type=["education"], amenity_subtype=["school"])
+    prepared = prepare_urban95_layers(education=parent)
+
+    result = score_urban95_layerwise(buildings, prepared, _shade_gdf([], []), _gdf([]), chunk_size=1)
+
+    assert result.loc[0, "u95_status_detail_family_services_education_kindergarten_10min"] == "disappointing"
+
+
+def test_indicator_failure_is_unknown_without_corrupting_unaffected_categories(monkeypatch, scoring_fixture):
+    from lib import urban95_layerwise
+
+    buildings, layers = scoring_fixture
+    prepared = prepare_urban95_layers(**layers)
+    monkeypatch.setattr(
+        urban95_layerwise,
+        "score_shade_overlay",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("shade failed")),
+    )
+
+    result = score_urban95_layerwise(buildings, prepared, _shade_gdf([], []), _gdf([]), chunk_size=1)
+
+    assert result["u95_status_sub_environmental_quality_shade_10min"].eq("unknown").all()
+    assert result["u95_status_environmental_quality_10min"].eq("unknown").all()
+    assert result["u95_status_10min"].eq("unknown").all()
+    assert not result["u95_status_nature_10min"].eq("unknown").any()
+
+
+def test_layerwise_parks_failure_isolated_by_indicator_and_building(monkeypatch, scoring_fixture):
+    from lib import urban95_layerwise
+    from lib import urban95_weights
+
+    buildings, layers = scoring_fixture
+    prepared = prepare_urban95_layers(**layers)
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    lights = _gdf([Point(0, 0)])
+    original = urban95_layerwise._pairs
+
+    def fail_middle_park(query, source, chunk_size):
+        if "_source_area_m2" in source.columns:
+            if len(query) > 1:
+                raise RuntimeError("parks batch failed")
+            if query.iloc[0].centroid.x == pytest.approx(100.0):
+                raise RuntimeError("parks building failed")
+        return original(query, source, chunk_size)
+
+    monkeypatch.setattr(urban95_layerwise, "_pairs", fail_middle_park)
+    result = score_urban95_layerwise(
+        buildings,
+        prepared,
+        shade,
+        lights,
+        chunk_size=3,
+    )
+
+    assert result["u95_status_sub_nature_parks_10min"].tolist() == [
+        "thriving",
+        "unknown",
+        "functioning",
+    ]
+    assert result["u95_status_nature_10min"].tolist()[1] == "unknown"
+    assert result["u95_status_10min"].tolist()[1] == "unknown"
+    for field in (
+        "u95_status_sub_nature_urban_nature_areas_10min",
+        "u95_status_sub_play_playgrounds_10min",
+        "u95_status_play_10min",
+        "u95_status_sub_family_services_business_10min",
+    ):
+        assert not result[field].eq("unknown").any()
+    assert result["u95_status_10min"].tolist()[0] != "unknown"
+    assert result["u95_status_10min"].tolist()[2] != "unknown"
+
+    original_scalar = urban95_weights._features_intersecting
+
+    def fail_same_scalar_park(source, geometry):
+        if (
+            "_source_area_m2" in source.columns
+            or source is layers["parks"]
+        ) and geometry.centroid.x == pytest.approx(100.0):
+            raise RuntimeError("parks building failed")
+        return original_scalar(source, geometry)
+
+    monkeypatch.setattr(urban95_weights, "_features_intersecting", fail_same_scalar_park)
+    scalar_layers = dict(layers, street_lights=lights)
+    for position, building in enumerate(buildings.geometry):
+        scalar = calculate_master_index(
+            float(building.x),
+            float(building.y),
+            scalar_layers,
+            precomputed={"summer_si": 0.4},
+        )
+        assert result.iloc[position]["u95_status_10min"] == scalar["overview_status"]
+        for category, children in STATUS_HIERARCHY.items():
+            assert (
+                result.iloc[position][f"u95_status_{category}_10min"]
+                == scalar["category_statuses"][category]
+            )
+            for indicator in children:
+                assert (
+                    result.iloc[position][f"u95_status_sub_{category}_{indicator}_10min"]
+                    == scalar["subcategory_statuses"][category][indicator]
+                )
+
+
+def test_layerwise_batch_buffer_failure_retries_once_per_building_with_scalar_parity(
+    monkeypatch,
+    scoring_fixture,
+):
+    from lib import urban95_layerwise
+
+    buildings, layers = scoring_fixture
+    prepared = prepare_urban95_layers(**layers)
+    shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
+    lights = _gdf([Point(0, 0)])
+    original = urban95_layerwise._buffer
+    calls = []
+
+    def fail_only_batch_300(geometries, distance):
+        calls.append((len(geometries), distance))
+        if len(geometries) > 1 and distance == 300:
+            raise RuntimeError("batch buffer failed")
+        return original(geometries, distance)
+
+    monkeypatch.setattr(urban95_layerwise, "_buffer", fail_only_batch_300)
+    result = score_urban95_layerwise(
+        buildings,
+        prepared,
+        shade,
+        lights,
+        chunk_size=3,
+    )
+
+    assert calls.count((len(buildings), 300)) == 1
+    assert sum(1 for count, distance in calls if count == 1 and distance == 300) == len(buildings)
+    assert not result.filter(regex=r"^u95_status").eq("unknown").any().any()
+    scalar_layers = dict(layers, street_lights=lights)
+    for position, building in enumerate(buildings.geometry):
+        scalar = calculate_master_index(
+            float(building.x),
+            float(building.y),
+            scalar_layers,
+            precomputed={"summer_si": 0.4},
+        )
+        assert result.iloc[position]["u95_status_10min"] == scalar["overview_status"]
+        for category, children in STATUS_HIERARCHY.items():
+            assert (
+                result.iloc[position][f"u95_status_{category}_10min"]
+                == scalar["category_statuses"][category]
+            )
+            for indicator in children:
+                assert (
+                    result.iloc[position][f"u95_status_sub_{category}_{indicator}_10min"]
+                    == scalar["subcategory_statuses"][category][indicator]
+                )
 
 
 def urban95_scoring_stems():
@@ -555,11 +867,11 @@ def test_stage_forwards_workers_to_full_layerwise_scorer(monkeypatch):
         return pd.DataFrame({"summer_si": [0.0]}, index=buildings.index)
 
     monkeypatch.setattr(urban95_scoring, "score_urban95_layerwise", fake_full)
-    urban95_scoring.append_weighted_urban95_scores(buildings, workers=7)
+    urban95_scoring.append_urban95_statuses(buildings, workers=7)
     assert seen == [(urban95_scoring.SI_ATTACH_CHUNK_SIZE, 7)]
 
 
-def test_empty_keyed_layers_use_independent_scalar_fallback(monkeypatch):
+def test_empty_keyed_layers_use_layerwise_status_path(monkeypatch):
     from stages import urban95_scoring
 
     buildings = _gdf([Point(0, 0)])
@@ -572,27 +884,17 @@ def test_empty_keyed_layers_use_independent_scalar_fallback(monkeypatch):
         )
     }
     layers.update({"shade_streets": None, "shade_open_spaces": None})
-    scalar_calls = []
+    layerwise_calls = []
     monkeypatch.setattr(urban95_scoring, "build_layers", lambda **_: layers)
 
-    def fake_attach(frame, *_args, **_kwargs):
-        out = frame.copy()
-        out["summer_si"] = [0.0]
-        return out
+    def fake_layerwise(*_args, **_kwargs):
+        layerwise_calls.append(True)
+        return pd.DataFrame({"u95_status_10min": ["unknown"]}, index=buildings.index)
 
-    def fake_scalar(*_args, **_kwargs):
-        scalar_calls.append(True)
-        return {"final_index": 0.0, "category_scores": {}, "subcategory_scores": {}}
-
-    monkeypatch.setattr(urban95_scoring, "attach_summer_si_to_buildings", fake_attach)
-    monkeypatch.setattr(urban95_scoring, "calculate_master_index", fake_scalar)
-    monkeypatch.setattr(
-        urban95_scoring,
-        "score_urban95_layerwise",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("empty layers must use scalar fallback")),
-    )
-    urban95_scoring.append_weighted_urban95_scores(buildings, workers=1)
-    assert scalar_calls == [True]
+    monkeypatch.setattr(urban95_scoring, "score_urban95_layerwise", fake_layerwise)
+    result = urban95_scoring.append_urban95_statuses(buildings, workers=1)
+    assert layerwise_calls == [True]
+    assert result.loc[0, "u95_status_10min"] == "unknown"
 
 
 class _RecordingProgress:
@@ -685,7 +987,7 @@ def test_threaded_streetlight_progress_updates_in_ordered_chunks(monkeypatch):
     assert threaded.index.tolist() == buildings.index.tolist()
 
 
-def test_progress_bars_close_and_phase_logs_survive_overlay_exceptions(monkeypatch, caplog):
+def test_progress_bars_close_and_phase_logs_survive_isolated_overlay_exceptions(monkeypatch, caplog):
     from lib import urban95_layerwise
 
     _RecordingProgress.created = []
@@ -696,10 +998,10 @@ def test_progress_bars_close_and_phase_logs_survive_overlay_exceptions(monkeypat
     )
     caplog.set_level(logging.INFO)
     shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
-    with pytest.raises(RuntimeError, match="shade boom"):
-        score_shade_overlay(_gdf([Point(0, 0)]), shade, chunk_size=1)
+    shade_result = score_shade_overlay(_gdf([Point(0, 0)]), shade, chunk_size=1)
+    assert shade_result.isna().all()
     assert _RecordingProgress.created[0].close_calls == 1
-    assert _RecordingProgress.created[0].updates == []
+    assert _RecordingProgress.created[0].updates == [1]
     assert [r.getMessage() for r in caplog.records if r.name == "core.perf"][-1].startswith(
         "score_phase=score.shade.intersections elapsed_s="
     )
@@ -710,8 +1012,13 @@ def test_progress_bars_close_and_phase_logs_survive_overlay_exceptions(monkeypat
         "union_all",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("lights boom")),
     )
-    with pytest.raises(RuntimeError, match="lights boom"):
-        score_streetlight_overlay(_gdf([Point(0, 0), Point(100, 0)]), _gdf([Point(0, 0)]), chunk_size=1, workers=2)
+    light_result = score_streetlight_overlay(
+        _gdf([Point(0, 0), Point(100, 0)]),
+        _gdf([Point(0, 0)]),
+        chunk_size=1,
+        workers=2,
+    )
+    assert light_result.isna().all()
     assert _RecordingProgress.created[0].close_calls == 1
     assert any(
         r.getMessage().startswith("score_phase=score.lights.unions elapsed_s=")
@@ -720,7 +1027,7 @@ def test_progress_bars_close_and_phase_logs_survive_overlay_exceptions(monkeypat
     )
 
 
-def test_shade_progress_counts_empty_success_but_not_throwing_building(monkeypatch):
+def test_shade_progress_counts_empty_success_and_marks_only_throwing_building_unknown(monkeypatch):
     from lib import urban95_layerwise
 
     _RecordingProgress.created = []
@@ -737,11 +1044,13 @@ def test_shade_progress_counts_empty_success_but_not_throwing_building(monkeypat
     shade = prepare_shade_overlay(_shade_gdf([box(-500, -500, 500, 500)], [0.4]), None)
     buildings = _gdf([Point(0, 0), Point(), Point(100, 0)])
 
-    with pytest.raises(RuntimeError, match="third building boom"):
-        score_shade_overlay(buildings, shade, chunk_size=1)
+    result = score_shade_overlay(buildings, shade, chunk_size=1)
 
     bar = _RecordingProgress.created[0]
-    assert bar.updates == [1, 1]
+    assert result.iloc[0] == 0.4
+    assert result.iloc[1] == 0.0
+    assert pd.isna(result.iloc[2])
+    assert bar.updates == [1, 1, 1]
     assert bar.close_calls == 1
 
 
@@ -774,7 +1083,7 @@ def test_layerwise_score_emits_required_phase_inventory_in_order(monkeypatch, ca
     monkeypatch.setattr(urban95_layerwise, "logged_phase", tracked_phase)
     caplog.set_level(logging.INFO)
 
-    urban95_scoring.append_weighted_urban95_scores(buildings.copy(), workers=1)
+    urban95_scoring.append_urban95_statuses(buildings.copy(), workers=1)
 
     names = [
         record.getMessage().split(" ", 1)[0].split("=", 1)[1]
@@ -786,8 +1095,6 @@ def test_layerwise_score_emits_required_phase_inventory_in_order(monkeypatch, ca
         "score.discrete.prepare",
         "score.shade.prepare",
         "score.discrete.compute",
-        "score.shade.candidates",
-        "score.shade.intersections",
         "score.lights.prepare",
         "score.lights.candidates",
         "score.lights.unions",

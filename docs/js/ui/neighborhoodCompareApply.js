@@ -127,10 +127,21 @@
     requireMethod(selection, "selection", "isComparing");
     requireMethod(selection, "selection", "getState");
     requireMethod(selection, "selection", "getPrimaryFeature");
+    requireMethod(selection, "selection", "revalidate");
     requireMethod(highlight, "highlight", "applyCompareSlots");
+    requireMethod(highlight, "highlight", "clearCompare");
+    requireMethod(sidebar, "sidebar", "hide");
     requireMethod(sidebar, "sidebar", "isOpen");
     requireMethod(sidebar, "sidebar", "showCompare");
     requireMethod(sidebar, "sidebar", "sync");
+
+    var validity = selection.revalidate();
+    if (validity.kind === "none") {
+      highlight.clearCompare();
+      setSelectedNeighborhood(null);
+      if (sidebar.isOpen()) sidebar.hide({ clearSelection: false });
+      return;
+    }
 
     if (selection.isComparing()) {
       var state = selection.getState();

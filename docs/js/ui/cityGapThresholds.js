@@ -21,6 +21,10 @@
     return DEFAULT_MODE;
   }
 
+  function supportsMetric(metric) {
+    return !(metric && metric.scale === "status");
+  }
+
   function collectFinite(values) {
     var out = [];
     (values || []).forEach(function (v) {
@@ -109,7 +113,8 @@
     return cuts;
   }
 
-  function cutForMode(mode, cuts) {
+  function cutForMode(mode, cuts, metric) {
+    if (!supportsMetric(metric)) return null;
     mode = normalizeMode(mode);
     cuts = cuts || {};
     if (mode === MODE_BELOW_CITY_AVG) {
@@ -118,7 +123,8 @@
     return NaN;
   }
 
-  function isInGap(value, mode, cuts, name) {
+  function isInGap(value, mode, cuts, name, metric) {
+    if (!supportsMetric(metric)) return false;
     mode = normalizeMode(mode);
     if (mode === MODE_OFF) return false;
 
@@ -131,7 +137,7 @@
 
     var v = Number(value);
     if (!Number.isFinite(v)) return false;
-    var cut = cutForMode(mode, cuts);
+    var cut = cutForMode(mode, cuts, metric);
     if (!Number.isFinite(cut)) return false;
     if (mode === MODE_BELOW_CITY_AVG) return v < cut;
     return false;
@@ -151,6 +157,7 @@
     MODE_LARGE_WEAK: MODE_LARGE_WEAK,
     DEFAULT_MODE: DEFAULT_MODE,
     normalizeMode: normalizeMode,
+    supportsMetric: supportsMetric,
     computeCuts: computeCuts,
     computeLargeWeakNames: computeLargeWeakNames,
     buildGapCuts: buildGapCuts,
