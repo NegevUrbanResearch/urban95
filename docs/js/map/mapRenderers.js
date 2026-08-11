@@ -487,7 +487,8 @@
       }
 
       if (d.getScoreMode() === "weighted") {
-        var weightedShownAmenityTypes = requireRenderState(d).resolveWeightedShownAmenityTypes({
+        var renderState = requireRenderState(d);
+        var weightedShownAmenityTypes = renderState.resolveWeightedShownAmenityTypes({
           metric: getActiveMetricFromDeps(d),
           scoreModel: d.scoreModel,
           showRegistry: d.showRegistry,
@@ -516,7 +517,9 @@
           function () {
             return allAmenitiesData.features
               .filter(function (feature) {
-                return weightedShownAmenityTypeSet.has(feature.properties.amenity_type);
+                return weightedShownAmenityTypeSet.has(
+                  renderState.getAmenityDisplayKey(feature, true)
+                );
               })
               .map(function (feature) {
                 return Object.assign({}, feature, {
@@ -948,13 +951,15 @@
     var zoom = d.map.getZoom();
     var includeSingles = zoom >= d.amenityClusterMinZoom;
     if (!includeSingles) return [];
+    var renderState = requireRenderState(d);
+    var weightedMode = d.getScoreMode() === "weighted";
     if (zoom >= d.amenityClusterDissolveZoom) {
       return features
         .map(function (feature) {
           var coordinates = feature.geometry && feature.geometry.coordinates;
           if (!coordinates || coordinates.length < 2) return null;
           var props = feature.properties || {};
-          var amenityType = props.amenity_type || "other";
+          var amenityType = renderState.getAmenityDisplayKey(feature, weightedMode);
           var name = props.hebrew_nam || props.name || "";
           return {
             position: coordinates,
@@ -1004,7 +1009,7 @@
       }
 
       var props = feature.properties || {};
-      var amenityType = props.amenity_type || "other";
+      var amenityType = renderState.getAmenityDisplayKey(feature, weightedMode);
       bucket.count += 1;
       bucket.weightedLng += coordinates[0];
       bucket.weightedLat += coordinates[1];
@@ -1510,7 +1515,8 @@
         if (
           d.getScoreMode() === "weighted" &&
           activeMetric &&
-          activeMetric.kind === "weighted-subcategory" &&
+          (activeMetric.kind === "weighted-subcategory" ||
+            activeMetric.kind === "diagnostic-access") &&
           neighborhoodSurfaceData &&
           !renderState.supportsMetricSurfaceData(activeMetric, neighborhoodSurfaceData)
         ) {
@@ -1537,7 +1543,8 @@
       if (
         d.getScoreMode() === "weighted" &&
         activeMetric &&
-        activeMetric.kind === "weighted-subcategory" &&
+        (activeMetric.kind === "weighted-subcategory" ||
+          activeMetric.kind === "diagnostic-access") &&
         !renderState.supportsMetricSurfaceData(activeMetric, neighborhoodSurfaceData)
       ) {
         if (surfaceSrc && typeof surfaceSrc.setData === "function") {
@@ -1848,4 +1855,3 @@
     updateNeighborhoodColors: updateNeighborhoodColors,
   };
 })();
-

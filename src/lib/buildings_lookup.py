@@ -75,10 +75,17 @@ BUILDING_LOOKUP_EXACT_FIELDS = {
     "name",
     "summer_si",
 }
+BUILDING_LOOKUP_DIAGNOSTIC_ACCESS_FIELDS = {
+    "access_school_10min",
+    "access_kindergarten_10min",
+    "access_clinic_10min",
+    "access_tipat_halav_10min",
+}
 
 
 def build_lookup_allowed_fields() -> set[str]:
     fields = set(BUILDING_LOOKUP_EXACT_FIELDS)
+    fields.update(BUILDING_LOOKUP_DIAGNOSTIC_ACCESS_FIELDS)
     for minutes in BUILDING_LOOKUP_MINUTES:
         sfx = f"_{minutes}min"
         fields.update(

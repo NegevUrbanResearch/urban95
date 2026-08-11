@@ -46,7 +46,7 @@ WEIGHTED_CATEGORY_STEMS = {
     "Family Services": "family_services",
 }
 
-STALE_SCORE_PREFIXES = ("score_weighted",)
+STALE_SCORE_PREFIXES = ("score_weighted", "access_")
 STALE_SCORE_EXACT = (BUILDING_SI_FIELD,)
 
 

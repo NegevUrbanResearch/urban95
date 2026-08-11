@@ -70,11 +70,14 @@ function createMockIndicatorsHarness(browser, options) {
     options.state || {}
   );
 
-  const indicators = browser.window.Urban95ControlSidebarIndicators.create({
-    markup: browser.window.Urban95ControlSidebarMarkup,
-    showController: {
+  const showController =
+    options.showController ||
+    {
       resolve() {
         return { supported: false, reason: "n/a" };
+      },
+      getState() {
+        return "off";
       },
       isEnabled() {
         return false;
@@ -82,14 +85,21 @@ function createMockIndicatorsHarness(browser, options) {
       toggle() {
         return false;
       },
-    },
-    scoreModel: {
+    };
+  const scoreModel =
+    options.scoreModel ||
+    {
       buildWeightedMetricRegistry() {
         return {};
       },
       WEIGHTED_CATEGORY_COMPONENTS: [],
       WEIGHTED_SUBCATEGORY_COMPONENTS: {},
-    },
+    };
+
+  const indicators = browser.window.Urban95ControlSidebarIndicators.create({
+    markup: browser.window.Urban95ControlSidebarMarkup,
+    showController,
+    scoreModel,
     getEl() {
       return elements;
     },
@@ -103,8 +113,116 @@ function createMockIndicatorsHarness(browser, options) {
     iconsBase: "./icons",
   });
 
-  return { elements, indicators, indicatorsList, state, auxHosts };
+  return { elements, indicators, indicatorsList, state, auxHosts, showController };
 }
+
+function createDetailCollapseTarget(parentMetricId) {
+  const row = {
+    getAttribute(name) {
+      if (name === "data-detail-parent-id") return parentMetricId;
+      if (name === "data-metric-id") return parentMetricId;
+      return null;
+    },
+  };
+  const action = {
+    disabled: false,
+    getAttribute(name) {
+      return name === "data-action" ? "collapse" : null;
+    },
+    closest(selector) {
+      return selector === "[data-metric-id]" ? row : null;
+    },
+  };
+  return {
+    closest(selector) {
+      if (selector === "[data-action]") return action;
+      return null;
+    },
+  };
+}
+
+function createDetailLabelTarget(parentMetricId) {
+  const row = {
+    getAttribute(name) {
+      if (name === "data-detail-parent-id") return parentMetricId;
+      return null;
+    },
+  };
+  return {
+    closest(selector) {
+      if (selector === "[data-action]") return null;
+      if (selector === ".indicator-row--subcategory[data-detail-parent-id]") return row;
+      if (selector === ".indicator-row--category[data-category-stem]") return null;
+      return null;
+    },
+  };
+}
+
+test("control sidebar renders accessible nested Education and Health detail groups", () => {
+  const browser = createBrowserContext();
+  loadControlSidebarModules(browser);
+  const harness = createMockIndicatorsHarness(browser, {
+    scoreModel: browser.window.Urban95ScoreModel,
+  });
+
+  harness.indicators.bind();
+  harness.indicators.renderIndicatorsSection();
+  const html = harness.indicatorsList.innerHTML;
+
+  assert.match(html, /data-metric-id="u95\.sub\.family_services\.education"/);
+  assert.match(html, /data-metric-id="u95\.detail\.family_services\.education\.school"/);
+  assert.match(html, /data-metric-id="u95\.detail\.family_services\.health\.tipat_halav"/);
+  assert.match(html, /class="indicators-tree" role="list"/);
+  assert.doesNotMatch(html, /role="tree"|role="treeitem"/);
+  assert.match(html, /class="indicator-group[^>]*"[^>]*role="listitem"/);
+  assert.match(html, /aria-controls="indicator-subs-family-services"/);
+  assert.match(html, /id="indicator-subs-family-services"[^>]*role="list"/);
+  assert.match(html, /aria-controls="indicator-details-u95-sub-family-services-health"/);
+  assert.match(html, /id="indicator-details-u95-sub-family-services-health"[^>]*role="list"/);
+  assert.match(html, /data-metric-id="u95\.sub\.family_services\.community"/);
+  assert.match(html, /data-metric-id="u95\.sub\.family_services\.business"/);
+
+  // Rendering an active child heatmap expands both ancestors.
+  harness.state.activeHeatmapId = "u95.detail.family_services.health.tipat_halav";
+  harness.indicators.renderIndicatorsSection();
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-category-stem="family_services"[\s\S]*?indicator-subs is-open/
+  );
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-detail-parent-id="u95\.sub\.family_services\.health"[\s\S]*?indicator-detail-subs is-open/
+  );
+
+  // Explicit collapse persists while the same child heatmap remains active.
+  harness.indicatorsList._handlers.click({
+    target: createDetailCollapseTarget("u95.sub.family_services.health"),
+  });
+  harness.indicators.renderIndicatorsSection();
+  assert.doesNotMatch(
+    harness.indicatorsList.innerHTML,
+    /data-detail-parent-id="u95\.sub\.family_services\.health"[\s\S]*?indicator-detail-subs is-open/
+  );
+});
+
+test("control sidebar toggles a nested detail group when its label is clicked", () => {
+  const browser = createBrowserContext();
+  loadControlSidebarModules(browser);
+  const harness = createMockIndicatorsHarness(browser, {
+    scoreModel: browser.window.Urban95ScoreModel,
+  });
+
+  harness.indicators.bind();
+  harness.indicators.renderIndicatorsSection();
+  harness.indicatorsList._handlers.click({
+    target: createDetailLabelTarget("u95.sub.family_services.health"),
+  });
+
+  assert.match(
+    harness.indicatorsList.innerHTML,
+    /data-detail-parent-id="u95\.sub\.family_services\.health"[\s\S]*?indicator-detail-subs is-open/
+  );
+});
 
 test("control sidebar show actions come from UI registry instead of score model exports", () => {
   const browser = createBrowserContext();
@@ -141,6 +259,64 @@ test("control sidebar show actions come from UI registry instead of score model 
     { kind: "point-layer", layer: "bus-stops" },
     { kind: "amenity-types", types: ["shelters"] },
   ]);
+
+  function actionKey(action) {
+    if (action.kind === "point-layer") return action.kind + ":" + action.layer;
+    if (action.kind === "amenity-display-key") return action.kind + ":" + action.key;
+    return JSON.stringify(action);
+  }
+
+  const enabled = new Set([
+    "point-layer:education-school",
+    "amenity-display-key:health:clinic",
+  ]);
+  const showController = browser.window.Urban95ControlSidebarShow.create({
+    scoreModel,
+    showRegistry,
+    applyShowAction(action, nextEnabled) {
+      const key = actionKey(action);
+      if (nextEnabled) enabled.add(key);
+      else enabled.delete(key);
+    },
+    isShowActionEnabled(action) {
+      return enabled.has(actionKey(action));
+    },
+  });
+  const resolve = function (metricId) {
+    return JSON.parse(JSON.stringify(showController.resolve(metricId).actions));
+  };
+
+  assert.deepEqual(resolve("u95.sub.family_services.education"), [
+    { kind: "point-layer", layer: "education-school" },
+    { kind: "point-layer", layer: "education-kindergarten" },
+  ]);
+  assert.deepEqual(resolve("u95.detail.family_services.education.school"), [
+    { kind: "point-layer", layer: "education-school" },
+  ]);
+  assert.deepEqual(resolve("u95.detail.family_services.education.kindergarten"), [
+    { kind: "point-layer", layer: "education-kindergarten" },
+  ]);
+  assert.deepEqual(resolve("u95.sub.family_services.health"), [
+    { kind: "amenity-display-key", key: "health:clinic" },
+    { kind: "amenity-display-key", key: "health:tipat_halav" },
+  ]);
+  assert.deepEqual(resolve("u95.detail.family_services.health.clinic"), [
+    { kind: "amenity-display-key", key: "health:clinic" },
+  ]);
+  assert.deepEqual(resolve("u95.detail.family_services.health.tipat_halav"), [
+    { kind: "amenity-display-key", key: "health:tipat_halav" },
+  ]);
+
+  assert.equal(showController.getState("u95.sub.family_services.education"), "mixed");
+  assert.equal(showController.getState("u95.sub.family_services.health"), "mixed");
+  showController.toggle("u95.sub.family_services.education");
+  showController.toggle("u95.sub.family_services.health");
+  assert.equal(showController.getState("u95.sub.family_services.education"), "on");
+  assert.equal(showController.getState("u95.sub.family_services.health"), "on");
+  showController.toggle("u95.sub.family_services.education");
+  showController.toggle("u95.sub.family_services.health");
+  assert.equal(showController.getState("u95.sub.family_services.education"), "off");
+  assert.equal(showController.getState("u95.sub.family_services.health"), "off");
 });
 
 test("control sidebar overlay defaults seed canonical layer visibility", () => {
@@ -157,7 +333,8 @@ test("control sidebar overlay defaults seed canonical layer visibility", () => {
     "urban-nature": false,
     trees: true,
     "street-lights": false,
-    schools: false,
+    "education-school": false,
+    "education-kindergarten": false,
     "bus-stops": false,
     amenities: true,
     roads: false,

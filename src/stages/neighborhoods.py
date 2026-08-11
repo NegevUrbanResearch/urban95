@@ -56,6 +56,12 @@ HEX_CELL_SIDE_METERS = 50.0
 HEX_LOCAL_DATA_RADIUS_METERS = 470.0
 HEX_IDW_RADIUS_METERS = 425.0
 URBAN95_FIXED_MINUTES = 10
+DIAGNOSTIC_ACCESS_SURFACE_FIELDS = {
+    "access_school_10min": "access_school",
+    "access_kindergarten_10min": "access_kindergarten",
+    "access_clinic_10min": "access_clinic",
+    "access_tipat_halav_10min": "access_tipat_halav",
+}
 
 
 def amenity_stat_keys_from_buildings(buildings: gpd.GeoDataFrame) -> list:
@@ -340,6 +346,11 @@ def build_neighborhood_surface_geojson(
     if len(assigned) == 0:
         return {"type": "FeatureCollection", "features": []}
 
+    diagnostic_values = {
+        surface_key: np.clip(as_numeric_series(assigned, building_key, fallback=0.0), 0.0, 100.0)
+        for building_key, surface_key in DIAGNOSTIC_ACCESS_SURFACE_FIELDS.items()
+        if building_key in assigned.columns
+    }
     weighted_by_minutes: dict[int, np.ndarray] = {}
     expanded_pct_by_minutes: dict[int, np.ndarray] = {}
     filter_pct_by_minutes: dict[int, dict[str, np.ndarray]] = {}
@@ -414,6 +425,8 @@ def build_neighborhood_surface_geojson(
         local_points_by_name.setdefault(name, []).append((x, y))
         score_bucket = local_scores_by_name.setdefault(name, {})
         score_bucket.setdefault("score_weighted", []).append((x, y, float(weighted_fixed[i])))
+        for surface_key, values in diagnostic_values.items():
+            score_bucket.setdefault(surface_key, []).append((x, y, float(values[i])))
         for cat_stem in WEIGHTED_CATEGORY_STEMS:
             cat_key = f"score_weighted_{cat_stem}"
             cat_arr = weighted_categories_fixed.get(cat_stem)
@@ -479,6 +492,7 @@ def build_neighborhood_surface_geojson(
                 f"score_weighted_sub_{cat_stem}_{sub_stem}"
                 for sub_stem in weighted_sub_stems.get(cat_stem, [])
             )
+        field_keys.extend(diagnostic_values)
         field_keys.extend(f"score_expanded_{minutes}min" for minutes in WALK_MINUTES)
         for minutes in WALK_MINUTES:
             for f_type in filter_types:
@@ -505,6 +519,9 @@ def build_neighborhood_surface_geojson(
         field_values = apply_idw_plan(source_values, plan)
         field_values_by_key = {
             key: field_values[:, field_index] for field_index, key in enumerate(field_keys)
+        }
+        diagnostic_surface_values = {
+            key: field_values_by_key[key] for key in diagnostic_values
         }
         has_local = plan.local_data_mask
         sw_vals = field_values_by_key["score_weighted"]
@@ -547,6 +564,10 @@ def build_neighborhood_surface_geojson(
                     out_props[sub_key] = round(
                         max(0.0, min(100.0, float(sub_vals[sub_key][i]))), 2
                     )
+            for key, values in diagnostic_surface_values.items():
+                out_props[key] = round(
+                    max(0.0, min(100.0, float(values[i]))), 2
+                )
             for minutes in WALK_MINUTES:
                 e_key = f"score_expanded_{minutes}min"
                 out_props[e_key] = round(

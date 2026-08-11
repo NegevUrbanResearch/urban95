@@ -43,12 +43,21 @@
     var iconsBase = config.iconsBase;
     var iconsRenderer = weightedIndicatorIcons.create(iconsBase);
     var expandedCategoryStems = new Set();
+    var expandedDetailParentIds = new Set();
+    var lastObservedHeatmapId = null;
     var SURVEY_CATEGORY_STEM = "survey";
 
-    function ensureExpandedForActiveHeatmap(activeHeatmapId) {
-      if (!activeHeatmapId) return;
-      var match = /^u95\.sub\.([^.]+)\./.exec(activeHeatmapId);
-      if (match) expandedCategoryStems.add(match[1]);
+    function ensureExpandedForNewActiveHeatmap(activeHeatmapId) {
+      if (!activeHeatmapId || activeHeatmapId === lastObservedHeatmapId) {
+        lastObservedHeatmapId = activeHeatmapId || null;
+        return;
+      }
+      var metric = scoreModel.buildWeightedMetricRegistry()[activeHeatmapId];
+      if (metric) {
+        if (metric.selectedWeightedStem) expandedCategoryStems.add(metric.selectedWeightedStem);
+        if (metric.parentMetricId) expandedDetailParentIds.add(metric.parentMetricId);
+      }
+      lastObservedHeatmapId = activeHeatmapId;
     }
 
     function syncWalkFilterVisibility() {
@@ -100,15 +109,17 @@
       var el = getEl();
       if (!el.indicatorsList) return;
       var activeHeatmapId = readState().activeHeatmapId;
-      ensureExpandedForActiveHeatmap(activeHeatmapId);
+      ensureExpandedForNewActiveHeatmap(activeHeatmapId);
       var weightedMarkup =
         readState().scoreMode === "weighted"
           ? markup.renderIndicatorsTreeMarkup({
               scoreModel: scoreModel,
               expandedStems: expandedCategoryStems,
+              expandedDetailParentIds: expandedDetailParentIds,
               activeHeatmapId: activeHeatmapId,
               iconsRenderer: iconsRenderer,
               resolveShow: showController.resolve.bind(showController),
+              getShowState: showController.getState.bind(showController),
               isShowEnabled: showController.isEnabled.bind(showController),
             })
           : "";
@@ -125,7 +136,11 @@
         iconsRenderer
       );
       el.indicatorsList.innerHTML =
-        weightedMarkup + (auxiliaryMarkup ? auxiliaryMarkup : "") + surveyMarkup;
+        '<div class="indicators-tree" role="list" aria-label="Urban95 indicators">' +
+        weightedMarkup +
+        (auxiliaryMarkup ? auxiliaryMarkup : "") +
+        surveyMarkup +
+        "</div>";
       updateOverlayVisibility();
     }
 
@@ -147,6 +162,16 @@
       if (group) {
         syncCategoryGroupExpanded(group, willExpand);
         return;
+      }
+      renderIndicatorsSection();
+    }
+
+    function toggleDetailExpanded(parentMetricId) {
+      if (!parentMetricId) return;
+      if (expandedDetailParentIds.has(parentMetricId)) {
+        expandedDetailParentIds.delete(parentMetricId);
+      } else {
+        expandedDetailParentIds.add(parentMetricId);
       }
       renderIndicatorsSection();
     }
@@ -201,6 +226,11 @@
         if (!rowEl) return;
 
         if (actionBtn.getAttribute("data-action") === "collapse") {
+          var detailParentId = rowEl.getAttribute("data-detail-parent-id");
+          if (detailParentId) {
+            toggleDetailExpanded(detailParentId);
+            return;
+          }
           toggleCategoryExpanded(rowEl.getAttribute("data-category-stem"));
           return;
         }
@@ -225,6 +255,14 @@
           if (!showController.toggle(metricId)) return;
           renderIndicatorsSection();
         }
+        return;
+      }
+
+      var detailRow = e.target.closest(
+        ".indicator-row--subcategory[data-detail-parent-id]"
+      );
+      if (detailRow) {
+        toggleDetailExpanded(detailRow.getAttribute("data-detail-parent-id"));
         return;
       }
 

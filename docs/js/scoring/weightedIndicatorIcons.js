@@ -29,6 +29,10 @@
     community: "community-centers",
     business: "business-centers",
     health: "health-services",
+    school: "education",
+    kindergarten: "education",
+    clinic: "health-services",
+    tipat_halav: "health-services",
   };
 
   var ICON_NEUTRAL = palette.ink;

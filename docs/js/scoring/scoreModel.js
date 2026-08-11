@@ -19,6 +19,8 @@
     tourism: { color: palette.sky, icon: "lodging", label: "Tourism" },
     senior_services_and_living: { color: palette.peach, icon: "home", label: "Senior" },
     health: { color: palette.coral, icon: "marker", label: "Healthcare" },
+    "health:clinic": { color: "#c84945", icon: "marker", label: "Clinics" },
+    "health:tipat_halav": { color: "#ef8a82", icon: "marker", label: "Tipat Halav" },
     businesscenters: { color: palette.blue, icon: "marker", label: "Business Centers" },
     "community-centers": { color: palette.lavender, icon: "marker", label: "Community Centers" },
     playgrounds: { color: palette.coral, icon: "marker", label: "Playgrounds" },
@@ -93,6 +95,37 @@
       { stem: "community", label: "Community centers", weight: 0.2 },
       { stem: "business", label: "Business centers", weight: 0.2 },
       { stem: "health", label: "Health", weight: 0.3 },
+    ],
+  };
+
+  var WEIGHTED_DETAIL_COMPONENTS = {
+    education: [
+      {
+        stem: "school",
+        label: "Schools",
+        buildingKey: "access_school_10min",
+        surfaceKey: "access_school",
+      },
+      {
+        stem: "kindergarten",
+        label: "Kindergartens",
+        buildingKey: "access_kindergarten_10min",
+        surfaceKey: "access_kindergarten",
+      },
+    ],
+    health: [
+      {
+        stem: "clinic",
+        label: "Clinics",
+        buildingKey: "access_clinic_10min",
+        surfaceKey: "access_clinic",
+      },
+      {
+        stem: "tipat_halav",
+        label: "Tipat Halav",
+        buildingKey: "access_tipat_halav_10min",
+        surfaceKey: "access_tipat_halav",
+      },
     ],
   };
 
@@ -215,6 +248,24 @@
           buildingPropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
           surfacePropertyKey: "score_weighted_sub_" + category.stem + "_" + sub.stem,
           neighborhoodAverageKey: "avg_score_weighted_sub_" + category.stem + "_" + sub.stem + sfx,
+        });
+
+        (WEIGHTED_DETAIL_COMPONENTS[sub.stem] || []).forEach(function (detail) {
+          var detailId =
+            "u95.detail." + category.stem + "." + sub.stem + "." + detail.stem;
+          registry[detailId] = {
+            id: detailId,
+            kind: "diagnostic-access",
+            label: detail.label,
+            scale: "weighted",
+            parentMetricId: subId,
+            parentStem: category.stem,
+            buildingPropertyKey: detail.buildingKey,
+            surfacePropertyKey: detail.surfaceKey,
+            neighborhoodAverageKey: null,
+            selectedWeightedStem: category.stem,
+            selectedWeightedSubStem: null,
+          };
         });
       });
     });
@@ -801,6 +852,7 @@
     WEIGHTED_CATEGORY_COMPONENTS: WEIGHTED_CATEGORY_COMPONENTS,
     WEIGHTED_CATEGORY_BY_STEM: WEIGHTED_CATEGORY_BY_STEM,
     WEIGHTED_SUBCATEGORY_COMPONENTS: WEIGHTED_SUBCATEGORY_COMPONENTS,
+    WEIGHTED_DETAIL_COMPONENTS: WEIGHTED_DETAIL_COMPONENTS,
     WEIGHTED_CATEGORY_LABEL_BY_STEM: WEIGHTED_CATEGORY_LABEL_BY_STEM,
     getAmenityConfig: getAmenityConfig,
     amenityTypeToBuildingStatKey: amenityTypeToBuildingStatKey,

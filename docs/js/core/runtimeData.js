@@ -36,6 +36,7 @@
             geometry: { type: "Point", coordinates: [lng, lat] },
             properties: {
               amenity_type: record && record.type,
+              amenity_subtype: record && record.subtype ? record.subtype : "",
               name: record && record.name ? record.name : "",
               _lookupIndex: index,
             },

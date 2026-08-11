@@ -10,10 +10,35 @@
     street_lights: { actions: [{ kind: "point-layer", layer: "street-lights" }] },
     bus_stops: { actions: [{ kind: "point-layer", layer: "bus-stops" }] },
     shelters: { actions: [{ kind: "amenity-types", types: ["shelters"] }] },
-    education: { actions: [{ kind: "point-layer", layer: "schools" }] },
+    education: {
+      actions: [
+        { kind: "point-layer", layer: "education-school" },
+        { kind: "point-layer", layer: "education-kindergarten" },
+      ],
+    },
     community: { actions: [{ kind: "amenity-types", types: ["community-centers"] }] },
     business: { actions: [{ kind: "amenity-types", types: ["businesscenters"] }] },
-    health: { actions: [{ kind: "amenity-types", types: ["health"] }] },
+    health: {
+      actions: [
+        { kind: "amenity-display-key", key: "health:clinic" },
+        { kind: "amenity-display-key", key: "health:tipat_halav" },
+      ],
+    },
+  };
+
+  var DETAIL_ACTIONS = {
+    "u95.detail.family_services.education.school": [
+      { kind: "point-layer", layer: "education-school" },
+    ],
+    "u95.detail.family_services.education.kindergarten": [
+      { kind: "point-layer", layer: "education-kindergarten" },
+    ],
+    "u95.detail.family_services.health.clinic": [
+      { kind: "amenity-display-key", key: "health:clinic" },
+    ],
+    "u95.detail.family_services.health.tipat_halav": [
+      { kind: "amenity-display-key", key: "health:tipat_halav" },
+    ],
   };
 
   function getWeightedMetric(scoreModel, metricId) {
@@ -46,11 +71,16 @@
     if (metric.kind === "weighted-category") {
       return { kind: "family-union", categoryStem: metric.selectedWeightedStem };
     }
+    if (metric.kind === "diagnostic-access") {
+      var detailActions = DETAIL_ACTIONS[metricId] || [];
+      return detailActions[0] || { kind: "disabled", reason: "No companion layer mapped" };
+    }
     if (metric.kind !== "weighted-subcategory") return null;
 
     var entry = SUBCATEGORY_ACTIONS[metric.selectedWeightedSubStem];
     if (!entry) return { kind: "disabled", reason: "No companion layer mapped" };
     if (entry.disabled) return { kind: "disabled", reason: entry.disabled };
+    if (entry.actions.length > 1) return { kind: "family-union" };
     return entry.actions[0] || { kind: "disabled", reason: "No companion layer mapped" };
   }
 
@@ -64,6 +94,10 @@
       (action.types || []).forEach(function (type) {
         if (type) bucket.amenityTypes.add(type);
       });
+      return;
+    }
+    if (action.kind === "amenity-display-key" && action.key) {
+      bucket.amenityDisplayKeys.add(action.key);
     }
   }
 
@@ -78,6 +112,13 @@
       return;
     }
 
+    if (metric.kind === "diagnostic-access") {
+      (DETAIL_ACTIONS[metricId] || []).forEach(function (action) {
+        addAction(bucket, action);
+      });
+      return;
+    }
+
     var entry = SUBCATEGORY_ACTIONS[metric.selectedWeightedSubStem];
     (entry && entry.actions ? entry.actions : []).forEach(function (action) {
       addAction(bucket, action);
@@ -88,6 +129,7 @@
     var bucket = {
       pointLayers: new Set(),
       amenityTypes: new Set(),
+      amenityDisplayKeys: new Set(),
     };
     collectActions(scoreModel, metricId, bucket);
 
@@ -98,6 +140,9 @@
     if (bucket.amenityTypes.size > 0) {
       actions.push({ kind: "amenity-types", types: Array.from(bucket.amenityTypes) });
     }
+    bucket.amenityDisplayKeys.forEach(function (key) {
+      actions.push({ kind: "amenity-display-key", key: key });
+    });
     return actions;
   }
 

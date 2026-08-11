@@ -3,7 +3,8 @@
     URBAN_NATURE: "urban-nature",
     TREES: "trees",
     STREET_LIGHTS: "street-lights",
-    SCHOOLS: "schools",
+    EDUCATION_SCHOOL: "education-school",
+    EDUCATION_KINDERGARTEN: "education-kindergarten",
     AMENITIES: "amenities",
     ROADS: "roads",
     PARKS: "parks",
@@ -33,6 +34,17 @@
     if (filterType === "trees") return OVERLAY_LAYER_IDS.TREES;
     if (filterType === "street-lights") return OVERLAY_LAYER_IDS.STREET_LIGHTS;
     return filterType;
+  }
+
+  function getAmenityDisplayKey(feature, weightedMode) {
+    var props = feature && feature.properties ? feature.properties : {};
+    var parent = props.amenity_type || "other";
+    var subtype = props.amenity_subtype || "";
+    var supportedHealthSubtype = subtype === "clinic" || subtype === "tipat_halav";
+    if (weightedMode && parent === "health" && supportedHealthSubtype) {
+      return parent + ":" + subtype;
+    }
+    return parent;
   }
 
   function hasOwnMetricValue(source, key) {
@@ -81,9 +93,10 @@
   }
 
   function hasWeightedNeighborhoodMetricData(metric, source, rankingRows) {
-    if (!metric || metric.kind.indexOf("weighted") !== 0 || !metric.neighborhoodAverageKey) {
+    if (!metric || metric.scale !== "weighted") {
       return true;
     }
+    if (!metric.neighborhoodAverageKey) return false;
     var key = metric.neighborhoodAverageKey;
     if (hasOwnMetricValue(source, key)) {
       if (rankingRows === undefined) return true;
@@ -118,7 +131,7 @@
 
   function resolveWeightedCompanionTypes(options) {
     var metric = options.metric;
-    if (!metric || metric.kind.indexOf("weighted") !== 0) {
+    if (!metric || metric.scale !== "weighted") {
       return {
         amenityTypes: [],
         includeTrees: false,
@@ -137,6 +150,8 @@
         (action.types || []).forEach(function (type) {
           if (type) amenityTypes.add(type);
         });
+      } else if (action.kind === "amenity-display-key" && action.key) {
+        amenityTypes.add(action.key.split(":")[0]);
       } else if (action.kind === "point-layer") {
         if (action.layer === "trees") includeTrees = true;
         if (action.layer === "street-lights") includeStreetLights = true;
@@ -155,22 +170,16 @@
   function resolveWeightedShownAmenityTypes(options) {
     options = options || {};
     var metric = options.metric;
-    if (!metric || metric.kind.indexOf("weighted") !== 0) {
+    if (!metric || metric.scale !== "weighted") {
       return [];
     }
     var shownAmenityTypes = options.shownAmenityTypes;
     if (!(shownAmenityTypes instanceof Set)) {
       shownAmenityTypes = new Set(Array.isArray(shownAmenityTypes) ? shownAmenityTypes : []);
     }
-    var actions = getWeightedShowActions(options, metric.id);
-    var amenityTypes = new Set();
-    actions.forEach(function (action) {
-      if (action.kind !== "amenity-types") return;
-      (action.types || []).forEach(function (type) {
-        if (type && shownAmenityTypes.has(type)) amenityTypes.add(type);
-      });
+    return Array.from(shownAmenityTypes).filter(function (type) {
+      return !!type;
     });
-    return Array.from(amenityTypes);
   }
 
   function resolvePolygonAnalysisFilter(options) {
@@ -332,6 +341,7 @@
     shouldRenderDeckAmenities: shouldRenderDeckAmenities,
     buildDeckRenderStateKey: buildDeckRenderStateKey,
     getLayerKeyForFilterType: getLayerKeyForFilterType,
+    getAmenityDisplayKey: getAmenityDisplayKey,
     isWeightedSubcategoryMetric: isWeightedSubcategoryMetric,
     hasOwnMetricValue: hasOwnMetricValue,
     getSurfaceSample: getSurfaceSample,

@@ -48,6 +48,10 @@ def test_surface_hex_has_nonzero_score_weighted_near_building():
         {
             "building_id": [0, 1],
             "score_weighted_10min": [80.0, 40.0],
+            "access_school_10min": [0.0, 100.0],
+            "access_kindergarten_10min": [50.0, 0.0],
+            "access_clinic_10min": [100.0, 50.0],
+            "access_tipat_halav_10min": [0.0, 100.0],
             "neighborhood": ["TestHood", "TestHood"],
         },
         geometry=[Point(50, 50), Point(150, 150)],
@@ -65,6 +69,27 @@ def test_surface_hex_has_nonzero_score_weighted_near_building():
     assert scored, "expected hexes with has_buildings=1"
     assert max(scored) > 0
     assert "score_weighted" in fc["features"][0]["properties"]
+    for key in (
+        "access_school",
+        "access_kindergarten",
+        "access_clinic",
+        "access_tipat_halav",
+    ):
+        assert key in fc["features"][0]["properties"]
+    for key in (
+        "score_weighted_sub_family_services_school",
+        "score_weighted_sub_family_services_kindergarten",
+        "score_weighted_sub_family_services_clinic",
+        "score_weighted_sub_family_services_tipat_halav",
+    ):
+        assert key not in fc["features"][0]["properties"]
+    local_props = [
+        feature["properties"]
+        for feature in fc["features"]
+        if feature["properties"].get("has_buildings") == 1
+    ]
+    assert any(props["access_school"] > 0 for props in local_props)
+    assert any(props["access_clinic"] > 0 for props in local_props)
 
 
 def test_idw_batch_matches_scalar_within_tol():

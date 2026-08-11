@@ -334,6 +334,7 @@
     if (d.getScoreMode() === "weighted") {
       var metric = typeof d.getActiveMetric === "function" ? d.getActiveMetric() : null;
       if (!metric || metric.kind === "weighted-overall") return "Score";
+      if (metric.kind === "diagnostic-access") return metric.label + " access";
       return metric.label ? metric.label + " score" : "Score";
     }
     return "Citywide percentile";

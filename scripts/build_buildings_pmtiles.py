@@ -221,12 +221,16 @@ def point_record(
     if not isinstance(name, str):
         name = str(name)
 
-    return {
+    record = {
         "type": record_type,
         "lng": lng_value,
         "lat": lat_value,
         "name": name,
     }
+    amenity_subtype = properties.get("amenity_subtype")
+    if amenity_subtype not in (None, ""):
+        record["subtype"] = str(amenity_subtype)
+    return record
 
 
 def run_tippecanoe_layer(spec: TileLayerSpec, source_path: Path, output_mbtiles: Path) -> bool:

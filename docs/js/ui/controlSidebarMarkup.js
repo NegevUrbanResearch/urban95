@@ -25,12 +25,8 @@
       defaultChecked: false,
       snapshotVisibility: true,
     },
-    {
-      layerId: "schools",
-      inputId: "show-schools-toggle",
-      defaultChecked: false,
-      snapshotVisibility: true,
-    },
+    { layerId: "education-school", defaultChecked: false, snapshotVisibility: true },
+    { layerId: "education-kindergarten", defaultChecked: false, snapshotVisibility: true },
     {
       layerId: "bus-stops",
       inputId: "show-bus-stops-toggle",
@@ -157,6 +153,9 @@
 
   var HIDE_EYE_SVG =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+  var MIXED_EYE_SVG =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><path d="M8 12h8"/></svg>';
 
   function escapeHtml(value) {
     return String(value || "")
@@ -339,7 +338,7 @@
       '<div class="section-title">Indicators</div>' +
       renderIndicatorColumnTitlesMarkup() +
       "</div></div>" +
-      '<div id="indicators-list" class="indicators-tree" role="tree" aria-label="Urban95 indicators"></div>' +
+      '<div id="indicators-list" class="indicators-list-host"></div>' +
       "</section>"
     );
   }
@@ -369,6 +368,7 @@
     var registry = scoreModel.buildWeightedMetricRegistry();
     var categories = scoreModel.WEIGHTED_CATEGORY_COMPONENTS || [];
     var subcats = scoreModel.WEIGHTED_SUBCATEGORY_COMPONENTS || {};
+    var details = scoreModel.WEIGHTED_DETAIL_COMPONENTS || {};
     var rows = [];
 
     rows.push({
@@ -389,13 +389,26 @@
         stem: category.stem,
       });
       (subcats[category.stem] || []).forEach(function (sub) {
+        var subId = "u95.sub." + category.stem + "." + sub.stem;
         rows.push({
           depth: 1,
-          metricId: "u95.sub." + category.stem + "." + sub.stem,
+          metricId: subId,
           label: sub.label,
           kind: "subcategory",
           parentStem: category.stem,
           stem: sub.stem,
+        });
+        (details[sub.stem] || []).forEach(function (detail) {
+          var detailId = "u95.detail." + category.stem + "." + sub.stem + "." + detail.stem;
+          rows.push({
+            depth: 2,
+            metricId: detailId,
+            label: detail.label,
+            kind: "diagnostic",
+            parentMetricId: subId,
+            parentStem: category.stem,
+            stem: detail.stem,
+          });
         });
       });
     });
@@ -452,12 +465,14 @@
     var depthClass = row.depth > 0 ? " indicator-row--sub" : "";
     var kindClass = row.kind ? " indicator-row--" + row.kind : "";
     var showDisabled = !!options.showDisabled;
-    var showActive = !!options.showActive;
+    var showState = options.showState || (options.showActive ? "on" : "off");
+    var showActive = showState === "on";
+    var showMixed = showState === "mixed";
     var heatActive = !!options.heatActive;
     var hideHeat = !!options.hideHeat;
     var showTitle = options.showTitle || "Show companion map layers";
     var heatTitle = options.heatTitle || "Color the map by this indicator score";
-    var showAriaPressed = showActive ? "true" : "false";
+    var showAriaPressed = showState === "mixed" ? "mixed" : showState === "on" ? "true" : "false";
     var heatAriaPressed = heatActive ? "true" : "false";
     var collapseMarkup = "";
     var iconsRenderer = options.iconsRenderer;
@@ -466,13 +481,13 @@
     var heatMarkup = "";
 
     if (iconMarkup) {
-      if (row.kind === "subcategory") {
+      if (row.kind === "subcategory" || row.kind === "diagnostic") {
         labelStyle = ' style="color:' + palette.slate + ';"';
       }
     } else if (iconsRenderer) {
       if (row.kind === "category" && row.stem) {
         iconMarkup = iconsRenderer.renderIcon(iconsRenderer.getCategoryIcon(row.stem), row.color);
-      } else if (row.kind === "subcategory" && row.stem) {
+      } else if ((row.kind === "subcategory" || row.kind === "diagnostic") && row.stem) {
         iconMarkup = iconsRenderer.renderIcon(
           iconsRenderer.getSubcategoryIcon(row.stem),
           iconsRenderer.ICON_NEUTRAL
@@ -481,13 +496,16 @@
       }
     }
 
-    if (row.kind === "category") {
+    if (row.kind === "category" || options.hasChildren) {
       var expanded = !!options.expanded;
+      var controlledListId = options.controlledListId || "";
       collapseMarkup =
         '<button type="button" class="indicator-collapse-btn' +
         (expanded ? " is-expanded" : "") +
         '" data-action="collapse" aria-expanded="' +
         (expanded ? "true" : "false") +
+        '" aria-controls="' +
+        escapeHtml(controlledListId) +
         '" aria-label="' +
         escapeHtml((expanded ? "Collapse" : "Expand") + " " + row.label) +
         '">' +
@@ -540,8 +558,10 @@
       escapeHtml(row.metricId) +
       '"' +
       (row.parentStem ? ' data-parent-stem="' + escapeHtml(row.parentStem) + '"' : "") +
+      (options.detailParentId
+        ? ' data-detail-parent-id="' + escapeHtml(options.detailParentId) + '"'
+        : "") +
       (row.stem ? ' data-category-stem="' + escapeHtml(row.stem) + '"' : "") +
-      ' role="treeitem"' +
       ">" +
       '<span class="indicator-label-wrap">' +
       collapseMarkup +
@@ -556,6 +576,7 @@
       '<button type="button" class="indicator-btn indicator-show-btn' +
       (showDisabled ? " is-disabled" : "") +
       (showActive ? " is-active" : "") +
+      (showMixed ? " is-mixed" : "") +
       '" data-action="show" title="' +
       escapeHtml(showTitle) +
       '"' +
@@ -563,27 +584,112 @@
       ' aria-pressed="' +
       showAriaPressed +
       '" aria-label="' +
-      escapeHtml((showActive ? "Hide" : "Show") + " layers for " + row.label) +
+      escapeHtml(
+        (showMixed ? "Show all" : showActive ? "Hide" : "Show") + " layers for " + row.label
+      ) +
       '">' +
-      (showActive ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
+      (showMixed ? MIXED_EYE_SVG : showActive ? SHOW_EYE_SVG : HIDE_EYE_SVG) +
       "</button>" +
       heatMarkup +
       "</span></span></div>"
     );
   }
 
+  function domSafeId(value) {
+    return String(value || "").replace(/[^0-9a-z]+/gi, "-");
+  }
+
+  function renderIndicatorSubgroup(options) {
+    var sub = options.subRow;
+    var detailRows = options.detailRows || [];
+    var hasDetails = detailRows.length > 0;
+    var detailListId = "indicator-details-" + domSafeId(sub.metricId);
+    var expanded = hasDetails && options.expandedDetailParentIds.has(sub.metricId);
+    var showResolution = options.resolveShow(sub.metricId);
+    var showState = options.getShowState(sub.metricId);
+    var subHtml = renderIndicatorRow({
+      row: sub,
+      expanded: expanded,
+      hasChildren: hasDetails,
+      controlledListId: detailListId,
+      detailParentId: hasDetails ? sub.metricId : null,
+      showDisabled: !showResolution.supported,
+      showState: showState,
+      showActive: showState === "on",
+      showTitle: showResolution.supported ? options.defaultShowTitle : showResolution.reason,
+      heatTitle: options.heatTitle,
+      heatActive: !!options.activeHeatmapId && options.activeHeatmapId === sub.metricId,
+      hideHeat: options.hideHeat,
+      iconsRenderer: options.iconsRenderer,
+      leadingIconMarkup: sub.leadingIconMarkup,
+    });
+    var detailHtml = detailRows
+      .map(function (detail) {
+        var detailShowResolution = options.resolveShow(detail.metricId);
+        var detailShowState = options.getShowState(detail.metricId);
+        return (
+          '<div role="listitem">' +
+          renderIndicatorRow({
+            row: detail,
+            showDisabled: !detailShowResolution.supported,
+            showState: detailShowState,
+            showActive: detailShowState === "on",
+            showTitle: detailShowResolution.supported
+              ? options.defaultShowTitle
+              : detailShowResolution.reason,
+            heatTitle: options.heatTitle,
+            heatActive:
+              !!options.activeHeatmapId && options.activeHeatmapId === detail.metricId,
+            hideHeat: options.hideHeat,
+            iconsRenderer: options.iconsRenderer,
+          }) +
+          "</div>"
+        );
+      })
+      .join("");
+
+    return (
+      '<div class="indicator-subgroup" role="listitem"' +
+      (hasDetails ? ' data-detail-parent-id="' + escapeHtml(sub.metricId) + '"' : "") +
+      (hasDetails ? ' data-subtype="' + escapeHtml(sub.stem) + '"' : "") +
+      ">" +
+      subHtml +
+      (hasDetails
+        ? '<div class="indicator-detail-subs' +
+          (expanded ? " is-open" : "") +
+          '" id="' +
+          escapeHtml(detailListId) +
+          '" role="list"><div class="indicator-detail-subs-inner" role="presentation">' +
+          detailHtml +
+          "</div></div>"
+        : "") +
+      "</div>"
+    );
+  }
+
   function renderIndicatorCategoryGroup(options) {
     var categoryRow = options.categoryRow;
-    var subRows = options.subRows || [];
+    var subgroups = options.subgroups || (options.subRows || []).map(function (sub) {
+      return { row: sub, details: [] };
+    });
     var expanded = !!options.expanded;
     var hideHeat = !!options.hideHeat;
     var heatTitle = options.heatTitle || "Color the map by this indicator score";
     var defaultShowTitle = options.defaultShowTitle || "Show companion map layers";
+    var categoryListId = "indicator-subs-" + domSafeId(categoryRow.stem);
+    var categoryShowState = options.showState || (options.showActive ? "on" : "off");
+    var getShowState =
+      options.getShowState ||
+      function (metricId) {
+        return options.isShowEnabled && options.isShowEnabled(metricId) ? "on" : "off";
+      };
     var categoryHtml = renderIndicatorRow({
       row: categoryRow,
       expanded: expanded,
+      controlledListId: categoryListId,
       showDisabled: options.showDisabled,
-      showActive: options.showActive,
+      showState: categoryShowState,
+      showActive: categoryShowState === "on",
       showTitle: options.showTitle,
       heatTitle: heatTitle,
       heatActive: options.heatActive,
@@ -591,24 +697,25 @@
       iconsRenderer: options.iconsRenderer,
       leadingIconMarkup: categoryRow.leadingIconMarkup,
     });
-    var subHtml = subRows
-      .map(function (sub) {
-        var showResolution = options.resolveShow(sub.metricId);
-        return renderIndicatorRow({
-          row: sub,
-          expanded: false,
-          showDisabled: !showResolution.supported,
-          showActive: options.isShowEnabled(sub.metricId),
-          showTitle: showResolution.supported ? defaultShowTitle : showResolution.reason,
-          heatTitle: heatTitle,
-          heatActive: !!options.activeHeatmapId && options.activeHeatmapId === sub.metricId,
+    var subHtml = subgroups
+      .map(function (subgroup) {
+        return renderIndicatorSubgroup({
+          subRow: subgroup.row,
+          detailRows: subgroup.details,
+          expandedDetailParentIds: options.expandedDetailParentIds || new Set(),
+          activeHeatmapId: options.activeHeatmapId,
           hideHeat: hideHeat,
+          heatTitle: heatTitle,
+          defaultShowTitle: defaultShowTitle,
           iconsRenderer: options.iconsRenderer,
-          leadingIconMarkup: sub.leadingIconMarkup,
+          resolveShow: options.resolveShow,
+          getShowState: getShowState,
         });
       })
       .join("");
-    var footerHtml = options.footerHtml || "";
+    var footerHtml = options.footerHtml
+      ? '<div role="listitem">' + options.footerHtml + "</div>"
+      : "";
     var extraGroupClass = options.extraGroupClass ? " " + options.extraGroupClass : "";
 
     return (
@@ -616,12 +723,14 @@
       extraGroupClass +
       '" data-category-stem="' +
       escapeHtml(categoryRow.stem) +
-      '">' +
+      '" role="listitem">' +
       categoryHtml +
       '<div class="indicator-subs' +
       (expanded ? " is-open" : "") +
-      '">' +
-      '<div class="indicator-subs-inner">' +
+      '" id="' +
+      escapeHtml(categoryListId) +
+      '" role="list">' +
+      '<div class="indicator-subs-inner" role="presentation">' +
       subHtml +
       footerHtml +
       "</div></div></div>"
@@ -631,10 +740,15 @@
   function renderIndicatorsTreeMarkup(options) {
     var rows = buildIndicatorRowsFromMetricDefinitions(options.scoreModel);
     var expandedStems = options.expandedStems || new Set();
+    var expandedDetailParentIds = options.expandedDetailParentIds || new Set();
     var activeHeatmapId = options.activeHeatmapId;
     var iconsRenderer = options.iconsRenderer;
     var resolveShow = options.resolveShow;
-    var isShowEnabled = options.isShowEnabled;
+    var getShowState =
+      options.getShowState ||
+      function (metricId) {
+        return options.isShowEnabled && options.isShowEnabled(metricId) ? "on" : "off";
+      };
     var heatTitle = "Color the map by this indicator score";
     var parts = [];
     var index = 0;
@@ -643,19 +757,23 @@
       var row = rows[index];
       if (row.kind === "overall") {
         var overallShow = resolveShow(row.metricId);
+        var overallShowState = getShowState(row.metricId);
         parts.push(
-          renderIndicatorRow({
-            row: row,
-            expanded: false,
-            showDisabled: !overallShow.supported,
-            showActive: isShowEnabled(row.metricId),
-            showTitle: overallShow.supported
-              ? "Show companion map layers"
-              : overallShow.reason,
-            heatTitle: heatTitle,
-            heatActive: !!activeHeatmapId && activeHeatmapId === row.metricId,
-            iconsRenderer: iconsRenderer,
-          })
+          '<div role="listitem">' +
+            renderIndicatorRow({
+              row: row,
+              expanded: false,
+              showDisabled: !overallShow.supported,
+              showState: overallShowState,
+              showActive: overallShowState === "on",
+              showTitle: overallShow.supported
+                ? "Show companion map layers"
+                : overallShow.reason,
+              heatTitle: heatTitle,
+              heatActive: !!activeHeatmapId && activeHeatmapId === row.metricId,
+              iconsRenderer: iconsRenderer,
+            }) +
+            "</div>"
         );
         index += 1;
         continue;
@@ -663,24 +781,37 @@
 
       if (row.kind === "category") {
         var categoryStem = row.stem;
-        var subRows = [];
+        var subgroups = [];
         index += 1;
-        while (
-          index < rows.length &&
-          rows[index].kind === "subcategory" &&
-          rows[index].parentStem === categoryStem
-        ) {
-          subRows.push(rows[index]);
+        while (index < rows.length && rows[index].parentStem === categoryStem) {
+          if (rows[index].depth !== 1) {
+            index += 1;
+            continue;
+          }
+          var subRow = rows[index];
+          var details = [];
           index += 1;
+          while (
+            index < rows.length &&
+            rows[index].depth === 2 &&
+            rows[index].parentMetricId === subRow.metricId
+          ) {
+            details.push(rows[index]);
+            index += 1;
+          }
+          subgroups.push({ row: subRow, details: details });
         }
         var categoryShow = resolveShow(row.metricId);
+        var categoryShowState = getShowState(row.metricId);
         parts.push(
           renderIndicatorCategoryGroup({
             categoryRow: row,
-            subRows: subRows,
+            subgroups: subgroups,
             expanded: expandedStems.has(categoryStem),
+            expandedDetailParentIds: expandedDetailParentIds,
             showDisabled: !categoryShow.supported,
-            showActive: isShowEnabled(row.metricId),
+            showState: categoryShowState,
+            showActive: categoryShowState === "on",
             showTitle: categoryShow.supported
               ? "Show companion map layers"
               : categoryShow.reason,
@@ -689,7 +820,7 @@
             activeHeatmapId: activeHeatmapId,
             iconsRenderer: iconsRenderer,
             resolveShow: resolveShow,
-            isShowEnabled: isShowEnabled,
+            getShowState: getShowState,
           })
         );
         continue;
@@ -721,10 +852,10 @@
       })
       .join("");
     return (
-      '<div class="indicator-row indicator-row--aux" data-overlay-segmented="demographics">' +
+      '<div role="listitem"><div class="indicator-row indicator-row--aux" data-overlay-segmented="demographics">' +
       '<div class="metric-options segmented-options" role="group" aria-label="Demographic overlays">' +
       options +
-      "</div></div>"
+      "</div></div></div>"
     );
   }
 
@@ -991,6 +1122,7 @@
     getAuxiliaryRows: getAuxiliaryRows,
     buildFilterRowMarkup: buildFilterRowMarkup,
     renderIndicatorRow: renderIndicatorRow,
+    renderIndicatorSubgroup: renderIndicatorSubgroup,
     renderIndicatorCategoryGroup: renderIndicatorCategoryGroup,
     renderIndicatorsTreeMarkup: renderIndicatorsTreeMarkup,
     renderAuxiliarySegmentedRow: renderAuxiliarySegmentedRow,

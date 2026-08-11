@@ -20,6 +20,17 @@ def _frame(values):
     )
 
 
+def _clean_contract_frame():
+    return gpd.GeoDataFrame(
+        {
+            "amenity_type": ["education", "education", "health", "health", "playgrounds"],
+            "amenity_subtype": ["school", "kindergarten", "clinic", "tipat_halav", None],
+        },
+        geometry=[Point(float(i), 0.0) for i in range(5)],
+        crs="EPSG:2039",
+    )
+
+
 def test_prepare_amenity_layers_returns_explicit_frames_without_mutation(monkeypatch):
     legacy = _frame(["playground"])
     clean = _frame(["education"])
@@ -96,7 +107,7 @@ def test_scoring_layer_builder_skips_only_explicit_override_reads(monkeypatch):
     trees = _frame(["tree"])
     parks = _frame(["park"])
     lights = _frame(["street-lights"])
-    clean = _frame(["education", "playgrounds"])
+    clean = _clean_contract_frame()
     disk_loads = []
 
     def fake_load_optional(layer_id, target_epsg):
@@ -121,7 +132,7 @@ def test_scoring_layer_builder_skips_only_explicit_override_reads(monkeypatch):
     assert layers["trees"] is trees
     assert layers["parks"] is parks
     assert layers["street_lights"] is lights
-    assert layers["education"]["amenity_type"].tolist() == ["education"]
+    assert layers["education"]["amenity_type"].tolist() == ["education", "education"]
     assert layers["playgrounds"]["amenity_type"].tolist() == ["playgrounds"]
 
 

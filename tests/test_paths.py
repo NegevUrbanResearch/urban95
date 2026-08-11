@@ -29,6 +29,7 @@ def test_strip_building_metric_columns_keeps_geometry_and_non_metrics():
             "amen_school_5min": [2],
             "num_trees": [5],
             "clean_name": ["x"],
+            "access_school_10min": [100.0],
             "summer_si": [0.4],
             "geometry": [Point(34.8, 31.2)],
         },

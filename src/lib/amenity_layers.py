@@ -28,6 +28,52 @@ def normalize_clean_amenity_key(value) -> str:
     return str(value).strip().lower().replace(" ", "_")
 
 
+ALLOWED_AMENITY_SUBTYPES = {
+    "education": frozenset({"school", "kindergarten"}),
+    "health": frozenset({"clinic", "tipat_halav"}),
+}
+
+
+def normalize_amenity_subtype(value) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    return str(value)
+
+
+def validate_clean_amenity_subtypes(frame: gpd.GeoDataFrame) -> None:
+    if frame.empty:
+        raise ValueError("amenities_clean is empty")
+    if "amenity_type" not in frame.columns:
+        raise ValueError("amenities_clean is missing amenity_type")
+    parent = frame["amenity_type"].map(normalize_clean_amenity_key)
+    subtype = (
+        frame["amenity_subtype"].map(normalize_amenity_subtype)
+        if "amenity_subtype" in frame.columns
+        else pd.Series("", index=frame.index, dtype=object)
+    )
+    for parent_type, allowed in ALLOWED_AMENITY_SUBTYPES.items():
+        affected = parent == parent_type
+        invalid = affected & ~subtype.isin(allowed)
+        if invalid.any():
+            values = subtype.loc[invalid].value_counts(dropna=False).to_dict()
+            raise ValueError(
+                f"Invalid amenity_subtype for {parent_type}: {values}; "
+                f"expected one of {sorted(allowed)}"
+            )
+        present = set(subtype.loc[affected])
+        missing = allowed - present
+        if missing:
+            missing_counts = {
+                value: int((subtype.loc[affected] == value).sum())
+                for value in sorted(missing)
+            }
+            raise ValueError(
+                f"Missing required amenity_subtype for {parent_type}: {sorted(missing)}; "
+                f"affected parent records={int(affected.sum())}; "
+                f"missing subtype counts={missing_counts}"
+            )
+
+
 def append_shelters_from_merged_to_legacy(
     amenities_legacy: gpd.GeoDataFrame,
     merged_path,
@@ -88,6 +134,7 @@ def load_amenity_layers(crs_metric: int = CRS_METRIC):
         if merged.crs is None:
             merged.set_crs(epsg=4326, inplace=True)
         merged = repair_dataframe_encoding(merged)
+        validate_clean_amenity_subtypes(merged)
         merged = merged.to_crs(epsg=crs_metric)
         clean_parts.append(merged)
         logging.info("Loaded amenities_clean: %s (%d features)", merged_path.name, len(merged))

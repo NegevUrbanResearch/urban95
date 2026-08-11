@@ -28,6 +28,35 @@ function requireScriptIndex(scripts, expectedPath) {
   return scriptIndex;
 }
 
+test("nested indicator groups use a neutral hierarchy guide", () => {
+  const css = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "control-sidebar.css"),
+    "utf8"
+  );
+  const detailGroup = css.match(/\.indicator-detail-subs-inner\s*\{([^}]*)\}/);
+  const diagnosticRow = css.match(/\.indicator-row--diagnostic\s*\{([^}]*)\}/);
+
+  assert.ok(detailGroup, "nested detail group styles must exist");
+  assert.ok(diagnosticRow, "nested diagnostic row styles must exist");
+  assert.match(detailGroup[1], /border-inline-start:\s*1px solid rgba\(15, 23, 42, 0\.1\)/);
+  assert.doesNotMatch(diagnosticRow[1], /border-(?:left|inline-start)/);
+  assert.doesNotMatch(css, /\.indicator-subgroup\[data-subtype=/);
+});
+
+test("subcategory rows reserve a fixed disclosure slot", () => {
+  const css = fs.readFileSync(
+    path.resolve(__dirname, "..", "..", "docs", "control-sidebar.css"),
+    "utf8"
+  );
+  const spacer = css.match(
+    /\.indicator-row--subcategory:not\(\[data-detail-parent-id\]\)\s+\.indicator-label-wrap::before\s*\{([^}]*)\}/
+  );
+
+  assert.ok(spacer, "non-expandable subcategory rows must reserve the disclosure slot");
+  assert.match(spacer[1], /flex:\s*0 0 20px/);
+  assert.doesNotMatch(css, /margin-inline-start:\s*-24px/);
+});
+
 function runQueuedTimer(timers, timerOrder, predicate) {
   for (let index = 0; index < timerOrder.length; index += 1) {
     const timerId = timerOrder[index];
@@ -2895,6 +2924,132 @@ test("special point render plan prefers generated vectors in weighted mode", () 
   assert.equal(plan.features, null);
 });
 
+test("weighted amenity points follow the global shown display keys across active heatmaps", () => {
+  const browser = createBrowserContext();
+  const renderState = loadRenderState(browser);
+  const scoreModel = {
+    getMetric(metricId) {
+      return { id: metricId, scale: "weighted" };
+    },
+  };
+
+  assert.deepEqual(
+    Array.from(
+      renderState.resolveWeightedShownAmenityTypes({
+        metric: {
+          id: "u95.detail.family_services.education.school",
+          scale: "weighted",
+        },
+        scoreModel,
+        showRegistry: loadShowRegistry(browser),
+        shownAmenityTypes: ["health:clinic"],
+      })
+    ),
+    ["health:clinic"]
+  );
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        renderState.resolveWeightedCompanionTypes({
+          metric: {
+            id: "u95.detail.family_services.education.school",
+            scale: "weighted",
+          },
+          scoreModel,
+          showRegistry: loadShowRegistry(browser),
+        })
+      )
+    ),
+    { amenityTypes: [], includeTrees: false, includeStreetLights: false, empty: true }
+  );
+});
+
+test("diagnostic neighborhood views publish unavailable copy instead of zero averages", async () => {
+  const browser = createBrowserContext({
+    addEventListener() {},
+    matchMedia() { return { matches: false }; },
+  });
+  const renderState = loadRenderState(browser);
+  loadNeighborhoodSidebarModules(browser);
+
+  function createElement() {
+    const classes = new Set();
+    return {
+      hidden: false,
+      innerHTML: "",
+      textContent: "",
+      classList: {
+        add(name) { classes.add(name); },
+        remove(name) { classes.delete(name); },
+        contains(name) { return classes.has(name); },
+      },
+      addEventListener() {},
+      setAttribute() {},
+      removeAttribute() {},
+      contains() { return false; },
+      focus() {},
+      getBoundingClientRect() { return { width: 400 }; },
+      querySelector() { return null; },
+    };
+  }
+
+  const sidebarEl = createElement();
+  const heroEl = createElement();
+  const metaEl = createElement();
+  const bodyEl = createElement();
+  const emptyEl = createElement();
+  const activeMetric = {
+    id: "u95.detail.family_services.education.school",
+    kind: "diagnostic-access",
+    scale: "weighted",
+    label: "Schools",
+    neighborhoodAverageKey: null,
+  };
+  browser.window.document.body = createElement();
+  browser.window.document.activeElement = browser.window.document.body;
+
+  browser.window.Urban95NeighborhoodSidebar.configure({
+    getScoreMode() { return "weighted"; },
+    getScoreMinutes() { return 10; },
+    setSelectedNeighborhood() {},
+    loadCitywideStats() { return Promise.resolve(); },
+    loadNeighborhoodChartsPayload() { return Promise.resolve({}); },
+    getCitywideStats() { return { neighborhood_ranking_weighted: [] }; },
+    ensureChartJsLoaded() { return new Promise(function () {}); },
+    requestAnimationFrame() {},
+    setSidebarPadding() {},
+    restoreFocusAfterHide() {},
+    renderDeps: {
+      getActiveMetric() { return activeMetric; },
+      escapeHtml(value) { return String(value); },
+      formatScoreInteger(value) { return String(Math.round(value)); },
+      formatMetricNumber(value) { return String(value); },
+      heroPercentileMeterFillStyle() { return ""; },
+      weightedCategoryHighlightsFromSource() { return []; },
+    },
+    getWeightedNeighborhoodMetricValue: renderState.getWeightedNeighborhoodMetricValue,
+    hasWeightedNeighborhoodMetricData: renderState.hasWeightedNeighborhoodMetricData,
+    sidebarEl,
+    heroEl,
+    metaEl,
+    bodyEl,
+    emptyEl,
+    closeButtonEl: createElement(),
+    backdropEl: createElement(),
+  });
+
+  browser.window.Urban95NeighborhoodSidebar.sync({ properties: { Name: "Ramot" } });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(heroEl.innerHTML, /Unavailable/);
+  assert.match(
+    bodyEl.innerHTML,
+    /Neighborhood averages are not published for this access view\./
+  );
+  assert.doesNotMatch(bodyEl.innerHTML, /Neighborhood avg|City avg/);
+  assert.doesNotMatch(heroEl.innerHTML, />0<|0\/100/);
+});
+
 test("special point render plan clears weighted GeoJSON source when hidden without vector artifact", () => {
   const browser = createBrowserContext();
   runBrowserScript("docs/js/map/mapRenderers.js", browser);
@@ -5720,6 +5875,11 @@ test("runtime data validates point lookup sources and scans amenity types", () =
     }),
     true
   );
+
+  const health = runtime.featureCollectionFromPointRecords([
+    { lng: 34.8, lat: 31.2, type: "health", subtype: "clinic", name: "Clinic" },
+  ]);
+  assert.equal(health.features[0].properties.amenity_subtype, "clinic");
 
   const scan = runtime.scanAmenityTypesFromFeatures({
     type: "FeatureCollection",

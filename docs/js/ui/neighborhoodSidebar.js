@@ -244,10 +244,14 @@
             ? "Urban95"
             : activeMetric.label || "Urban95";
         if (missingWeightedSubcategoryData) {
+          var isDiagnosticAccess = activeMetric && activeMetric.kind === "diagnostic-access";
+          var unavailableMessage = isDiagnosticAccess
+            ? "Neighborhood averages are not published for this access view."
+            : "Neighborhood-level Urban95 subcategory summaries are unavailable for this metric in the current data export.";
           if (renderCtx.heroEl) {
             var unavailableKicker =
               activeMetric && activeMetric.kind !== "weighted-overall" && activeMetric.label
-                ? activeMetric.label + " score"
+                ? activeMetric.label + (isDiagnosticAccess ? " access" : " score")
                 : "Score";
             renderCtx.heroEl.innerHTML =
               '<div class="percentile-summary score-explain-sidebar-hero-compact">' +
@@ -260,10 +264,14 @@
               '<div class="score-explain-building-ctx"><div class="building-ctx-text">' +
               '<span class="building-ctx-id" dir="rtl" lang="he">' +
               renderCtx.escapeHtml((props && props.Name) || "Unknown") +
-              '</span><span class="building-ctx-coords">This subcategory is not present in the current neighborhood export.</span></div></div>';
+              '</span><span class="building-ctx-coords">' +
+              renderCtx.escapeHtml(unavailableMessage) +
+              "</span></div></div>";
           }
           deps.bodyEl.innerHTML =
-            '<div class="cw-section"><p class="sidebar-section-hint">Neighborhood-level Urban95 subcategory summaries are unavailable for this metric in the current data export.</p></div>';
+            '<div class="cw-section"><p class="sidebar-section-hint">' +
+            renderCtx.escapeHtml(unavailableMessage) +
+            "</p></div>";
           finalizeSidebarAndBindCharts(token, renderCtx, {
             weighted: true,
             sfx: sfx,

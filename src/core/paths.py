@@ -13,7 +13,7 @@ SURVEY_RAW_DIR = RAW_DIR / "survey_results"
 OUTPUT_DIR = REPO_ROOT / "output"
 DOCS_DATA_DIR = REPO_ROOT / "docs" / "data"
 SCORED_BUILDINGS = OUTPUT_DIR / "buildings_scored.geojson"
-METRIC_COL_PREFIXES = ("score_", "amen_", "num_", "clean_")
+METRIC_COL_PREFIXES = ("score_", "access_", "amen_", "num_", "clean_")
 
 SURVEY_SOURCE_FILES = {
     "walkability_barrier": "01_חלק_ג_חסמי_הליכתיות.geojson",

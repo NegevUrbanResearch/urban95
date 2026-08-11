@@ -12,7 +12,10 @@
     "roads-labels-local",
   ];
   var SCHOOLS_SOURCE_ID = "schools";
-  var SCHOOLS_LAYER_ID = "schools-points";
+  var EDUCATION_LAYER_IDS = {
+    school: "education-schools-points",
+    kindergarten: "education-kindergartens-points",
+  };
   var BUS_STOPS_SOURCE_ID = "bus-stops";
   var BUS_STOPS_LAYER_ID = "bus-stops-points";
   var KIDS_POPULATION_SOURCE_ID = "kids-population-grid";
@@ -73,7 +76,7 @@
     var populationGridLookupFeatures = [];
     var socioeconomicLookupFeatures = [];
     var kidsPopulationMaxKids = 0;
-    var schoolsHoverBound = false;
+    var educationHoverBoundLayerIds = new Set();
     var busStopsHoverBound = false;
     var demographicOverlayBoundLayers = new Set();
 
@@ -512,16 +515,22 @@
           data: { type: "FeatureCollection", features: [] },
         });
       }
-      if (!map.getLayer(SCHOOLS_LAYER_ID)) {
-        var beforeLayerId = map.getLayer("selected-building-outline")
-          ? "selected-building-outline"
-          : undefined;
+      var beforeLayerId = map.getLayer("selected-building-outline")
+        ? "selected-building-outline"
+        : undefined;
+      [
+        { subtype: "school", color: "#7145c7" },
+        { subtype: "kindergarten", color: "#b48af2" },
+      ].forEach(function (config) {
+        var layerId = EDUCATION_LAYER_IDS[config.subtype];
+        if (map.getLayer(layerId)) return;
         map.addLayer(
           {
-            id: SCHOOLS_LAYER_ID,
+            id: layerId,
             type: "symbol",
             source: SCHOOLS_SOURCE_ID,
             minzoom: detailPointsMinZoom,
+            filter: ["==", ["get", "amenity_subtype"], config.subtype],
             layout: {
               // town-hall SDF reads cleanly; Maki "school" (apple) fragments at map sizes
               "icon-image": "town-hall",
@@ -532,24 +541,27 @@
               visibility: "none",
             },
             paint: {
-              "icon-color": window.Urban95Palette.lavender,
+              "icon-color": config.color,
               "icon-opacity": 0.95,
             },
           },
           beforeLayerId
         );
-      }
+      });
     }
 
     function applySchoolsLayerVisibility() {
-      if (!map.getLayer(SCHOOLS_LAYER_ID)) return;
       var isUrban95 = getScoreMode() === "weighted";
-      var visible =
-        overlayVisibility.isCanonicalLayerVisible("schools", false) &&
-        isUrban95 &&
-        getCurrentMode() === "house" &&
-        map.getZoom() >= detailPointsMinZoom;
-      map.setLayoutProperty(SCHOOLS_LAYER_ID, "visibility", visible ? "visible" : "none");
+      Object.keys(EDUCATION_LAYER_IDS).forEach(function (subtype) {
+        var layerId = EDUCATION_LAYER_IDS[subtype];
+        if (!map.getLayer(layerId)) return;
+        var visible =
+          overlayVisibility.isCanonicalLayerVisible("education-" + subtype, false) &&
+          isUrban95 &&
+          getCurrentMode() === "house" &&
+          map.getZoom() >= detailPointsMinZoom;
+        map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+      });
     }
 
     function ensureBusStopsLayer() {
@@ -670,14 +682,17 @@
     }
 
     function bindSchoolsHover() {
-      if (schoolsHoverBound || !map.getLayer(SCHOOLS_LAYER_ID)) return;
-      mapRenderers.bindPointHoverLayer(SCHOOLS_LAYER_ID, function (feature) {
-        var props = (feature && feature.properties) || {};
-        var name = decodeLikelyMojibakeUtf8(getSchoolHoverName(props));
-        var type = decodeLikelyMojibakeUtf8(props.type || "");
-        return type ? name + "\n" + type : name;
+      Object.keys(EDUCATION_LAYER_IDS).forEach(function (subtype) {
+        var layerId = EDUCATION_LAYER_IDS[subtype];
+        if (educationHoverBoundLayerIds.has(layerId) || !map.getLayer(layerId)) return;
+        mapRenderers.bindPointHoverLayer(layerId, function (feature) {
+          var props = (feature && feature.properties) || {};
+          var name = decodeLikelyMojibakeUtf8(getSchoolHoverName(props));
+          var label = subtype === "kindergarten" ? "Kindergartens" : "Schools";
+          return name + "\n" + label;
+        });
+        educationHoverBoundLayerIds.add(layerId);
       });
-      schoolsHoverBound = true;
     }
 
     function applyRoadSymbologyVisibility() {

@@ -76,10 +76,18 @@ def scoring_fixture():
         "bikes": _gdf([Point(0, 300)], amenity_type=[" BICYCLE_TRACK "]),
         "bus_stops": _gdf([Point(0, 0), Point(1, 0)]),
         "shelters": _gdf([Point(0, 50)], amenity_type=["shelters"]),
-        "education": _gdf([Point(150, 0)], amenity_type=["education"]),
+        "education": _gdf(
+            [Point(150, 0)],
+            amenity_type=["education"],
+            amenity_subtype=["school"],
+        ),
         "community": _gdf([Point(300, 0)], amenity_type=["community-centers"]),
         "business": _gdf([Point(0, 300)], amenity_type=["businesscenters"]),
-        "health": _gdf([Point(100, 100)], amenity_type=["health"]),
+        "health": _gdf(
+            [Point(100, 100)],
+            amenity_type=["health"],
+            amenity_subtype=["clinic"],
+        ),
     }
     return buildings, layers
 
@@ -90,7 +98,54 @@ def test_layerwise_discrete_components_match_scalar(chunk_size, scoring_fixture)
     expected = _scalar_discrete(buildings, layers)
     prepared = prepare_urban95_layers(**layers)
     actual = score_discrete_components(buildings, prepared, chunk_size=chunk_size)
-    pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+    pd.testing.assert_frame_equal(actual[expected.columns], expected, check_dtype=False)
+    assert actual["school"].tolist() == [100.0, 100.0, 50.0]
+    assert actual["kindergarten"].tolist() == [0.0, 0.0, 0.0]
+    assert actual["clinic"].tolist() == [100.0, 100.0, 0.0]
+    assert actual["tipat_halav"].tolist() == [0.0, 0.0, 0.0]
+
+
+def test_child_access_diagnostics_preserve_parent_education_and_health_scores():
+    buildings = _gdf(
+        [
+            box(100, 0, 110, 10),
+            box(250, 0, 260, 10),
+            box(400, 0, 410, 10),
+            box(900, 0, 910, 10),
+            box(740, 0, 750, 10),
+            box(600, 0, 610, 10),
+        ]
+    )
+    layers = {
+        "education": _gdf(
+            [Point(0, 5), Point(1000, 5)],
+            amenity_type=["education", "education"],
+            amenity_subtype=["school", "kindergarten"],
+        ),
+        "health": _gdf(
+            [Point(0, 5), Point(1000, 5)],
+            amenity_type=["health", "health"],
+            amenity_subtype=["clinic", "tipat_halav"],
+        ),
+    }
+
+    prepared = prepare_urban95_layers(**layers)
+    discrete = score_discrete_components(buildings, prepared, chunk_size=2)
+    result = score_urban95_layerwise(buildings, prepared, None, None, chunk_size=2)
+
+    assert discrete["school"].tolist() == [100, 50, 0, 0, 0, 0]
+    assert discrete["kindergarten"].tolist() == [0, 0, 0, 100, 50, 0]
+    assert discrete["clinic"].tolist() == [100, 100, 0, 0, 0, 0]
+    assert discrete["tipat_halav"].tolist() == [0, 0, 0, 100, 100, 0]
+
+    assert result["access_school_10min"].tolist() == [100, 50, 0, 0, 0, 0]
+    assert result["access_kindergarten_10min"].tolist() == [0, 0, 0, 100, 50, 0]
+    assert result["access_clinic_10min"].tolist() == [100, 100, 0, 0, 0, 0]
+    assert result["access_tipat_halav_10min"].tolist() == [0, 0, 0, 100, 100, 0]
+
+    # Parent score still uses the complete union.
+    assert result["score_weighted_sub_family_services_education_10min"].tolist() == [100, 50, 0, 100, 50, 0]
+    assert result["score_weighted_sub_family_services_health_10min"].tolist() == [100, 100, 0, 100, 100, 0]
 
 
 def test_near_edge_tree_buffer_counts_trees_outside_centroid_radius():
@@ -107,7 +162,7 @@ def test_near_edge_tree_buffer_counts_trees_outside_centroid_radius():
     actual = score_discrete_components(buildings, prepared, chunk_size=1)
 
     assert float(expected.loc[0, "trees"]) == 100.0
-    pd.testing.assert_frame_equal(actual, expected, check_dtype=False)
+    pd.testing.assert_frame_equal(actual[expected.columns], expected, check_dtype=False)
     # Centroid-only semantics would have missed these trees.
     _, centroid_details = calc_environmental_quality(
         building.centroid,
@@ -177,11 +232,12 @@ def test_null_only_sources_keep_defaults_and_output_contract():
     assert actual.columns.tolist() == [
         "trees", "roads", "parks", "urban_nature_areas", "playgrounds",
         "bicycle_access", "bus_stops", "shelters", "education", "community",
-        "business", "health",
+        "business", "health", "school", "kindergarten", "clinic", "tipat_halav",
     ]
-    assert actual.dtypes.tolist() == [pd.api.types.pandas_dtype("float64")] * 12
+    assert actual.dtypes.tolist() == [pd.api.types.pandas_dtype("float64")] * 16
     assert actual["trees"].tolist() == [0.0, 0.0]
     assert actual["roads"].tolist() == [100.0, 100.0]
+    assert (actual[["school", "kindergarten", "clinic", "tipat_halav"]] == 0.0).all().all()
 
 
 def test_discrete_boundaries_and_defaults_are_exact():

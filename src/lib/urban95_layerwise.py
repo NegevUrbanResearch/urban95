@@ -39,6 +39,12 @@ _COMPONENT_COLUMNS = (
     "business",
     "health",
 )
+_DIAGNOSTIC_ACCESS_COLUMNS = (
+    "school",
+    "kindergarten",
+    "clinic",
+    "tipat_halav",
+)
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,10 @@ class PreparedUrban95Layers:
     community: gpd.GeoDataFrame
     business: gpd.GeoDataFrame
     health: gpd.GeoDataFrame
+    schools: gpd.GeoDataFrame
+    kindergartens: gpd.GeoDataFrame
+    clinics: gpd.GeoDataFrame
+    tipat_halav: gpd.GeoDataFrame
 
 
 def _empty_layer(crs: object = _EMPTY_CRS) -> gpd.GeoDataFrame:
@@ -113,6 +123,19 @@ def _amenity_layer(
     return _indexed(out)
 
 
+def _amenity_subtype_layer(
+    parent: gpd.GeoDataFrame,
+    expected_subtype: str,
+) -> gpd.GeoDataFrame:
+    if "amenity_subtype" not in parent.columns:
+        return _indexed(parent.iloc[0:0].copy().reset_index(drop=True))
+    return _indexed(
+        parent.loc[parent["amenity_subtype"] == expected_subtype]
+        .copy()
+        .reset_index(drop=True)
+    )
+
+
 def _park_layer(source: gpd.GeoDataFrame | None, target_crs: object) -> gpd.GeoDataFrame:
     out = _sanitized(source, target_crs)
     out["_source_area_m2"] = out.geometry.area.astype(float) if len(out) else pd.Series(dtype=float)
@@ -148,6 +171,8 @@ def prepare_urban95_layers(
     """Prepare every discrete source once, preserving source-row semantics."""
     candidates = (trees, roads, parks, urban_nature_areas, playgrounds, bikes, bus_stops, shelters, education, community, business, health)
     source_crs = next((frame.crs for frame in candidates if isinstance(frame, gpd.GeoDataFrame) and frame.crs is not None), target_crs)
+    education_parent = _amenity_layer(education, "education", source_crs)
+    health_parent = _amenity_layer(health, "health", source_crs)
     return PreparedUrban95Layers(
         trees=_indexed(_sanitized(trees, source_crs)),
         fast_roads=_road_layer(roads, source_crs),
@@ -157,10 +182,14 @@ def prepare_urban95_layers(
         bikes=_amenity_layer(bikes, "bicycle_track", source_crs),
         bus_stops=_indexed(_sanitized(bus_stops, source_crs)),
         shelters=_amenity_layer(shelters, "shelters", source_crs),
-        education=_amenity_layer(education, "education", source_crs),
+        education=education_parent,
         community=_amenity_layer(community, "community-centers", source_crs),
         business=_amenity_layer(business, "businesscenters", source_crs),
-        health=_amenity_layer(health, "health", source_crs),
+        health=health_parent,
+        schools=_amenity_subtype_layer(education_parent, "school"),
+        kindergartens=_amenity_subtype_layer(education_parent, "kindergarten"),
+        clinics=_amenity_subtype_layer(health_parent, "clinic"),
+        tipat_halav=_amenity_subtype_layer(health_parent, "tipat_halav"),
     )
 
 
@@ -257,7 +286,10 @@ def score_discrete_components(
         raise TypeError("prepared must be PreparedUrban95Layers")
 
     buildings = buildings_metric.geometry.reset_index(drop=True)
-    values = {name: np.zeros(len(buildings), dtype=np.float64) for name in _COMPONENT_COLUMNS}
+    values = {
+        name: np.zeros(len(buildings), dtype=np.float64)
+        for name in _COMPONENT_COLUMNS + _DIAGNOSTIC_ACCESS_COLUMNS
+    }
     values["roads"][:] = 100.0
     for start in range(0, len(buildings), int(chunk_size)):
         stop = min(start + int(chunk_size), len(buildings))
@@ -311,9 +343,28 @@ def score_discrete_components(
         )
 
         for name, layer in (
+            ("school", prepared.schools),
+            ("kindergarten", prepared.kindergartens),
+        ):
+            q, s = _pairs(buffer_300, layer, chunk_size)
+            minimum = _nearest(chunk_buildings, q, s, layer)
+            values[name][start:stop] = np.where(
+                np.isfinite(minimum) & (minimum <= 150),
+                100.0,
+                np.where(np.isfinite(minimum) & (minimum <= 300), 50.0, 0.0),
+            )
+
+        for name, layer in (
             ("community", prepared.community),
             ("business", prepared.business),
             ("health", prepared.health),
+        ):
+            q, s = _pairs(buffer_300, layer, chunk_size)
+            values[name][start:stop] = _presence(q, s, len(layer), count) * 100.0
+
+        for name, layer in (
+            ("clinic", prepared.clinics),
+            ("tipat_halav", prepared.tipat_halav),
         ):
             q, s = _pairs(buffer_300, layer, chunk_size)
             values[name][start:stop] = _presence(q, s, len(layer), count) * 100.0
@@ -661,6 +712,10 @@ def score_urban95_layerwise(
                 output[f"score_weighted_{stem}{suffix}"] = category_scores[stem].copy()
             for (category_stem, sub_stem), values in subcategory_values.items():
                 output[f"score_weighted_sub_{category_stem}_{sub_stem}{suffix}"] = values.copy()
+        output["access_school_10min"] = discrete["school"].to_numpy(dtype=np.float64)
+        output["access_kindergarten_10min"] = discrete["kindergarten"].to_numpy(dtype=np.float64)
+        output["access_clinic_10min"] = discrete["clinic"].to_numpy(dtype=np.float64)
+        output["access_tipat_halav_10min"] = discrete["tipat_halav"].to_numpy(dtype=np.float64)
         return pd.DataFrame(output, index=buildings_metric.index)
 
 

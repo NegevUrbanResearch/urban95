@@ -15,7 +15,11 @@ from core.geojson_utils import (
     write_minimal_geojson,
 )
 from core.paths import DOCS_DATA_DIR, SCORED_BUILDINGS, layer
-from lib.amenity_layers import load_amenity_layers, prepare_legacy_amenities
+from lib.amenity_layers import (
+    load_amenity_layers,
+    prepare_legacy_amenities,
+    validate_clean_amenity_subtypes,
+)
 from lib.buildings_lookup import BuildingLookupCollector
 from lib.buildings_prep import BUILDING_DROP_COLUMNS, BUILDING_SIMPLIFY_TOLERANCE_M, PARK_SIMPLIFY_TOLERANCE_M
 from stages.isochrones import get_building_isochrones
@@ -71,6 +75,8 @@ def _sync_raw_layer_to_docs(
     if gdf.crs is None:
         gdf = gdf.set_crs(epsg=4326)
     gdf = repair_dataframe_encoding(gdf)
+    if raw_layer_id == "amenities_clean":
+        validate_clean_amenity_subtypes(gdf)
     gdf = gdf.to_crs(epsg=4326)
     write_minimal_geojson(
         gdf,

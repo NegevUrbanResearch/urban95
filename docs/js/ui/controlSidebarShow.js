@@ -51,12 +51,17 @@
       return { supported: true, actions: actions, reason: "" };
     }
 
-    function isEnabled(metricId) {
+    function getState(metricId) {
       var resolved = resolve(metricId);
-      if (!resolved.supported) return false;
-      return resolved.actions.every(function (action) {
-        return !!isShowActionEnabled(action);
-      });
+      if (!resolved.supported || resolved.actions.length === 0) return "off";
+      var enabledCount = resolved.actions.filter(isShowActionEnabled).length;
+      if (enabledCount === 0) return "off";
+      if (enabledCount === resolved.actions.length) return "on";
+      return "mixed";
+    }
+
+    function isEnabled(metricId) {
+      return getState(metricId) === "on";
     }
 
     function setEnabled(metricId, enabled) {
@@ -74,6 +79,7 @@
 
     return {
       resolve: resolve,
+      getState: getState,
       isEnabled: isEnabled,
       setEnabled: setEnabled,
       toggle: toggle,

@@ -8,6 +8,7 @@ from shapely import make_valid
 from shapely.geometry import Point
 
 from core.paths import layer
+from lib.amenity_layers import validate_clean_amenity_subtypes
 from lib.shade_si import load_prepared_si_layers, round_building_summer_si, summer_si_to_subscore
 
 # ==========================================
@@ -245,6 +246,7 @@ def build_layers_from_raw(
     if amenities_clean is not _LAYER_OVERRIDE_UNSET:
         amenities_clean_frame = _explicit_override_frame(amenities_clean, target_epsg)
         has_amenity_type = "amenity_type" in amenities_clean_frame.columns
+        validate_clean_amenity_subtypes(amenities_clean_frame)
     else:
         amenities_clean_path = layer("amenities_clean").path
         if not amenities_clean_path.is_file():
@@ -254,6 +256,7 @@ def build_layers_from_raw(
         else:
             amenities_clean_frame = _load_geojson(amenities_clean_path, target_epsg)
             has_amenity_type = "amenity_type" in amenities_clean_frame.columns
+            validate_clean_amenity_subtypes(amenities_clean_frame)
 
     for target_name, source_type in amenity_type_map.items():
         if has_amenity_type:

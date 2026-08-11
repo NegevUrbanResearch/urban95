@@ -69,6 +69,9 @@
 
     function isCanonicalMetricShowEnabled(action) {
       if (!action || typeof action !== "object") return false;
+      if (action.kind === "amenity-display-key") {
+        return !!action.key && getWeightedShownAmenityTypes().has(action.key);
+      }
       if (action.kind === "amenity-types") {
         return areWeightedAmenityTypesShown(action.types || []);
       }
@@ -78,6 +81,17 @@
 
     function applyCanonicalMetricShowAction(action, enabled) {
       if (!action || typeof action !== "object") return false;
+
+      if (action.kind === "amenity-display-key") {
+        if (!action.key) return false;
+        var displayKeys = getWeightedShownAmenityTypes();
+        var hasDisplayKey = displayKeys.has(action.key);
+        if (hasDisplayKey === !!enabled) return false;
+        if (enabled) displayKeys.add(action.key);
+        else displayKeys.delete(action.key);
+        setWeightedShownAmenityTypes(displayKeys);
+        return true;
+      }
 
       if (action.kind === "amenity-types") {
         var nextShown = getWeightedShownAmenityTypes();

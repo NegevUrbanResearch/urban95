@@ -102,6 +102,10 @@ def test_building_lookup_collector_uses_exact_rounded_feature_coordinates(tmp_pa
         {
             "building_id": [42],
             "score_weighted_10min": [80.0],
+            "access_school_10min": [100.0],
+            "access_kindergarten_10min": [50.0],
+            "access_clinic_10min": [0.0],
+            "access_tipat_halav_10min": [100.0],
         },
         geometry=[LineString([(0.0000005, 1.0000005), (1.0000005, 2.0000005)])],
         crs="EPSG:4326",
@@ -123,6 +127,10 @@ def test_building_lookup_collector_uses_exact_rounded_feature_coordinates(tmp_pa
             {
                 "building_id": 42,
                 "score_weighted_10min": 80.0,
+                "access_school_10min": 100.0,
+                "access_kindergarten_10min": 50.0,
+                "access_clinic_10min": 0.0,
+                "access_tipat_halav_10min": 100.0,
                 "centroid_lng": 0.5000005,
                 "centroid_lat": 1.5000010000000001,
             }
@@ -648,8 +656,16 @@ def test_export_web_integrates_streaming_lookup_gzip_policy_and_isochrone_crs(
     amenities_clean = raw / "amenities_clean.geojson"
     street_lights = raw / "street_lights.geojson"
     gpd.GeoDataFrame(
-        {"amenity_type": ["school"]},
-        geometry=[Point(34.8, 31.25)],
+        {
+            "amenity_type": ["education", "education", "health", "health"],
+            "amenity_subtype": ["school", "kindergarten", "clinic", "tipat_halav"],
+        },
+        geometry=[
+            Point(34.8, 31.25),
+            Point(34.801, 31.251),
+            Point(34.802, 31.252),
+            Point(34.803, 31.253),
+        ],
         crs="EPSG:4326",
     ).to_file(amenities_clean, driver="GeoJSON")
     gpd.GeoDataFrame(

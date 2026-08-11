@@ -48,7 +48,7 @@ SHADE_SUBSCORE_COL = "score_weighted_sub_environmental_quality_shade_5min"
 SHADE_SUBSCORE_COL_10MIN = "score_weighted_sub_environmental_quality_shade_10min"
 BUILDINGS_LOOKUP_JSON = layer("publish_buildings_lookup").path
 
-STALE_PREFIXES = ("score_weighted",)
+STALE_PREFIXES = ("score_weighted", "access_")
 STALE_EXACT = (BUILDING_SI_FIELD,)
 
 

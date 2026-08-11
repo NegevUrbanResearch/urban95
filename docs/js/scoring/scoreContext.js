@@ -110,7 +110,7 @@
       }
       var metric = getActiveMetric();
       if (!metric) return [];
-      if (metric.kind.indexOf("weighted") === 0) {
+      if (metric.scale === "weighted") {
         if (!metric.buildingPropertyKey) return [];
         return buildingsData.features
           .map(function (feature) {
