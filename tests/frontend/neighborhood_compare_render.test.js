@@ -49,13 +49,17 @@ test("weighted comparison exposes every indicator under its Urban95 category", (
   const diagnostics = metrics.filter((metric) => metric && metric.kind === "diagnostic-access");
 
   assert.match(body, /u95-neighborhood-compare-indicators/);
-  assert.match(body, /Categories &amp; indicators/);
+  assert.doesNotMatch(body, /Categories &amp; indicators/);
   assert.match(body, /u95-status-overlay u95-status-overlay--row/);
   assert.match(body, /Trees/);
-  assert.match(hero, /u95-status-overlay-legend/);
+  assert.match(body, /u95-status-overlay-legend/);
+  assert.match(body, /data-compare-remove-slot="0"/);
+  assert.match(body, /data-compare-remove-slot="1"/);
+  assert.match(body, /hood-compare-vs/);
+  assert.doesNotMatch(hero, /u95-status-overlay-legend|hood-compare-chips/);
   assert.match(hero, /All indicators overview/);
-  assert.match(hero, /א/);
-  assert.match(hero, /ב/);
+  assert.match(body, /א/);
+  assert.match(body, /ב/);
   assert.match(hero, /aria-label="א: Functioning; ב: Functioning"/);
   assert.equal((body.match(/u95-neighborhood-compare-category-group/g) || []).length, categories.length);
   assert.equal((body.match(/u95-neighborhood-compare-category-row/g) || []).length, categories.length);
@@ -112,22 +116,19 @@ test("weighted comparison keeps all indicators when neighborhood statuses match"
 
   assert.equal((body.match(/u95-neighborhood-compare-indicator-row/g) || []).length, subcategoryCount);
   assert.doesNotMatch(body, /No category status changes|u95-neighborhood-compare-difference-row/);
-  assert.match(hero, /u95-status-overlay-readout--combined[^>]*data-status="functioning"/);
-  assert.doesNotMatch(hero, /u95-status-overlay-readout--first|u95-status-overlay-readout--second/);
+  assert.match(hero, /u95-status-overlay--hero is-same-bin/);
+  assert.doesNotMatch(hero + body, /u95-status-overlay-readout|u95-status-overlay-status/);
+  assert.doesNotMatch(hero + body, />\s*(Functioning|Thriving|Disappointing)\s*</);
 });
 
-test("weighted comparison labels each different status with its neighborhood identity", () => {
+test("weighted comparison places each different status with its neighborhood marker", () => {
   const { hero } = renderComparison(() => "thriving", () => "functioning");
 
-  assert.match(
-    hero,
-    /u95-status-overlay-readout--first[^>]*data-status="functioning"[^>]*>[\s\S]*?Functioning/
-  );
-  assert.match(
-    hero,
-    /u95-status-overlay-readout--second[^>]*data-status="thriving"[^>]*>[\s\S]*?Thriving/
-  );
-  assert.doesNotMatch(hero, /Functioning\s*\/\s*Thriving/);
+  assert.match(hero, /u95-status-overlay-marker--first[^>]*data-status="functioning"/);
+  assert.match(hero, /u95-status-overlay-marker--second[^>]*data-status="thriving"/);
+  assert.doesNotMatch(hero, /is-same-bin/);
+  assert.doesNotMatch(hero, /u95-status-overlay-readout|u95-status-overlay-status/);
+  assert.match(hero, /aria-label="א: Functioning; ב: Thriving"/);
 });
 
 test("weighted comparison keeps Unknown neutral without activating a colored lamp", () => {

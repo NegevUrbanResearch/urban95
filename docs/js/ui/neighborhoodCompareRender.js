@@ -49,18 +49,6 @@
       '" data-status="' + escapeHtml(token) + '" aria-hidden="true"></i>';
   }
 
-  function renderStatusOverlayReadoutHtml(escapeHtml, identity, token) {
-    return '<span class="u95-status-overlay-readout u95-status-overlay-readout--' + identity +
-      '" data-status="' + escapeHtml(token) + '"><i aria-hidden="true"></i><span>' +
-      escapeHtml(statusLabel(token)) + "</span></span>";
-  }
-
-  function renderCombinedStatusOverlayReadoutHtml(escapeHtml, token) {
-    return '<span class="u95-status-overlay-readout u95-status-overlay-readout--combined" data-status="' +
-      escapeHtml(token) + '"><i aria-hidden="true"></i><span>' +
-      escapeHtml(statusLabel(token)) + "</span></span>";
-  }
-
   function renderSharedStatusOverlayHtml(escapeHtml, nameA, statusA, nameB, statusB, size) {
     var tokenA = statusToken(statusA);
     var tokenB = statusToken(statusB);
@@ -68,7 +56,9 @@
     var signalClass = size === "hero" ? "status-signal--hero" : "status-signal--row";
     var tokens = ["disappointing", "functioning", "thriving"];
     var ariaLabel = nameA + ": " + statusLabel(tokenA) + "; " + nameB + ": " + statusLabel(tokenB);
+    var sameBin = tokenA === tokenB && knownTokens[tokenA];
     var html = '<span class="u95-status-overlay u95-status-overlay--' + (size === "hero" ? "hero" : "row") +
+      (sameBin ? " is-same-bin" : "") +
       '" aria-label="' + escapeHtml(ariaLabel) + '" data-status-first="' + escapeHtml(tokenA) +
       '" data-status-second="' + escapeHtml(tokenB) + '"><span class="status-signal ' + signalClass +
       '" aria-hidden="true">';
@@ -81,22 +71,23 @@
     else html += '<i class="u95-status-overlay-anchor u95-status-overlay-anchor--first" data-status="unknown" aria-hidden="true"></i>';
     if (knownTokens[tokenB]) html += renderStatusOverlayMarkerHtml(escapeHtml, "second", tokenB);
     else html += '<i class="u95-status-overlay-anchor u95-status-overlay-anchor--second" data-status="unknown" aria-hidden="true"></i>';
-    html += '<span class="u95-status-overlay-status" aria-hidden="true">' +
-      (tokenA === tokenB
-        ? renderCombinedStatusOverlayReadoutHtml(escapeHtml, tokenA)
-        : renderStatusOverlayReadoutHtml(escapeHtml, "first", tokenA) +
-          renderStatusOverlayReadoutHtml(escapeHtml, "second", tokenB)) + "</span></span>";
+    html += "</span>";
     return html;
   }
 
   function renderStatusOverlayLegendHtml(escapeHtml, nameA, nameB) {
     return '<div class="u95-status-overlay-legend" role="group" aria-label="Compared neighborhoods">' +
-      '<span class="u95-status-overlay-legend-item u95-status-overlay-legend-item--first">' +
-      '<i class="u95-status-overlay-legend-marker" aria-hidden="true"></i><span dir="rtl" lang="he">' + escapeHtml(nameA) +
-      "</span></span>" +
-      '<span class="u95-status-overlay-legend-item u95-status-overlay-legend-item--second">' +
-      '<i class="u95-status-overlay-legend-marker" aria-hidden="true"></i><span dir="rtl" lang="he">' + escapeHtml(nameB) +
-      "</span></span></div>";
+      '<button type="button" class="u95-status-overlay-legend-item u95-status-overlay-legend-item--first" data-compare-remove-slot="0" title="Remove">' +
+      '<i class="u95-status-overlay-legend-marker" aria-hidden="true"></i>' +
+      '<span class="u95-status-overlay-legend-name">' + heNameHtml(escapeHtml, nameA) + "</span>" +
+      '<span class="u95-status-overlay-legend-x" aria-hidden="true">\u00d7</span>' +
+      '<span class="sr-only">Remove</span></button>' +
+      '<span class="hood-compare-vs">vs</span>' +
+      '<button type="button" class="u95-status-overlay-legend-item u95-status-overlay-legend-item--second" data-compare-remove-slot="1" title="Remove">' +
+      '<i class="u95-status-overlay-legend-marker" aria-hidden="true"></i>' +
+      '<span class="u95-status-overlay-legend-name">' + heNameHtml(escapeHtml, nameB) + "</span>" +
+      '<span class="u95-status-overlay-legend-x" aria-hidden="true">\u00d7</span>' +
+      '<span class="sr-only">Remove</span></button></div>';
   }
 
   function renderStatusMetricLabelHtml(host, escapeHtml, metric, kind) {
@@ -656,16 +647,14 @@
     var nameA = nameOf(featureA);
     var nameB = nameOf(featureB);
     var escapeHtml = host.escapeHtml;
-    var chipsHtml = buildPairChipsHtml(escapeHtml, nameA, nameB);
     var activeStatusA = activeMetric && activeMetric.areaStatusKey ? propsA[activeMetric.areaStatusKey] : "unknown";
     var activeStatusB = activeMetric && activeMetric.areaStatusKey ? propsB[activeMetric.areaStatusKey] : "unknown";
     var spineHtml = '<div class="u95-neighborhood-compare-hero" dir="ltr">' +
       '<p class="score-explain-hero-kicker">' + escapeHtml(activeMetric.label || "All indicators overview") + "</p>" +
-      renderStatusOverlayLegendHtml(escapeHtml, nameA, nameB) +
       '<div class="u95-status-overlay-hero-fixture">' +
       renderSharedStatusOverlayHtml(escapeHtml, nameA, activeStatusA, nameB, activeStatusB, "hero") +
       "</div></div>";
-    populateShell(host, chipsHtml, spineHtml);
+    populateShell(host, "", spineHtml);
 
     var registry = window.Urban95ScoreModel && window.Urban95ScoreModel.buildWeightedMetricRegistry
       ? window.Urban95ScoreModel.buildWeightedMetricRegistry()
@@ -674,7 +663,8 @@
     var categories = metrics.filter(function (metric) { return metric && metric.kind === "weighted-category"; });
     var subcategories = metrics.filter(function (metric) { return metric && metric.kind === "weighted-subcategory"; });
     var diagnostics = metrics.filter(function (metric) { return metric && metric.kind === "diagnostic-access"; });
-    var bodyHtml = '<section class="u95-neighborhood-compare-indicators"><div class="cw-section-title">Categories &amp; indicators</div>';
+    var bodyHtml = renderStatusOverlayLegendHtml(escapeHtml, nameA, nameB) +
+      '<section class="u95-neighborhood-compare-indicators">';
     categories.forEach(function (metric) {
       var categoryStem = metric.selectedWeightedStem || "";
       var categorySubcategories = subcategories.filter(function (subcategory) {
