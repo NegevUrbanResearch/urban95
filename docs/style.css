@@ -42,6 +42,15 @@ body {
   --app-accent-ink: #3556b0;
   --app-hero-from: #4a62b8;
   --app-hero-to: var(--palette-blue);
+
+  /* Urban95 status scale — light segmented track; vivid fills only on active / legend. */
+  --status-track: #e8edf3;
+  --status-track-ink: #d0d8e4;
+  --status-segment-rule: #fff;
+  --status-disappointing: #ef4444;
+  --status-functioning: #eab308;
+  --status-thriving: #22c55e;
+  --status-unknown: #9ca3af;
 }
 
 /* Desktop-only gate (mobile / narrow viewports) */
@@ -3209,18 +3218,53 @@ button.city-ranking-row {
   min-width: 0;
 }
 
-.status-signal { display: grid; grid-template-columns: repeat(3, auto); place-items: center; flex: 0 0 auto; box-sizing: border-box; background: #293241; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%), 0 3px 8px rgb(15 23 42 / 17%); }
-.status-signal-lamp { border-radius: 50%; background: var(--status-lamp, #9ca3af); opacity: .2; box-shadow: inset 0 -2px 3px rgb(0 0 0 / 22%); }
-.status-signal-lamp--disappointing { --status-lamp: #ef4444; }
-.status-signal-lamp--functioning { --status-lamp: #eab308; }
-.status-signal-lamp--thriving { --status-lamp: #22c55e; }
-.status-signal-lamp.is-active { opacity: 1; box-shadow: inset 0 2px 3px rgb(255 255 255 / 34%), 0 0 9px var(--status-lamp); }
-.status-signal--row { grid-template-columns: repeat(3, 11px); gap: 4px; width: 53px; height: 25px; padding: 6px; border-radius: 8px; }
-.status-signal--row .status-signal-lamp { width: 11px; height: 11px; }
-.status-signal--hero { grid-template-columns: repeat(3, 28px); gap: 8px; width: 128px; height: 52px; padding: 12px 14px; border-radius: 14px; }
-.status-signal--hero .status-signal-lamp { width: 28px; height: 28px; }
-.status-signal--legend { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; width: 100%; height: 54px; padding: 11px 12px; border-radius: 14px; }
-.status-signal--legend .status-signal-lamp { justify-self: center; width: 32px; height: 32px; opacity: 1; box-shadow: inset 0 -3px 5px rgb(0 0 0 / 18%), inset 0 2px 3px rgb(255 255 255 / 35%); }
+.status-signal {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  background: var(--status-track);
+  box-shadow: inset 0 0 0 1px var(--status-track-ink);
+}
+.status-signal-lamp {
+  display: block;
+  min-width: 0;
+  border-radius: 0;
+  background: #c5cedc;
+  box-shadow: none;
+}
+.status-signal-lamp + .status-signal-lamp {
+  border-inline-start: 1px solid var(--status-segment-rule);
+}
+.status-signal-lamp--disappointing { --status-lamp: var(--status-disappointing); }
+.status-signal-lamp--functioning { --status-lamp: var(--status-functioning); }
+.status-signal-lamp--thriving { --status-lamp: var(--status-thriving); }
+.status-signal-lamp.is-active { background: var(--status-lamp, var(--status-unknown)); }
+.status-signal--row {
+  width: 54px;
+  height: 14px;
+  border-radius: 6px;
+}
+.status-signal--row .status-signal-lamp { height: 100%; }
+.status-signal--hero {
+  width: 132px;
+  height: 22px;
+  border-radius: 8px;
+}
+.status-signal--hero .status-signal-lamp { height: 100%; }
+.status-signal--legend {
+  width: 100%;
+  height: 28px;
+  border-radius: 9px;
+}
+.status-signal--legend .status-signal-lamp {
+  height: 100%;
+  background: var(--status-lamp, var(--status-unknown));
+}
 .urban95-status-readout-label { color: #334155; font-size: 13px; font-weight: 800; white-space: nowrap; }
 .urban95-status-readout-label.is-unknown { color: #7b8492; font-weight: 650; }
 .urban95-status-readout-label.is-unknown::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #9ca3af; }
@@ -3456,12 +3500,30 @@ button.city-ranking-row {
 }
 .explainer-intro .modal-lead { margin: 4px 0 0; }
 .explainer-kicker { color: var(--palette-blue); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.status-stoplight { display: grid; gap: 7px; width: 34px; padding: 7px; border-radius: 13px; background: #293241; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%), 0 7px 16px rgb(15 23 42 / 22%); }
-.status-stoplight--explainer { transform: rotate(2deg); }
-.status-stoplight-lamp { width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 -5px 7px rgb(0 0 0 / 18%), inset 0 3px 4px rgb(255 255 255 / 35%); }
-.status-stoplight-lamp--red { background: #ef4444; }
-.status-stoplight-lamp--amber { background: #eab308; }
-.status-stoplight-lamp--green { background: #22c55e; }
+.status-stoplight {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  width: 92px;
+  padding: 0;
+  border-radius: 9px;
+  background: var(--status-track);
+  box-shadow: inset 0 0 0 1px var(--status-track-ink);
+}
+.status-stoplight--explainer { width: 104px; }
+.status-stoplight-lamp {
+  display: block;
+  min-width: 0;
+  height: 14px;
+  border-radius: 0;
+}
+.status-stoplight-lamp + .status-stoplight-lamp {
+  border-inline-start: 1px solid var(--status-segment-rule);
+}
+.status-stoplight-lamp--red { background: var(--status-disappointing); }
+.status-stoplight-lamp--amber { background: var(--status-functioning); }
+.status-stoplight-lamp--green { background: var(--status-thriving); }
 .howto-list { display: grid; gap: 10px; }
 .howto-list li { position: relative; overflow: hidden; padding: 14px 16px 14px 20px; border: 1px solid #e8edf5; border-radius: 13px; background: #fff; box-shadow: 0 5px 14px rgb(39 60 95 / 7%); }
 .howto-card-title::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--card-accent); }
@@ -3470,12 +3532,13 @@ button.city-ranking-row {
 .howto-card-title--mint { --card-accent: var(--palette-mint); color: #287b42 !important; }
 .about-section { margin-top: 12px; padding: 15px 16px; border: 1px solid #e8edf5; border-radius: 13px; background: #fff; }
 .about-section--status { background: linear-gradient(140deg, #fff 55%, #f4f8f1); }
-.modal-status-key { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 14px; width: min(100%, 330px); margin: 14px auto 2px; }
-.modal-status-labels { display: grid; gap: 13px; }
+.modal-status-key { display: grid; gap: 10px; width: min(100%, 330px); margin: 14px auto 2px; }
+.modal-status-key .status-stoplight { width: 100%; }
+.modal-status-labels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; text-align: center; }
 .modal-status-labels span, .modal-status-unknown span { display: grid; }
 .modal-status-labels strong, .modal-status-unknown strong { font-size: 12px; color: #344054; }
 .modal-status-labels small, .modal-status-unknown small { color: #7b8492; font-size: 10px; }
-.modal-status-unknown { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed #d8dee8; }
+.modal-status-unknown { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 2px; padding-top: 10px; border-top: 1px dashed #d8dee8; }
 .modal-status-unknown i { width: 10px; height: 10px; border-radius: 50%; background: #9ca3af; }
 
 /* Neighborhood Urban95 follows the building explainer's disclosure hierarchy. */
@@ -3539,8 +3602,8 @@ button.city-ranking-row {
   width: 30px;
   height: 13px;
   border-radius: 5px;
-  background: #293241;
-  box-shadow: 0 2px 4px rgb(15 23 42 / 18%);
+  background: var(--status-track);
+  box-shadow: inset 0 0 0 1px var(--status-track-ink);
 }
 
 .u95-status-overlay-legend-marker::after {
@@ -3569,7 +3632,7 @@ button.city-ranking-row {
 }
 
 .u95-status-overlay {
-  --overlay-step: 23px;
+  --overlay-step: 28px;
   position: relative;
   display: inline-grid;
   justify-items: center;
@@ -3580,38 +3643,30 @@ button.city-ranking-row {
 }
 
 .u95-status-overlay--hero {
-  --overlay-step: 48px;
+  --overlay-step: 52px;
   width: 198px;
   min-width: 198px;
   gap: 10px;
 }
 
 .u95-status-overlay--row .status-signal {
-  grid-template-columns: repeat(3, 17px);
-  gap: 6px;
-  width: 81px;
-  height: 37px;
-  padding: 9px;
-  border-radius: 10px;
+  width: 90px;
+  height: 18px;
+  border-radius: 7px;
 }
 
 .u95-status-overlay--row .status-signal-lamp {
-  width: 17px;
-  height: 17px;
+  height: 100%;
 }
 
 .u95-status-overlay--hero .status-signal {
-  grid-template-columns: repeat(3, 38px);
-  gap: 10px;
   width: 168px;
-  height: 68px;
-  padding: 15px 17px;
-  border-radius: 18px;
+  height: 26px;
+  border-radius: 9px;
 }
 
 .u95-status-overlay--hero .status-signal-lamp {
-  width: 38px;
-  height: 38px;
+  height: 100%;
 }
 
 .u95-status-overlay .status-signal {
@@ -3640,12 +3695,12 @@ button.city-ranking-row {
 
 .u95-status-overlay-marker--first {
   --overlay-identity-color: var(--palette-sky, #3aade0);
-  top: -5px;
+  top: -8px;
 }
 
 .u95-status-overlay-marker--second {
   --overlay-identity-color: var(--palette-lavender, #8f5ce8);
-  top: 34px;
+  top: 20px;
 }
 
 .u95-status-overlay--hero .u95-status-overlay-marker {
@@ -3653,8 +3708,8 @@ button.city-ranking-row {
   height: 9px;
 }
 
-.u95-status-overlay--hero .u95-status-overlay-marker--first { top: -6px; }
-.u95-status-overlay--hero .u95-status-overlay-marker--second { top: 64px; }
+.u95-status-overlay--hero .u95-status-overlay-marker--first { top: -10px; }
+.u95-status-overlay--hero .u95-status-overlay-marker--second { top: 28px; }
 
 .u95-status-overlay-marker[data-status="disappointing"] { left: calc(50% - var(--overlay-step)); }
 .u95-status-overlay-marker[data-status="functioning"] { left: 50%; }
@@ -3675,11 +3730,11 @@ button.city-ranking-row {
 }
 
 .u95-status-overlay-anchor::after { content: "?"; }
-.u95-status-overlay-anchor--first { --overlay-identity-color: var(--palette-sky, #3aade0); top: 0; }
-.u95-status-overlay-anchor--second { --overlay-identity-color: var(--palette-lavender, #8f5ce8); top: 19px; }
+.u95-status-overlay-anchor--first { --overlay-identity-color: var(--palette-sky, #3aade0); top: -2px; }
+.u95-status-overlay-anchor--second { --overlay-identity-color: var(--palette-lavender, #8f5ce8); top: 10px; }
 .u95-status-overlay--hero .u95-status-overlay-anchor { left: calc(50% + var(--overlay-step) + 24px); width: 23px; height: 23px; font-size: 13px; }
-.u95-status-overlay--hero .u95-status-overlay-anchor--first { top: 8px; }
-.u95-status-overlay--hero .u95-status-overlay-anchor--second { top: 38px; }
+.u95-status-overlay--hero .u95-status-overlay-anchor--first { top: 0; }
+.u95-status-overlay--hero .u95-status-overlay-anchor--second { top: 14px; }
 
 .u95-status-overlay-status {
   display: grid;

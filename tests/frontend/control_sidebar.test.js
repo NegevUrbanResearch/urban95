@@ -139,10 +139,10 @@ test("Urban95 controls present a categorical overview legend", () => {
   assert.match(css, /\.legend-status-items\s*\{[^}]*display:\s*(?:flex|grid)/);
   assert.match(css, /\.legend-status-item\s*\{[^}]*display:\s*(?:flex|grid)/);
   assert.match(html, /status-signal status-signal--legend/);
-  assert.match(css, /\.status-signal--legend\s*\{[^}]*width:\s*100%[^}]*height:\s*54px/);
-  assert.match(css, /\.status-signal--legend \.status-signal-lamp\s*\{[^}]*width:\s*32px[^}]*height:\s*32px/);
-  assert.match(css, /\.status-signal--hero\s*\{[^}]*width:\s*128px[^}]*height:\s*52px/);
-  assert.match(css, /\.status-signal--row\s*\{[^}]*width:\s*53px[^}]*height:\s*25px/);
+  assert.match(css, /\.status-signal--legend\s*\{[^}]*width:\s*100%[^}]*height:\s*28px/);
+  assert.match(css, /\.status-signal--legend \.status-signal-lamp\s*\{[^}]*height:\s*100%/);
+  assert.match(css, /\.status-signal--hero\s*\{[^}]*width:\s*132px[^}]*height:\s*22px/);
+  assert.match(css, /\.status-signal--row\s*\{[^}]*width:\s*54px[^}]*height:\s*14px/);
 });
 
 function createDetailCollapseTarget(parentMetricId) {
