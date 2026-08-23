@@ -12,6 +12,15 @@ One-way flow: **`data/raw/` → `output/` → `docs/data/`**.
 
 Most layers under `data/raw/` start as **provisional seeds**: copies of today’s published stand-ins from `docs/data/` (see `SEED_MAP` in `src/core/paths.py`). They are good enough to run the pipeline until true source GIS replaces them.
 
+**Authoritative municipal inputs (Beer Sheva):**
+
+| Source drop | Canonical raw input | Refresh |
+|-------------|---------------------|---------|
+| `buildings_BS.geojson` | `buildings.geojson.gz` | `python scripts/update_bs_data.py --prepare-only` |
+| `trees_BS.geojson` | `trees.geojson.gz` | same |
+
+Place the municipal exports under `data/raw/` with the `_BS` filenames above, then run `python scripts/update_bs_data.py` to validate, compress, rebuild scored publish artifacts, and regenerate PMTiles/lookup files. Buildings and trees are **not** seeded from `docs/data/` anymore.
+
 **True raw (required for pipeline):** Beer Sheva summer shade SI under `data/raw/arcgis_shade/` (`bsv_street_summer_shade_index.geojson`, `bsv_open_spaces_summer_shade_index.geojson`, optional `manifest.json`). Collaborators must have these files locally — commit to git when asked (currently working-tree on some checkouts). Legacy `data/arcgis_shade/` was removed; shade is not seeded from `docs/data/`.
 
 ## Parked: `amenities_beer_sheva`

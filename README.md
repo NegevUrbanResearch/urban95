@@ -78,7 +78,7 @@ Amenities Focus map coloring and percentile displays are rank-based relative to 
 
 ### 1. Prerequisites
 
-- Raw GIS under `data/raw/` (see `src/core/paths.py` / `python -m pipeline check` for expected layers — e.g. `buildings.geojson.gz`, `amenities_clean.geojson`, `trees.geojson`, `parks.geojson`).
+- Raw GIS under `data/raw/` (see `src/core/paths.py` / `python -m pipeline check` for expected layers — e.g. `buildings.geojson.gz`, `amenities_clean.geojson`, `trees.geojson.gz`, `parks.geojson`). Municipal Beer Sheva building/tree refreshes use `python scripts/update_bs_data.py` (see `data/README.md`).
 - **`data/raw/arcgis_shade/bsv_street_summer_shade_index.geojson`** and **`data/raw/arcgis_shade/bsv_open_spaces_summer_shade_index.geojson`** — raw ArcGIS summer SI layers for shade scoring and the web map layer.
 - **`data/raw/amenities_clean.geojson`** (published as `docs/data/amenities_new.geojson` by `export_web`) and optionally **`data/raw/street_lights.geojson`** for Urban95/clean-manifest inventory views.
 - **`.env`** in the repo root with a Mapbox token used only for isochrone generation:

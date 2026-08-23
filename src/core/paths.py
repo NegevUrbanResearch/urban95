@@ -40,14 +40,14 @@ SHADE_SEED_NAMES = (
 )
 
 LAYERS: dict[str, Layer] = {
-    "buildings": Layer("buildings", RAW_DIR / "buildings.geojson.gz", True, "raw", True),
+    "buildings": Layer("buildings", RAW_DIR / "buildings.geojson.gz", True, "raw", False),
     "amenities_legacy": Layer(
         "amenities_legacy", RAW_DIR / "amenities_legacy.geojson", False, "raw", True
     ),
     "amenities_clean": Layer(
         "amenities_clean", RAW_DIR / "amenities_clean.geojson", True, "raw", True
     ),
-    "trees": Layer("trees", RAW_DIR / "trees.geojson", False, "raw", True),
+    "trees": Layer("trees", RAW_DIR / "trees.geojson.gz", False, "raw", False),
     "parks": Layer("parks", RAW_DIR / "parks.geojson", False, "raw", True),
     "neighborhoods": Layer(
         "neighborhoods", RAW_DIR / "neighborhoods.geojson", False, "raw", True
@@ -129,10 +129,8 @@ LAYERS: dict[str, Layer] = {
 
 # Shade authoritative source: data/raw/arcgis_shade/ (SHADE_SEED_NAMES).
 SEED_MAP: list[tuple[Path, Path]] = [
-    (RAW_DIR / "buildings.geojson.gz", DOCS_DATA_DIR / "buildings_accessibility.geojson.gz"),
     (RAW_DIR / "amenities_legacy.geojson", DOCS_DATA_DIR / "amenities_all.geojson"),
     (RAW_DIR / "amenities_clean.geojson", DOCS_DATA_DIR / "amenities_new.geojson"),
-    (RAW_DIR / "trees.geojson", DOCS_DATA_DIR / "trees.geojson"),
     (RAW_DIR / "parks.geojson", DOCS_DATA_DIR / "parks.geojson"),
     (RAW_DIR / "neighborhoods.geojson", DOCS_DATA_DIR / "neighborhoods.geojson"),
     (RAW_DIR / "street_lights.geojson", DOCS_DATA_DIR / "street_lights.geojson"),

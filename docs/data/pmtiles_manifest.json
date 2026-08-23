@@ -7,7 +7,7 @@
       "output": "docs/data/buildings_accessibility.pmtiles",
       "source_layer": "buildings",
       "status": "built",
-      "bytes": 41539541
+      "bytes": 42313236
     },
     {
       "name": "buildings_lookup",
@@ -15,9 +15,9 @@
       "output": "docs/data/buildings_lookup.json",
       "source_layer": "buildings_lookup",
       "status": "built",
-      "bytes": 77001177,
-      "records": 20431,
-      "gzip_bytes": 3830788
+      "bytes": 87110717,
+      "records": 20695,
+      "gzip_bytes": 4762604
     },
     {
       "name": "isochrones_lookup",
@@ -25,9 +25,9 @@
       "output": "docs/data/isochrones_lookup.json",
       "source_layer": "isochrones_lookup",
       "status": "built",
-      "bytes": 31198419,
-      "records": 61293,
-      "gzip_bytes": 4972285
+      "bytes": 31596426,
+      "records": 62085,
+      "gzip_bytes": 5638924
     },
     {
       "name": "neighborhood_surface",
@@ -35,7 +35,7 @@
       "output": "docs/data/neighborhood_surface.pmtiles",
       "source_layer": "neighborhood_surface",
       "status": "built",
-      "bytes": 29286514
+      "bytes": 29323671
     },
     {
       "name": "points_lookup",
@@ -43,15 +43,31 @@
       "output": "docs/data/points_lookup.json",
       "source_layer": "points_lookup",
       "status": "built",
-      "bytes": 6477284,
-      "records": 101891,
-      "gzip_bytes": 676253,
+      "bytes": 6382197,
+      "records": 101396,
+      "gzip_bytes": 709998,
       "source_counts": {
         "amenities_clean": 1206,
-        "amenities_legacy": 10739,
-        "trees": 60328,
+        "amenities_legacy": 11001,
+        "trees": 59571,
         "street_lights": 29618
       }
+    },
+    {
+      "name": "roads",
+      "input": "docs/data/roads.geojson",
+      "output": "docs/data/roads.pmtiles",
+      "source_layer": "roads",
+      "status": "built",
+      "bytes": 5747177
+    },
+    {
+      "name": "spatial_syntax_segments",
+      "input": "docs/data/spatial_syntax_segments.geojson",
+      "output": "docs/data/spatial_syntax_segments.pmtiles",
+      "source_layer": "spatial_syntax_segments",
+      "status": "skipped_missing_input",
+      "bytes": 0
     },
     {
       "name": "street_lights",
@@ -59,7 +75,7 @@
       "output": "docs/data/street_lights.pmtiles",
       "source_layer": "street_lights",
       "status": "built",
-      "bytes": 474704
+      "bytes": 468627
     },
     {
       "name": "trees",
@@ -67,7 +83,7 @@
       "output": "docs/data/trees.pmtiles",
       "source_layer": "trees",
       "status": "built",
-      "bytes": 675969
+      "bytes": 659135
     }
   ]
 }

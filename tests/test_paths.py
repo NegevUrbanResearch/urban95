@@ -15,10 +15,22 @@ def test_required_raw_layers():
     assert layer("buildings").required and layer("amenities_clean").required and layer("shade_street").required
 
 
-def test_seed_map_includes_bus_stops_and_buildings():
+def test_seed_map_includes_bus_stops():
     dests = [str(d).replace("\\", "/") for d, _ in SEED_MAP]
-    assert any(d.endswith("buildings.geojson.gz") for d in dests)
     assert any(d.endswith("bus_stops.geojson") for d in dests)
+
+
+def test_seed_map_excludes_authoritative_buildings_and_trees():
+    dests = [str(d).replace("\\", "/") for d, _ in SEED_MAP]
+    assert not any(d.endswith("buildings.geojson.gz") for d in dests)
+    assert not any(d.endswith("trees.geojson.gz") for d in dests)
+
+
+def test_authoritative_buildings_and_trees_are_not_provisional():
+    assert layer("buildings").provisional is False
+    assert layer("trees").provisional is False
+    assert str(layer("buildings").path).endswith("buildings.geojson.gz")
+    assert str(layer("trees").path).endswith("trees.geojson.gz")
 
 
 def test_strip_building_metric_columns_keeps_geometry_and_non_metrics():

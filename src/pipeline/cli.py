@@ -10,9 +10,11 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from core.preflight import STAGES, format_report, preflight, preflight_stage
+from core.proj_env import configure_proj_data
 
 os.environ.setdefault("PROJ_DEBUG", "OFF")
 os.environ.setdefault("PYPROJ_GLOBAL_CONTEXT", "ON")
+configure_proj_data()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 

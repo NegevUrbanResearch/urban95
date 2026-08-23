@@ -29,7 +29,6 @@ BEER_SHEVA_CANDIDATES = (
 
 # Required SEED_MAP dests that must have a source available (or already exist).
 _REQUIRED_SEED_DEST_SUFFIXES = (
-    "buildings.geojson.gz",
     "amenities_clean.geojson",
 )
 

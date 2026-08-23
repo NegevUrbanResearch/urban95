@@ -9,7 +9,11 @@ import geopandas as gpd
 from core.geo_io import CRS_METRIC, load_layer, unique_columns
 from core.paths import layer
 
-EXCLUDED_NON_RESIDENTIAL_NEIGHBORHOODS = {"עמק שרה", "אזור התעשייה"}
+EXCLUDED_NON_RESIDENTIAL_NEIGHBORHOODS = {
+    "עמק שרה",
+    "אזור התעשייה",
+    "אזור תעשייה קריית יהודית",
+}
 
 BUILDING_DROP_COLUMNS = [
     "background",
@@ -68,8 +72,12 @@ def load_raw_buildings(*, crs_metric: int = CRS_METRIC) -> gpd.GeoDataFrame:
                     neighborhoods_path,
                 )
             else:
+                # Reset after filtering so centroid frame index aligns with row
+                # order. Building a GeoDataFrame with `buildings.index` as a
+                # column misaligns geometries against a gapped index and makes
+                # the spatial join match nothing.
+                buildings = buildings.reset_index(drop=True)
                 centroids = gpd.GeoDataFrame(
-                    {"_building_index": buildings.index},
                     geometry=buildings.geometry.centroid,
                     crs=buildings.crs,
                 )
@@ -79,9 +87,9 @@ def load_raw_buildings(*, crs_metric: int = CRS_METRIC) -> gpd.GeoDataFrame:
                     predicate="within",
                     how="left",
                 )
-                mask = joined["index_right"].isna().to_numpy()
-                dropped = int((~mask).sum())
-                buildings = buildings.iloc[mask].copy()
+                keep = joined["index_right"].isna()
+                dropped = int((~keep).sum())
+                buildings = buildings.loc[keep].copy()
                 logging.info(
                     "Excluded %d buildings in non-residential neighborhoods: %s",
                     dropped,

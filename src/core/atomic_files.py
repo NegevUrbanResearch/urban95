@@ -68,9 +68,9 @@ def commit_staged_files(
     if len(set(canonical_paths)) != len(canonical_paths):
         raise ValueError("canonical paths must be unique")
     for staged, canonical in pairs:
-        if staged == canonical:
+        if staged.resolve() == canonical.resolve():
             raise ValueError("staged path must differ from canonical path")
-        if staged.parent != canonical.parent:
+        if staged.resolve().parent != canonical.resolve().parent:
             raise ValueError("staged and canonical paths must share a parent")
         if not staged.is_file():
             raise FileNotFoundError(staged)
