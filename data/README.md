@@ -37,7 +37,7 @@ Before `git add` under `data/raw/`, verify each file meets the limits below (use
 
 - Do **not** commit any file ≥100MB.
 - Prefer ≤50MB per tracked file.
-- Provisional buildings are stored as `buildings.geojson.gz` for that reason.
+- Buildings and trees raw inputs are stored as `buildings.geojson.gz` / `trees.geojson.gz` for that reason.
 - Zips under `data/` stay gitignored.
 
 ## Orphan / review
