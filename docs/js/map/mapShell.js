@@ -359,19 +359,16 @@
     ];
   }
 
-  var BASEMAP_STREET_LAYER_ID = "osm";
+  var BASEMAP_STREET_LAYER_IDS = ["osm", "osm-labels"];
   var BASEMAP_SATELLITE_LAYER_ID = "satellite";
 
   function applyBasemap(map, basemap) {
     if (!map || typeof map.getLayer !== "function") return;
     var useSatellite = basemap === "satellite";
-    if (map.getLayer(BASEMAP_STREET_LAYER_ID)) {
-      map.setLayoutProperty(
-        BASEMAP_STREET_LAYER_ID,
-        "visibility",
-        useSatellite ? "none" : "visible"
-      );
-    }
+    BASEMAP_STREET_LAYER_IDS.forEach(function (layerId) {
+      if (!map.getLayer(layerId)) return;
+      map.setLayoutProperty(layerId, "visibility", useSatellite ? "none" : "visible");
+    });
     if (map.getLayer(BASEMAP_SATELLITE_LAYER_ID)) {
       map.setLayoutProperty(
         BASEMAP_SATELLITE_LAYER_ID,
@@ -437,12 +434,17 @@
           osm: {
             type: "raster",
             tiles: [
-              "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-              "https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-              "https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+              "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
             ],
             tileSize: 256,
-            attribution: "© OpenStreetMap © CARTO",
+            attribution: "© Esri, HERE, Garmin, © OpenStreetMap contributors",
+          },
+          "osm-labels": {
+            type: "raster",
+            tiles: [
+              "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+            ],
+            tileSize: 256,
           },
           satellite: {
             type: "raster",
@@ -479,7 +481,8 @@
           companionSources
         ),
         layers: [
-          { id: BASEMAP_STREET_LAYER_ID, type: "raster", source: "osm" },
+          { id: "osm", type: "raster", source: "osm" },
+          { id: "osm-labels", type: "raster", source: "osm-labels" },
           {
             id: BASEMAP_SATELLITE_LAYER_ID,
             type: "raster",
